@@ -1,0 +1,6 @@
+[chttpd_auth]
+secret = <SET_AT_RUNTIME>
+; Genera uno nuevo en despliegue:
+;   openssl rand -hex 32
+; Coloca el archivo real en: docker-stacks/couchdb/local.d/30-auth.ini (no versionado)
+; y dale permisos 600.

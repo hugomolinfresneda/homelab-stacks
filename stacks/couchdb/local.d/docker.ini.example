@@ -1,0 +1,10 @@
+[admins]
+admin = -pbkdf2:sha256-<HASH_PLACEHOLDER>,<SALT_PLACEHOLDER>,600000
+; example only — do NOT use real hashes in public repos
+
+[couchdb]
+uuid = <RANDOM_UUID_EXAMPLE>
+
+[chttpd_auth]
+secret = <SET_AT_RUNTIME>
+; generate at runtime: openssl rand -hex 32 (saved in 30-auth.ini)
