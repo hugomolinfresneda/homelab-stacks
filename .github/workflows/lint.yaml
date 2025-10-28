@@ -1,0 +1,31 @@
+name: Lint & Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y yamllint shellcheck docker-compose make
+
+      - name: Lint YAML
+        run: |
+          yamllint -d "{extends: default, rules: {line-length: disable}}" stacks
+
+      - name: Lint shell scripts
+        run: |
+          find stacks -type f -name "*.sh" -print0 | xargs -0 -r -n1 shellcheck
+
+      - name: Validate compose files
+        run: |
+          for f in $(find stacks -name 'compose*.yaml'); do
+            echo "Validating $f"
+            docker compose -f "$f" config > /dev/null
+          done
