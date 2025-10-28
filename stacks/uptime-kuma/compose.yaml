@@ -1,0 +1,36 @@
+# homelab-stacks/stacks/uptime-kuma/compose.yaml
+# -------------------------------------------------------------------
+# Base definition of the Uptime Kuma stack (self-hosted status monitor)
+# This compose file is portable and environment-agnostic.
+# Local overrides live in homelab-runtime/stacks/uptime-kuma/
+# -------------------------------------------------------------------
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9
+    container_name: uptime-kuma
+    expose:
+      - "3001"
+    environment:
+      TZ: ${TZ:-Europe/Madrid}
+    healthcheck:
+      test: ["CMD", "/app/extra/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - proxy
+      - monitoring
+    restart: unless-stopped
+    labels:
+      com.repo: homelab-stacks
+      com.stack: uptime-kuma
+      com.env: lab
+      com.logging: "true"
+
+networks:
+  proxy:
+    external: true
+  monitoring:
+    external: true
