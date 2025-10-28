@@ -1,0 +1,27 @@
+# Editor and OS artifacts
+*.swp
+*.bak
+*.tmp
+*.log
+.DS_Store
+
+# Python / Node / build leftovers
+__pycache__/
+node_modules/
+dist/
+build/
+
+# Docker
+*.pid
+*.sock
+.env
+
+# Local volumes (should live under /srv/data instead)
+volumes/
+data/
+
+# Misc
+.idea/
+.vscode/
+*.tar
+*.zip
