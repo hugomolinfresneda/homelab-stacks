@@ -2,7 +2,7 @@
 # Homelab Stacks — Public repository
 # ============================================================
 
-STACK ?=
+STACK ?= $(stack)
 
 help:
 	@echo "Available targets:"
