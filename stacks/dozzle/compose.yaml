@@ -1,0 +1,33 @@
+# homelab-stacks/stacks/dozzle/compose.yaml
+# -------------------------------------------------------------------
+# Base definition of the Dozzle stack (log viewer for Docker)
+# This compose file is portable and environment-agnostic.
+# Local overrides live in homelab-runtime/stacks/dozzle/
+# -------------------------------------------------------------------
+
+services:
+  dozzle:
+    image: amir20/dozzle@sha256:97131e414f57695249ce0af1b193927c93395e97b59ad0637df0606af59ceb63
+    container_name: dozzle
+    expose:
+      - "8080"
+    environment:
+      TZ: ${TZ:-Europe/Madrid}
+    healthcheck:
+      test: ["CMD", "/dozzle", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - proxy
+    restart: unless-stopped
+    labels:
+      com.repo: homelab-stacks
+      com.stack: dozzle
+      com.env: lab
+      com.logging: "true"
+
+networks:
+  proxy:
+    external: true
