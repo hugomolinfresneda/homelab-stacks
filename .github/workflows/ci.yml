@@ -1,0 +1,32 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+jobs:
+  lint-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python for yamllint
+        uses: actions/setup-python@v5
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: YAML lint
+        run: yamllint stacks
+
+      - name: Docker Compose validate
+        uses: hoverkraft-tech/compose-action@v2.0.0
+        with:
+          compose-file: |
+            ${{ steps.discover.outputs.files }}
+        id: compose
+
+      - name: Discover compose files
+        id: discover
+        run: |
+          FILES=$(git ls-files "stacks/**/compose*.y*ml" | tr '\n' ',')
+          echo "files=${FILES}" >> "$GITHUB_OUTPUT"
