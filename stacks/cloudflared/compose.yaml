@@ -1,0 +1,29 @@
+# homelab-stacks/stacks/cloudflared/compose.yaml
+# -------------------------------------------------------------------
+# Base definition of the Cloudflare Tunnel stack
+# Provides secure outbound access to internal Docker services.
+# This compose file is portable and environment-agnostic.
+# Local overrides live in homelab-runtime/stacks/cloudflared/
+# -------------------------------------------------------------------
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:4604b477520dc8322af5427da68b44f0bf814938e9d2e4814f2249ee4b03ffdf
+    container_name: cloudflared
+    user: "65532:65532"
+    restart: unless-stopped
+    command: >
+      tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      # Credential JSON is mounted from /srv/secrets in runtime override
+    networks:
+      - proxy
+    labels:
+      com.repo: homelab-stacks
+      com.stack: cloudflared
+      com.env: lab
+
+networks:
+  proxy:
+    external: true
