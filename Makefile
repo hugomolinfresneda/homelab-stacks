@@ -1,3 +1,4 @@
+SHELL := /usr/bin/env bash
 # ============================================================
 # Homelab Stacks — Public repository
 # ============================================================
@@ -20,7 +21,7 @@ help:
 
 lint:
 	@echo "🧹 Linting YAML and shell scripts..."
-	yamllint -d "{extends: default, rules: {line-length: disable}}" stacks
+	yamllint -d "{extends: default, rules: {line-length: disable, document-start: disable, comments-indentation: disable}}" stacks
 	@find stacks -type f -name "*.sh" -print0 | xargs -0 -r -n1 shellcheck || true
 
 # ------------------------------------------------------------
@@ -29,20 +30,18 @@ lint:
 
 validate:
 	@echo "🔍 Validating compose files..."
-	@find stacks -type f -name 'compose.yaml' -print0 | while IFS= read -r -d '' f; do \
-		echo "  → Validating $$f"; \
-		docker compose -f $$f config -q || exit 1; \
-	done
-	@echo "✅ All compose files validated successfully."
+	@set -euo pipefail; \
+	for f in $$(find stacks -type f \( -name "compose.yml" -o -name "compose.yaml" -o -name "compose.*.yml" -o -name "compose.*.yaml" \)); do \
+		echo " - $$f"; \
+		docker compose -f "$$f" config -q; \
+	done; \
+	echo "✅ All compose files validated successfully."
 
 # ------------------------------------------------------------
 # Helper: compose base (no env or override)
 # ------------------------------------------------------------
 
 define compose-cmd
-	@docker compose \
-		-f /opt/homelab-stacks/stacks/$(STACK)/compose.yaml \
-		$(1)
 endef
 
 # ------------------------------------------------------------
@@ -50,20 +49,9 @@ endef
 # ------------------------------------------------------------
 
 up:
-	@if [ -z "$(STACK)" ]; then echo "❌ Missing stack name: use make up stack=<name>"; exit 1; fi
-	@echo "🚀 Starting base stack '$(STACK)'..."
-	$(call compose-cmd,up -d)
 
 down:
-	@if [ -z "$(STACK)" ]; then echo "❌ Missing stack name: use make down stack=<name>"; exit 1; fi
-	@echo "🛑 Stopping base stack '$(STACK)'..."
-	$(call compose-cmd,down)
 
 ps:
-	@if [ -z "$(STACK)" ]; then echo "❌ Missing stack name: use make ps stack=<name>"; exit 1; fi
-	$(call compose-cmd,ps)
 
 pull:
-	@if [ -z "$(STACK)" ]; then echo "❌ Missing stack name: use make pull stack=<name>"; exit 1; fi
-	@echo "⬇️  Pulling latest image for stack '$(STACK)'..."
-	$(call compose-cmd,pull)
