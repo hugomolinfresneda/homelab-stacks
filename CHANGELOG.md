@@ -1,6 +1,6 @@
 # Changelog
 
-## [v1.3.0] - 2025-10-28
+## [v1.0.0] - 2025-10-28
 ### Added
 - **Dozzle stack** — lightweight Docker log viewer with base `compose.yaml`, `.env.example` and runtime override.
 - **Uptime Kuma stack** — uptime and certificate monitoring dashboard, integrated with proxy network.
