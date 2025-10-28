@@ -20,27 +20,15 @@ jobs:
       - name: YAML lint
         run: yamllint stacks
 
-      - name: Discover compose files
-        id: discover
+      - name: Validate Docker Compose files (no pull, no up)
         run: |
           set -euo pipefail
           mapfile -t FILES < <(git ls-files "stacks/**/compose*.y*ml")
           if [ ${#FILES[@]} -eq 0 ]; then
-            echo "files=" >> "$GITHUB_OUTPUT"
+            echo "No compose files found."
             exit 0
           fi
-          {
-            echo "files<<EOF"
-            printf '%s\n' "${FILES[@]}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Docker Compose validate
-        if: steps.discover.outputs.files != ''
-        uses: hoverkraft-tech/compose-action@v2.0.0
-        with:
-          compose-file: ${{ steps.discover.outputs.files }}
-
-      - name: No compose files found (info)
-        if: steps.discover.outputs.files == ''
-        run: echo "No compose files found."
+          for f in "${FILES[@]}"; do
+            echo " - $f"
+            docker compose -f "$f" config -q
+          done
