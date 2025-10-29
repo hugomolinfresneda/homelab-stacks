@@ -1,0 +1,27 @@
+# homelab-stacks/stacks/adguard-home/compose.yaml
+# -------------------------------------------------------------------
+# Base definition of the AdGuard Home stack (DNS filtering for LAN)
+# Portable and environment-agnostic. No host ports or volumes here.
+# Local overrides live in homelab-runtime/stacks/adguard-home/
+# -------------------------------------------------------------------
+
+services:
+  adguard-home:
+    image: adguard/adguardhome@sha256:09a24f05e110e53e213a340b22e5d3c8cdab12ff9be6775388c71b140255c54c
+    container_name: adguard-home
+    expose:
+      - "3000"   # Web UI (wizard/admin). Keep 3000; runtime will map host:3000
+    environment:
+      TZ: ${TZ:-Europe/Madrid}
+    networks:
+      - proxy
+    restart: unless-stopped
+    labels:
+      com.repo: homelab-stacks
+      com.stack: adguard-home
+      com.env: lab
+      com.logging: "true"
+
+networks:
+  proxy:
+    external: true
