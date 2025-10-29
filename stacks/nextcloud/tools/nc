@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ------- Defaults (export to override) -------
+WORKSPACE=${WORKSPACE:-$HOME/Proyectos/Curro}
+STACKS_REPO=${STACKS_REPO:-"$WORKSPACE/homelab-stacks"}
+RUNTIME_DIR=${RUNTIME_DIR:-"$WORKSPACE/homelab-runtime/stacks/nextcloud"}
+ENV_FILE="$RUNTIME_DIR/.env"
+QUIET=${QUIET:-0}   # 1 = less noise
+
+BASE="-f $STACKS_REPO/stacks/nextcloud/compose.yaml"
+OVRD="-f $RUNTIME_DIR/compose.override.yml"
+DCB="docker compose --env-file $ENV_FILE $BASE"
+DCO="docker compose --env-file $ENV_FILE $BASE $OVRD"
+
+log(){ echo "▶ $*"; }
+run(){ if [ "$QUIET" = "1" ]; then "$@" >/dev/null 2>&1; else "$@"; fi }
+occ(){ docker exec -w /var/www/html -u www-data nc-app php occ "$@"; }
+
+wait_for_code(){
+  log "Waiting for Nextcloud code in nc-app..."
+  until docker exec nc-app test -f /var/www/html/occ; do sleep 1; done
+  until docker exec nc-app test -f /var/www/html/lib/versioncheck.php; do sleep 1; done
+}
+
+ensure_config_dir(){
+  docker exec -u root nc-app sh -lc 'install -d -o 33 -g 33 -m 0750 /var/www/html/config'
+}
+
+seed_snippets(){
+  ensure_config_dir
+  for f in 10-redis.config.php 20-proxy.config.php; do
+    if ! docker exec -u root nc-app test -f "/var/www/html/config/$f"; then
+      docker cp "$STACKS_REPO/stacks/nextcloud/config/$f.example" "nc-app:/var/www/html/config/$f"
+      docker exec -u root nc-app chown 33:33 "/var/www/html/config/$f" || true
+    fi
+  done
+}
+
+is_installed(){
+  docker exec -w /var/www/html -u www-data nc-app sh -lc \
+    'php occ status 2>/dev/null | grep -q "installed: true"' >/dev/null 2>&1
+}
+
+wait_until_installed(){
+  for _ in $(seq 1 120); do
+    if is_installed; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+case "${1:-}" in
+  up)
+    mkdir -p "$RUNTIME_DIR"
+    log "Starting db + redis"
+    run $DCB up -d db redis
+    log "Starting app + web + cron"
+    run $DCO up -d app web cron
+    ;;
+
+  install)
+    wait_for_code
+    ensure_config_dir
+    if is_installed; then
+      log "[install] Already installed — skipping"
+    else
+      log "[install] Waiting for container auto-installation…"
+      if ! wait_until_installed; then
+        echo "ERROR: Nextcloud not installed after timeout. Check 'docker logs nc-app'." >&2
+        exit 1
+      fi
+    fi
+    seed_snippets
+    ;;
+
+  post)
+    wait_for_code
+    if ! is_installed; then
+      log "[post] Skipping — Nextcloud not installed yet"
+      exit 0
+    fi
+    seed_snippets
+    occ background:cron || true
+    docker exec -w /var/www/html -u www-data nc-app sh -lc '
+      if [ -n "${NEXTCLOUD_TRUSTED_DOMAINS:-${NC_DOMAIN:-}}" ]; then
+        php occ config:system:set trusted_domains 1 --value "${NEXTCLOUD_TRUSTED_DOMAINS:-${NC_DOMAIN:-}}"
+      fi
+      php occ config:system:set trusted_domains 2 --value "nc-web"
+      php occ config:system:set trusted_domains 3 --value "localhost"
+    ' || true
+    if [ -n "${NC_DOMAIN:-}" ]; then
+      occ config:system:set overwrite.cli.url --value="https://${NC_DOMAIN}" || true
+    fi
+    occ db:add-missing-indices || true
+    occ maintenance:repair || true
+    occ status || true
+    ;;
+
+  status)
+    if is_installed; then
+      occ status || true
+    else
+      echo "  - installed: false"
+    fi
+    run docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://nc-web:8080/status.php | head -n1 || true
+    if [ -n "${NC_DOMAIN:-}" ]; then
+      run docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI -H "Host: ${NC_DOMAIN}" http://nc-web:8080/status.php | head -n1 || true
+    fi
+    ;;
+
+  logs)  $DCO logs -f app ;;
+  reset-db)
+    log "Resetting ONLY the DB volume (data stays)"
+    docker stop nc-db >/dev/null 2>&1 || true
+    docker rm   nc-db >/dev/null 2>&1 || true
+    docker volume rm nextcloud_db >/dev/null 2>&1 || true
+    run $DCB up -d db redis
+    ;;
+  down)  run $DCO down ;;
+  *)     echo "Usage: $0 {up|install|post|status|logs|reset-db|down}" >&2; exit 1 ;;
+esac

@@ -1,0 +1,7 @@
+<?php
+// Reverse proxy / tunnel hints (tweak as needed)
+$CONFIG = array_merge($CONFIG ?? [], [
+  'overwriteprotocol'     => 'https',
+  'forwarded_for_headers' => ['HTTP_X_FORWARDED_FOR'],
+  'trusted_proxies'       => ['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'],
+]);

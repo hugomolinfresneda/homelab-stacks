@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+docker exec -w /var/www/html -u www-data nc-app php occ "$@"
