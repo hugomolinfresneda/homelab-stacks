@@ -1,4 +1,4 @@
-# Nextcloud Stack (Docker) — Enterprise-Friendly README
+# Nextcloud Stack (Docker)
 
 This stack deploys **Nextcloud** using Docker with a clean separation between the **public stacks repo** and your **private runtime**. It includes:
 
@@ -250,6 +250,10 @@ docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/m
 ```
 
 > For production-grade backups: schedule DB dumps + volume snapshots and test restores regularly.
+
+**Backups & DR docs**
+- **Backup Guide:** [backup/README.backup.md](./backup/README.backup.md)
+- **DR Runbook:** [backup/README.dr.md](./backup/README.dr.md)
 
 ---
 
