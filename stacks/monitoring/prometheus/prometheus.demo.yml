@@ -1,0 +1,41 @@
+rule_files:
+  - /etc/prometheus/rules/*.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs: [{targets: ['prometheus:9090']}]
+  - job_name: 'alertmanager'
+    static_configs: [{targets: ['alertmanager:9093']}]
+  - job_name: 'blackbox'
+    static_configs: [{targets: ['blackbox:9115']}]
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params: {module: [http_2xx]}
+    static_configs:
+      - targets:
+          - https://example.org
+          - https://httpstat.us/200
+          - https://example.com
+    relabel_configs:
+      - {source_labels: [__address__], target_label: __param_target}
+      - {source_labels: [__param_target], target_label: instance}
+      - {target_label: __address__, replacement: 'blackbox:9115'}
+  - job_name: 'blackbox-icmp'
+    metrics_path: /probe
+    params: {module: [icmp]}
+    static_configs:
+      - targets: ['1.1.1.1', '8.8.8.8']
+    relabel_configs:
+      - {source_labels: [__address__], target_label: __param_target}
+      - {source_labels: [__param_target], target_label: instance}
+      - {target_label: __address__, replacement: 'blackbox:9115'}
+  - job_name: 'node'
+    static_configs: [{targets: ['node-exporter:9100']}]
+  - job_name: 'loki'
+    static_configs: [{targets: ['loki:3100']}]
+  - job_name: 'promtail'
+    static_configs: [{targets: ['promtail:9080']}]
+
