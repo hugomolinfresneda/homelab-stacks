@@ -27,7 +27,7 @@ services:
       timeout: 3s
       retries: 6
     networks:
-      - monitoring
+      - mon-net
       - proxy
     restart: unless-stopped
     labels:
@@ -161,7 +161,7 @@ services:
       timeout: 3s
       retries: 12
     networks:
-      - monitoring
+      - mon-net
       - proxy
     restart: unless-stopped
     labels:
