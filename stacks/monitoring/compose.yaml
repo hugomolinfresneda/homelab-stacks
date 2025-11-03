@@ -11,7 +11,7 @@
 services:
   prometheus:
     image: prom/prometheus@sha256:ff7e389acbe064a4823212a500393d40a28a8f362e4b05cbf6742a9a3ef736b2
-    container_name: prometheus
+    container_name: mon-prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -38,7 +38,7 @@ services:
 
   alertmanager:
     image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
-    container_name: alertmanager
+    container_name: mon-alertmanager
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
     expose:
       - "9093"
@@ -60,7 +60,7 @@ services:
 
   blackbox:
     image: prom/blackbox-exporter@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
-    container_name: blackbox
+    container_name: mon-blackbox
     expose:
       - "9115"
     cap_add:
@@ -83,7 +83,7 @@ services:
 
   loki:
     image: grafana/loki@sha256:0eaee7bf39cc83aaef46914fb58f287d4f4c4be6ec96b86c2ed55719a75e49c8
-    container_name: loki
+    container_name: mon-loki
     command: ["-config.file=/etc/loki/local-config.yaml"]
     expose:
       - "3100"
@@ -106,7 +106,7 @@ services:
 
   promtail:
     image: grafana/promtail@sha256:086e4e85d2eb383fb04ea83c0f5074da81df56e415062ca888dba426abd8dfa5
-    container_name: promtail
+    container_name: mon-promtail
     command: ["-config.file=/etc/promtail/config.yml"]
     expose:
       - "9080"
@@ -124,7 +124,7 @@ services:
 
   node-exporter:
     image: prom/node-exporter@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
-    container_name: node-exporter
+    container_name: mon-node-exporter
     command: ["--path.rootfs=/host"]
     expose:
       - "9100"
@@ -145,7 +145,7 @@ services:
 
   grafana:
     image: grafana/grafana@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
-    container_name: grafana
+    container_name: mon-grafana
     expose:
       - "3000"
     environment:
