@@ -50,7 +50,7 @@ services:
       timeout: 3s
       retries: 6
     networks:
-      - monitoring
+      - mon-net
     restart: unless-stopped
     labels:
       com.repo: homelab-stacks
@@ -73,7 +73,7 @@ services:
       timeout: 3s
       retries: 6
     networks:
-      - monitoring
+      - mon-net
     restart: unless-stopped
     labels:
       com.repo: homelab-stacks
@@ -96,7 +96,7 @@ services:
       timeout: 3s
       retries: 6
     networks:
-      - monitoring
+      - mon-net
     restart: unless-stopped
     labels:
       com.repo: homelab-stacks
@@ -114,7 +114,7 @@ services:
       - /opt/homelab-stacks/stacks/monitoring/promtail/config.yaml:/etc/promtail/config.yml:ro
       - mon-promtail-positions:/positions
     networks:
-      - monitoring
+      - mon-net
     restart: unless-stopped
     labels:
       com.repo: homelab-stacks
@@ -129,7 +129,7 @@ services:
     expose:
       - "9100"
     networks:
-      - monitoring
+      - mon-net
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9100/metrics >/dev/null || exit 1"]
