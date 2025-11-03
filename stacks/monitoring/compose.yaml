@@ -181,7 +181,7 @@ volumes:
     name: mon-promtail-positions
 
 networks:
-  monitoring:
+  mon-net:
     external: true
   proxy:
     external: true
