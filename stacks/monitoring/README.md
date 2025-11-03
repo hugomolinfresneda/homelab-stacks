@@ -27,17 +27,17 @@ Client ──▶ Reverse Proxy / Tunnel ─────────────�
                                               │     │
                          datasource = Prometheus    │    datasource = Loki
                                               │     │
-docker network: monitoring                    │     │
-                                              │     │
-   ┌───────────────────┐                      │     │        ┌───────────┐
-   │    Prometheus     │◄─────────────────────┘     └──────▶ │   Loki    │
-   │      (:9090)      │              scrape                 │  (:3100)  │
-   └─────────┬─────────┘                                     └─────┬─────┘
-             │                                                     │
-             │ scrapes                                             │ push logs
-             │                                                     │
-   ┌─────────▼─────────┐          ┌──────────────┐                 │
-   │   Alertmanager    │          │ Blackbox Exp.│ ── /probe ──────┘
+docker network: mon-net                        │     │
+                                               │     │
+   ┌───────────────────┐                       │     │        ┌───────────┐
+   │    Prometheus     │◄──────────────────────┘     └──────▶ │   Loki    │
+   │      (:9090)      │               scrape                 │  (:3100)  │
+   └─────────┬─────────┘                                      └─────┬─────┘
+             │                                                      │
+             │ scrapes                                              │ push logs
+             │                                                      │
+   ┌─────────▼─────────┐          ┌──────────────┐                  │
+   │   Alertmanager    │          │ Blackbox Exp.│ ── /probe ───────┘
    │     (:9093)       │          │   (:9115)    │
    └───────────────────┘          └───────┬──────┘
                                           │
@@ -52,11 +52,11 @@ docker network: monitoring                    │     │
    └───────────┘
 ```
 
-> **Networks**: `monitoring` (internal) and `proxy` (your reverse proxy/tunnel network). Create them if missing:
+> **Networks**: `mon-net` (internal) and `proxy` (your reverse proxy/tunnel network). Create them if missing:
 >
 > ```bash
-> docker network create monitoring || true
-> docker network create proxy || true
+> docker network create mon-net || true
+> docker network create proxy   || true
 > ```
 
 ---
@@ -99,7 +99,7 @@ stacks/monitoring/
 ## 3) Prerequisites
 
 - Docker Engine + **Docker Compose v2**
-- External docker networks created: `monitoring`, `proxy`
+- External docker networks created: `mon-net`, `proxy`
 - **Rootless-friendly binds** for Promtail in your runtime override:
   - `${DOCKER_SOCK}` → usually `/run/user/1000/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
@@ -110,7 +110,7 @@ stacks/monitoring/
 ## 4) Compose files
 
 - **Base (public):** `/opt/homelab-stacks/stacks/monitoring/compose.yaml`
-  Pinned digests, healthchecks, no host ports, networks `monitoring` (+ `proxy` for Grafana).
+  Pinned digests, healthchecks, no host ports, networks `mon-net` (+ `proxy` for Grafana).
   **Named volumes** (portable, human-friendly names):
   ```yaml
   volumes:
@@ -149,8 +149,7 @@ Create the secret file in the runtime and make it world-readable:
 
 ```bash
 mkdir -p /opt/homelab-runtime/stacks/monitoring/secrets
-printf '%s
-' 'your-kuma-password' > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
+printf '%s\n' 'your-kuma-password' > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
 chmod 0444 /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
 ```
 
@@ -179,7 +178,10 @@ make down stack=monitoring     # stop
 
 **Manual compose (portable)**
 ```bash
-docker compose   -f /opt/homelab-stacks/stacks/monitoring/compose.yaml   -f /opt/homelab-runtime/stacks/monitoring/compose.override.yml   up -d
+docker compose \
+  -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  -f /opt/homelab-runtime/stacks/monitoring/compose.override.yml \
+  up -d
 ```
 
 ---
@@ -219,19 +221,22 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 **Loki**
 ```bash
-docker run --rm --network monitoring curlimages/curl:8.10.1 -fsS http://loki:3100/ready
-docker run --rm --network monitoring curlimages/curl:8.10.1 -G -sS   --data-urlencode 'query=count_over_time({job="dockerlogs"}[5m])'   http://loki:3100/loki/api/v1/query | jq -r '.data.result[0].value[1]'
+docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://loki:3100/ready
+docker run --rm --network mon-net curlimages/curl:8.10.1 -G -sS \
+  --data-urlencode 'query=count_over_time({job="dockerlogs"}[5m])' \
+  http://loki:3100/loki/api/v1/query | jq -r '.data.result[0].value[1]'
 ```
 
 **Promtail**
 ```bash
-docker run --rm --network monitoring curlimages/curl:8.10.1 -fsS   http://promtail:9080/metrics | grep -E 'promtail_targets_active|promtail_entries_(total|dropped_total)'
+docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS \
+  http://promtail:9080/metrics | grep -E 'promtail_targets_active|promtail_entries_(total|dropped_total)'
 ```
 
 **Prometheus / Blackbox**
 ```bash
-docker run --rm --network monitoring curlimages/curl:8.10.1 -fsS http://prometheus:9090/-/ready
-docker run --rm --network monitoring curlimages/curl:8.10.1 -fsS http://blackbox:9115/ | head
+docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://prometheus:9090/-/ready
+docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://blackbox:9115/ | head
 ```
 
 ---
@@ -307,13 +312,12 @@ done
 
 ```bash
 # 0) Networks (once)
-docker network create monitoring || true
-docker network create proxy || true
+docker network create mon-net || true
+docker network create proxy   || true
 
 # 1) Runtime secret for Uptime Kuma
 mkdir -p /opt/homelab-runtime/stacks/monitoring/secrets
-printf '%s
-' 'your-kuma-password' > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
+printf '%s\n' 'your-kuma-password' > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
 chmod 0444 /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
 
 # 2) Up
@@ -321,10 +325,66 @@ make up stack=monitoring
 make ps stack=monitoring
 
 # 3) Sanity checks
-docker run --rm --network monitoring curlimages/curl:8.10.1 -fsS http://loki:3100/ready
-docker run --rm --network monitoring curlimages/curl:8.10.1 -G -sS   --data-urlencode 'query=count_over_time({job="dockerlogs"}[5m])'   http://loki:3100/loki/api/v1/query | jq -r '.data.result[0].value[1]'
+docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://loki:3100/ready
+docker run --rm --network mon-net curlimages/curl:8.10.1 -G -sS \
+  --data-urlencode 'query=count_over_time({job="dockerlogs"}[5m])' \
+  http://loki:3100/loki/api/v1/query | jq -r '.data.result[0].value[1]'
 ```
 
 ---
 
-**Done.** Portable monitoring with sane defaults, reproducible images, and a clean split between public and runtime.
+## 15) Demo mode (isolated **demo-** stack)
+
+Run a full, self-contained demo without touching your runtime secrets. The demo uses **container/volume/network prefixes `demo-*`** and stops the base stack first to avoid port conflicts.
+
+**What’s included**
+- **Prometheus (demo)** scraping public targets: `https://example.org`, `https://httpstat.us/200`, `https://example.com`, plus ICMP pings `1.1.1.1` and `8.8.8.8`.
+- **Loki + Promtail** with a **logspammer** (1 line/sec) for instant logs.
+- **Alertmanager (demo)** “blackhole” (UI visible, no external notifiers).
+- Optional **Grafana bind** to `127.0.0.1:3003` (controlled by the demo compose files).
+
+**Naming conventions (demo)**
+- Containers: `demo-*` · Network: `demo-net` · Volumes: `demo-grafana-data`, `demo-loki-data`, `demo-promtail-positions`.
+
+**Demo env file**
+- The demo composes use the same `DOCKER_SOCK`, `DOCKER_CONTAINERS_DIR`, `SELINUX_SUFFIX` variables as the runtime. Create `.env.demo` at the repo root if you need rootless paths:
+  ```dotenv
+  # .env.demo (example rootless)
+  DOCKER_SOCK=/run/user/1000/docker.sock
+  DOCKER_CONTAINERS_DIR=/home/<user>/.local/share/docker/containers
+  SELINUX_SUFFIX=
+  ```
+
+**Makefile.demo targets**
+```bash
+# Validate combined compose for demo (syntax & interpolation)
+make -f Makefile.demo demo-config
+
+# Stop base stack (mon-*) and bring up demo (demo-*)
+make -f Makefile.demo demo-up
+
+# List demo services
+make -f Makefile.demo demo-ps
+
+# Reload Prometheus in demo (SIGHUP)
+make -f Makefile.demo demo-reload-prom
+
+# Tear down demo and clean volumes/network
+make -f Makefile.demo demo-down
+```
+
+**Demo targets helper (requires `yq` v4)**
+```bash
+make -f Makefile.demo ls-targets-demo JOB=blackbox-http
+make -f Makefile.demo add-target-demo JOB=blackbox-http TARGET=http://127.0.0.1:65535
+make -f Makefile.demo rm-target-demo  JOB=blackbox-http TARGET=http://127.0.0.1:65535
+```
+
+**Notes & pitfalls**
+- If you previously ran the demo and see `... name already in use ...`, run `make -f Makefile.demo demo-down` to clean leftovers.
+- For **rootless Docker**, ensure `.env.demo` points to your user’s `docker.sock` and `containers` path; otherwise Promtail can’t read Docker logs.
+- Demo does **not** require any secrets.
+
+---
+
+**Done.** Portable monitoring with sane defaults, reproducible images, a clean split between public and runtime — and a **zero‑secrets demo** you can spin up in seconds.
