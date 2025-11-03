@@ -1,0 +1,34 @@
+COMPOSE ?= docker compose
+COMPOSE_PROJECT_NAME ?= mon-demo
+ENVFILE ?= .env.demo
+
+DEMO_CF_ALL := compose.demo.yaml:compose.demo.logs.yaml:compose.demo.names.yaml
+
+## --- Lifecycle demo ---
+demo-up:   ## Sube demo (core + loki/promtail + logspammer) con nombres fijos
+	@echo "→ Stopping base stack to avoid conflicts..."
+	$(COMPOSE) -f compose.yaml down || true
+	@echo "→ Starting demo stack..."
+	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) up -d
+
+demo-down: ## Baja la demo completa y elimina huérfanos/volúmenes
+	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) down -v --remove-orphans
+
+demo-ps:   ## Lista servicios de la demo
+	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) ps
+
+demo-reload-prom: ## Recarga Prometheus (demo)
+	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
+	COMPOSE_FILE=compose.demo.yaml \
+	$(COMPOSE) --env-file $(ENVFILE) exec -T prometheus kill -HUP 1
+
+demo-config: ## Render & validate the composed config
+	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) config -q
