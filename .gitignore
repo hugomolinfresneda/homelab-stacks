@@ -27,3 +27,4 @@ data/
 *.zip
 stacks/*/data/
 stacks/*/data/
+stacks/monitoring/.env.demo
