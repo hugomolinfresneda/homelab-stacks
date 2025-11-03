@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# homelab-stacks/stacks/monitoring/tools/mon
+# Small helper for local checks.
+
+set -euo pipefail
+STACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+case "${1:-status}" in
+  status)
+    docker compose -f "$STACK_DIR/compose.yaml" ps
+    ;;
+  loki-check)
+    docker run --rm -v "$STACK_DIR/loki/config.yaml:/etc/loki/config.yaml:ro"       grafana/loki:latest -verify-config -config.file=/etc/loki/config.yaml
+    ;;
+  *)
+    echo "Usage: $0 {status|loki-check}"
+    ;;
+esac

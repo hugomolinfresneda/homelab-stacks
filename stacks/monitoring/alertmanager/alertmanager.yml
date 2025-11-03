@@ -1,0 +1,42 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: "smtp.invalid:25"   # placeholder for amtool validation
+  smtp_from: "alertmanager@localhost"
+  smtp_require_tls: false
+
+route:
+  receiver: default
+  group_by: ['alertname', 'severity', 'instance']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: oncall
+    - matchers: ['severity="warning"']
+      receiver: notify
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: ['alertname', 'instance']
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: "http://alert-receiver.local/alerts"
+        send_resolved: true
+
+  - name: oncall
+    webhook_configs:
+      - url: "http://oncall-webhook.local/alerts"
+        send_resolved: true
+
+  - name: notify
+    email_configs:
+      - to: "ops@example.invalid"
+        send_resolved: true
+    # slack_configs:
+    #   - api_url: "https://hooks.slack.com/services/T000/B000/XXXX"
+    #     channel: "#alerts"
+    #     send_resolved: true
