@@ -1,11 +1,11 @@
 apiVersion: 1
 providers:
-  - name: demo
+  - name: mon
     orgId: 1
     type: file
-    folder: Demo
+    folder: Monitoring
     disableDeletion: false
     allowUiUpdates: false
     options:
-      path: /etc/grafana/dashboards/demo
+      path: /etc/grafana/dashboards/mon
       foldersFromFilesStructure: true

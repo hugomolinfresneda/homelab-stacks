@@ -104,6 +104,7 @@ services:
       - demo-grafana-data:/var/lib/grafana
       - ./grafana/provisioning.demo/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning.demo/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards/exported/demo:/etc/grafana/dashboards/demo:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s
