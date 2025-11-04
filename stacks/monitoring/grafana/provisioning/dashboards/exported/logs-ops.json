@@ -1,0 +1,231 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "-- Grafana --",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Log entries per second \u2014 by job",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "sum by (job) (rate({env=~\"$env\", job=~\"$job\", host=~\"$host\"}[$__interval]))",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Recent logs (filtered)",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "{env=~\"$env\", job=~\"$job\", host=~\"$host\", container=~\"$container\"} |~ \"$search\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Log entries per second \u2014 by container (dockerlogs)",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "sum by (container) (rate({env=~\"$env\", job=\"dockerlogs\", host=~\"$host\", container=~\"$container\"}[$__interval]))",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Top 5 containers by log rate",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "topk(5, sum by (container) (rate({env=~\"$env\", job=\"dockerlogs\", host=~\"$host\"}[$__interval])))",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "Observability",
+    "Logs"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "query": "label_values({job=~\".+\"}, env)",
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "name": "job",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "query": "label_values({env=~\"$env\"}, job)",
+        "refresh": 1,
+        "sort": 1,
+        "current": {}
+      },
+      {
+        "name": "host",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "query": "label_values({env=~\"$env\", job=~\"$job\"}, host)",
+        "refresh": 1
+      },
+      {
+        "name": "container",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".+",
+        "query": "label_values({env=~\"$env\", job=\"dockerlogs\"}, container)",
+        "refresh": 1
+      },
+      {
+        "name": "search",
+        "type": "textbox",
+        "hide": 0,
+        "label": "search (regex)",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Logs \u2014 ops (Loki)",
+  "uid": "logs-ops",
+  "version": 1,
+  "weekStart": ""
+}
