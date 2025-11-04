@@ -104,6 +104,7 @@ services:
       - demo-grafana-data:/var/lib/grafana
       - ./grafana/provisioning.demo/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning.demo/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
       - ../grafana/empty:/etc/grafana/provisioning/plugins:ro
       - ../grafana/empty:/etc/grafana/provisioning/alerting:ro
       - ../grafana/empty:/etc/grafana/provisioning/notifiers:ro

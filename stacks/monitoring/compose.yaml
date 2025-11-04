@@ -156,6 +156,7 @@ services:
       - mon-grafana-data:/var/lib/grafana
       - /opt/homelab-stacks/stacks/monitoring/grafana/provisioning.mon/datasources:/etc/grafana/provisioning/datasources:ro
       - /opt/homelab-stacks/stacks/monitoring/grafana/provisioning.mon/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s
