@@ -99,10 +99,11 @@ services:
       TZ: ${TZ:-Europe/Madrid}
     # Local preview only (do not publish in production)
     ports:
-      - "${BIND_LOCALHOST:-127.0.0.1}:${GRAFANA_PORT:-3003}:3000"
+      - "${BIND_LOCALHOST:-0.0.0.0}:${GRAFANA_PORT:-3003}:3000"
     volumes:
       - demo-grafana-data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/provisioning.demo/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning.demo/dashboards:/etc/grafana/provisioning/dashboards:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s
