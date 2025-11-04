@@ -1,3 +1,10 @@
+# homelab-stacks/stacks/monitoring/alertmanager/alertmanager.demo.yml
+# -------------------------------------------------------------------
+# Alertmanager (demo): "blackhole" receiver
+# - UI visible for triage; no external notifications are sent
+# - Safe for public repos and quick demos
+# -------------------------------------------------------------------
+
 global:
   resolve_timeout: 5m
 

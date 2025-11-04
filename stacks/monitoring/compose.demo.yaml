@@ -1,45 +1,95 @@
+# homelab-stacks/stacks/monitoring/compose.demo.yaml
+# -------------------------------------------------------------------
+# Demo Monitoring stack (self-contained)
+# - Purpose: quick, secret-free demo to showcase metrics + logs + probes
+# - Scope: Prometheus, Alertmanager, Blackbox, Node Exporter, Grafana
+# - Networking: uses external network "demo-net" (see compose.demo.names.yaml)
+# - Storage: demo volumes (see compose.demo.logs.yaml and names overlay)
+# - Note: keep ports only in Grafana for local preview; others are internal
+# -------------------------------------------------------------------
+
 services:
   prometheus:
     image: prom/prometheus@sha256:ff7e389acbe064a4823212a500393d40a28a8f362e4b05cbf6742a9a3ef736b2
-    command: ["--config.file=/etc/prometheus/prometheus.yml", "--web.enable-lifecycle"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+    expose:
+      - "9090"
     volumes:
       - ./prometheus/prometheus.demo.yml:/etc/prometheus/prometheus.yml:ro
-    expose: ["9090"]
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"], interval: "10s", timeout: "3s", retries: 6 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
 
   alertmanager:
     image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    expose:
+      - "9093"
     volumes:
       - ./alertmanager/alertmanager.demo.yml:/etc/alertmanager/alertmanager.yml:ro
-    expose: ["9093"]
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/ready"], interval: "15s", timeout: "3s", retries: 6 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/ready"]
+      interval: 15s
+      timeout: 3s
+      retries: 6
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
 
   blackbox:
     image: prom/blackbox-exporter@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
-    expose: ["9115"]
-    cap_add: ["NET_RAW"]
+    expose:
+      - "9115"
+    cap_add:
+      - NET_RAW
     volumes:
       - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:9115/"], interval: "30s", timeout: "3s", retries: 6 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9115/"]
+      interval: 30s
+      timeout: 3s
+      retries: 6
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
 
   node-exporter:
     image: prom/node-exporter@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
     command: ["--path.rootfs=/host"]
-    expose: ["9100"]
-    healthcheck: { test: ["CMD-SHELL", "wget -qO- http://localhost:9100/metrics >/dev/null || exit 1"], interval: "30s", timeout: "3s", retries: 6, start_period: "10s" }
+    expose:
+      - "9100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9100/metrics >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
 
   grafana:
     image: grafana/grafana@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
@@ -47,18 +97,29 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       TZ: ${TZ:-Europe/Madrid}
-    # Demo: publica en 127.0.0.1:3003 para probar rápido
-    ports: ["127.0.0.1:3003:3000"]
+    # Local preview only (do not publish in production)
+    ports:
+      - "${BIND_LOCALHOST:-127.0.0.1}:${GRAFANA_PORT:-3003}:3000"
     volumes:
       - demo-grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"], interval: "10s", timeout: "3s", retries: 12 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
 
+# Networks are provided by the names overlay (external demo-net)
 networks:
   demo-net: {}
 
+# Volumes for demo persistence (Grafana here; Loki/Promtail in logs overlay)
 volumes:
   demo-grafana-data: {}

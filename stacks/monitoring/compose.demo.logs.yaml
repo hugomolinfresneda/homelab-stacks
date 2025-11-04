@@ -1,21 +1,40 @@
+# homelab-stacks/stacks/monitoring/compose.demo.logs.yaml
+# -------------------------------------------------------------------
+# Demo logs overlay
+# - Adds Loki + Promtail and a simple "logspammer" to generate log lines
+# - Uses demo volumes and the external "demo-net" network
+# - Promtail binds are driven by .env.demo (rootful/rootless)
+# -------------------------------------------------------------------
+
 services:
   loki:
     image: grafana/loki@sha256:0eaee7bf39cc83aaef46914fb58f287d4f4c4be6ec96b86c2ed55719a75e49c8
     command: ["-config.file=/etc/loki/local-config.yaml"]
-    expose: ["3100"]
+    expose:
+      - "3100"
     volumes:
       - demo-loki-data:/loki
       - ./loki/config.yaml:/etc/loki/local-config.yaml:ro
-    healthcheck: { test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready >/dev/null"], interval: "15s", timeout: "3s", retries: 6 }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready >/dev/null"]
+      interval: 15s
+      timeout: 3s
+      retries: 6
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
 
   promtail:
     image: grafana/promtail@sha256:086e4e85d2eb383fb04ea83c0f5074da81df56e415062ca888dba426abd8dfa5
     command: ["-config.file=/etc/promtail/config.yml"]
-    expose: ["9080"]
+    expose:
+      - "9080"
     volumes:
+      # Demo config + runtime binds (rootful/rootless via .env.demo)
       - ./promtail/config.yaml:/etc/promtail/config.yaml:ro
       - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock:ro${SELINUX_SUFFIX}
       - ${DOCKER_CONTAINERS_DIR:-/var/lib/docker/containers}:/var/lib/docker/containers:ro${SELINUX_SUFFIX}
@@ -28,19 +47,26 @@ services:
       start_period: 15s
     networks: [demo-net]
     restart: unless-stopped
-    labels: { com.repo: homelab-stacks, com.stack: monitoring, com.env: demo, com.logging: "true" }
-
-  # Genera 1 línea/s para ver Loki al vuelo
-  logspammer:
-    image: busybox:1.36
-    command: ["sh","-lc","i=0; while :; do i=$$((i+1)); echo \"demo-log $$i $(date -Is)\"; sleep 1; done"]
     labels:
       com.repo: homelab-stacks
       com.stack: monitoring
       com.env: demo
       com.logging: "true"
+
+  # Generates 1 log line/sec to visualize in Loki quickly
+  logspammer:
+    image: busybox:1.36
+    command: ["sh","-lc","i=0; while :; do i=$$((i+1)); echo \"demo-log $$i $(date -Is)\"; sleep 1; done"]
     networks: [demo-net]
     restart: unless-stopped
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: demo
+      com.logging: "true"
+
+networks:
+  demo-net: {}
 
 volumes:
   demo-loki-data: {}

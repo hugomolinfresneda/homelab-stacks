@@ -1,3 +1,11 @@
+# homelab-stacks/stacks/monitoring/compose.demo.names.yaml
+# -------------------------------------------------------------------
+# Demo naming overlay
+# - Forces deterministic container names "demo-*"
+# - Forces external network name "demo-net"
+# - Forces volume names "demo-*"
+# -------------------------------------------------------------------
+
 services:
   prometheus:
     container_name: demo-prometheus
