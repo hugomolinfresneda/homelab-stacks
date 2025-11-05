@@ -46,6 +46,7 @@ demo-down:
 	COMPOSE_PROJECT_NAME=mon-demo \
 	COMPOSE_FILE=$(DEMO_CF_ALL) \
 	$(COMPOSE) --env-file $(ENVFILE) down -v --remove-orphans
+	@docker volume rm -f demo-grafana-data demo-loki-data demo-promtail-positions >/dev/null 2>&1 || true
 
 # List demo services
 demo-ps:

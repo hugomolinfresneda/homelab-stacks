@@ -1,61 +1,30 @@
-# homelab-stacks/stacks/monitoring/compose.demo.names.yaml
-# -------------------------------------------------------------------
-# Demo naming overlay
-# - Forces deterministic container names "demo-*"
-# - Forces external network name "demo-net"
-# - Forces volume names "demo-*"
-# -------------------------------------------------------------------
-
 services:
   prometheus:
     container_name: demo-prometheus
-    networks:
-      demo-net:
-        aliases: [prometheus]
-
   alertmanager:
     container_name: demo-alertmanager
-    networks:
-      demo-net:
-        aliases: [alertmanager]
-
   blackbox:
     container_name: demo-blackbox
-    networks:
-      demo-net:
-        aliases: [blackbox]
-
   node-exporter:
     container_name: demo-node-exporter
-    networks:
-      demo-net:
-        aliases: [node-exporter]
-
   grafana:
     container_name: demo-grafana
-    networks:
-      demo-net:
-        aliases: [grafana]
-
   loki:
     container_name: demo-loki
-    networks:
-      demo-net:
-        aliases: [loki]
-
   promtail:
     container_name: demo-promtail
-    networks:
-      demo-net:
-        aliases: [promtail]
-
   logspammer:
     container_name: demo-logspammer
-    networks:
-      demo-net:
-        aliases: [logspammer]
 
 networks:
   demo-net:
     name: demo-net
     external: true
+
+volumes:
+  demo-grafana-data:
+    name: demo-grafana-data
+  demo-loki-data:
+    name: demo-loki-data
+  demo-promtail-positions:
+    name: demo-promtail-positions

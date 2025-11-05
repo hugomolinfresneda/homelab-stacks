@@ -99,17 +99,12 @@ services:
       TZ: ${TZ:-Europe/Madrid}
     # Local preview only (do not publish in production)
     ports:
-      - "${BIND_LOCALHOST:-0.0.0.0}:${GRAFANA_PORT:-3003}:3000"
+      - "${BIND_LOCALHOST:-127.0.0.1}:${GRAFANA_PORT:-3003}:3000"
     volumes:
       - demo-grafana-data:/var/lib/grafana
       - ./grafana/provisioning.demo/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning.demo/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana/dashboards:/etc/grafana/dashboards:ro
-      - ../grafana/empty:/etc/grafana/provisioning/plugins:ro
-      - ../grafana/empty:/etc/grafana/provisioning/alerting:ro
-      - ../grafana/empty:/etc/grafana/provisioning/notifiers:ro
-      - ../grafana/empty:/etc/grafana/provisioning/access-control:ro
-      - ./grafana/dashboards/exported/demo:/etc/grafana/dashboards/demo:ro
+      - ./grafana/dashboards/exported/demo:/var/lib/grafana/dashboards/demo:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s

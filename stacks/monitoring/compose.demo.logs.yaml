@@ -34,15 +34,14 @@ services:
     expose:
       - "9080"
     volumes:
-      # Demo config + runtime binds (rootful/rootless via .env.demo)
       - ./promtail/config.yaml:/etc/promtail/config.yml:ro
       - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock:ro${SELINUX_SUFFIX}
       - ${DOCKER_CONTAINERS_DIR:-/var/lib/docker/containers}:/var/lib/docker/containers:ro${SELINUX_SUFFIX}
       - demo-promtail-positions:/positions
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9080/ready >/dev/null || exit 1"]
+      test: ["CMD", "/usr/bin/promtail", "-version"]
       interval: 30s
-      timeout: 3s
+      timeout: 5s
       retries: 6
       start_period: 15s
     networks: [demo-net]
@@ -55,8 +54,8 @@ services:
 
   # Generates 1 log line/sec to visualize in Loki quickly
   logspammer:
-    image: busybox:1.36
-    command: ["sh","-lc","i=0; while :; do i=$$((i+1)); echo \"demo-log $$i $(date -Is)\"; sleep 1; done"]
+    image: busybox@sha256:355b3a1bf5609da364166913878a8508d4ba30572d02020a97028c75477e24ff
+    command: ["sh", "-lc", "i=0; while :; do i=$$((i+1)); echo \"demo-log $$i $(date -Is)\"; sleep 1; done"]
     networks: [demo-net]
     restart: unless-stopped
     labels:
