@@ -7,5 +7,5 @@ providers:
     disableDeletion: false
     allowUiUpdates: false
     options:
-      path: /etc/grafana/dashboards/demo
+      path: /var/lib/grafana/dashboards/demo
       foldersFromFilesStructure: true

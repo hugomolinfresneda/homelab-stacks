@@ -7,5 +7,5 @@ providers:
     disableDeletion: false
     allowUiUpdates: false
     options:
-      path: /etc/grafana/dashboards/mon
+      path: /etc/grafana/provisioning/dashboards/exported-mon
       foldersFromFilesStructure: true
