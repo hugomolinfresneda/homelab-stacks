@@ -1,4 +1,5 @@
 name: CI
+
 on:
   pull_request:
   push:
@@ -8,27 +9,20 @@ jobs:
   lint_and_validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python for yamllint
-        uses: actions/setup-python@v5
-
-      - name: Install yamllint
-        run: pip install yamllint
-
-      - name: YAML lint
-        run: yamllint stacks
-
-      - name: Validate Docker Compose files (no pull, no up)
+      - name: Install tools
         run: |
-          set -euo pipefail
-          mapfile -t FILES < <(git ls-files "stacks/**/compose*.y*ml")
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "No compose files found."
-            exit 0
-          fi
-          for f in "${FILES[@]}"; do
-            echo " - $f"
-            docker compose -f "$f" config -q
-          done
+          sudo apt-get update -qq
+          sudo apt-get install -y yamllint shellcheck make
+
+      - name: Lint (YAML + shell)
+        run: make lint
+
+      - name: Validate compose (bases + demo bundle)
+        run: make validate
+
+      - name: Prometheus config checks
+        run: |
+          make check-prom
+          make check-prom-demo
