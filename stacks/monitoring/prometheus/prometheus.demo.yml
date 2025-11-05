@@ -8,26 +8,21 @@
 
 rule_files:
   - /etc/prometheus/rules/*.yml
-
 alerting:
   alertmanagers:
     - static_configs:
         - targets: ['alertmanager:9093']
-
 scrape_configs:
   # Self-scrapes
   - job_name: 'prometheus'
     static_configs:
       - targets: ['prometheus:9090']
-
   - job_name: 'alertmanager'
     static_configs:
       - targets: ['alertmanager:9093']
-
   - job_name: 'blackbox'
     static_configs:
       - targets: ['blackbox:9115']
-
   # Blackbox HTTP checks
   - job_name: 'blackbox-http'
     metrics_path: /probe
@@ -35,9 +30,9 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
+          - https://example.com
           - https://example.org
           - https://httpstat.us/200
-          - https://example.com
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -45,7 +40,6 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox:9115
-
   # Blackbox ICMP checks
   - job_name: 'blackbox-icmp'
     metrics_path: /probe
@@ -62,17 +56,14 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox:9115
-
   # Node exporter (demo container)
   - job_name: 'node'
     static_configs:
       - targets: ['node-exporter:9100']
-
   # Loki
   - job_name: 'loki'
     static_configs:
       - targets: ['loki:3100']
-
   # Promtail
   - job_name: 'promtail'
     static_configs:
