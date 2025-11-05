@@ -2,7 +2,7 @@
 # -------------------------------------------------------------------
 # Make targets for the Monitoring demo stack
 # - Uses .env.demo for rootful/rootless Promtail binds and Grafana bind
-# - Stops the base stack before bringing the demo up to avoid port conflicts
+# - Does NOT stop the base stack (mon-); runs side-by-side
 # - Files: compose.demo.yaml + compose.demo.logs.yaml + compose.demo.names.yaml
 # -------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ COMPOSE := docker compose
 help:
 	@echo "Monitoring demo targets:"
 	@echo "  demo-config      - render combined compose (sanity check)"
-	@echo "  demo-up          - stop base stack; create demo-net; bring demo up"
+	@echo "  demo-up          - create demo-net; bring demo up (mon- untouched)"
 	@echo "  demo-down        - bring demo down and remove volumes/orphans"
 	@echo "  demo-ps          - list demo services"
 	@echo "  demo-reload-prom - send SIGHUP to Prometheus (demo)"
@@ -32,11 +32,9 @@ demo-config:
 demo-net:
 	@docker network create demo-net >/dev/null 2>&1 || true
 
-# Bring demo up (stopping base to avoid conflicts)
+# Bring demo up (leave base mon- running)
 demo-up: demo-net
-	@echo "→ Stopping base stack to avoid conflicts..."
-	- docker compose -f compose.yaml down || true
-	@echo "→ Starting demo stack..."
+	@echo "→ Starting demo stack (mon- stays up)..."
 	COMPOSE_PROJECT_NAME=mon-demo \
 	COMPOSE_FILE=$(DEMO_CF_ALL) \
 	$(COMPOSE) --env-file $(ENVFILE) up -d
