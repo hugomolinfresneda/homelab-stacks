@@ -389,4 +389,90 @@ make -f Makefile.demo rm-target-demo  JOB=blackbox-http TARGET=http://127.0.0.1:
 
 ---
 
+## 16) Blackbox targets manager (script + Makefile)
+
+Manage the HTTP/ICMP probe target lists that Prometheus scrapes via **Blackbox Exporter**.
+The helper uses containerized **yq** and **promtool**, so you only need Docker on the host.
+Changes are **idempotent** (dedup + sort) and validated with promtool.
+
+### A) Direct script usage
+
+```
+# List targets in the main Prometheus config
+stacks/monitoring/scripts/blackbox-targets.sh ls [blackbox-http]
+
+# Add a target to a job (creates the list if missing)
+stacks/monitoring/scripts/blackbox-targets.sh add blackbox-http https://example.org
+
+# Remove a target from a job (no error if it wasn't there)
+stacks/monitoring/scripts/blackbox-targets.sh rm  blackbox-http https://example.org
+```
+
+**Demo stack** (isolated `demo-*` services):
+
+```
+# Operate on the demo Prometheus config
+stacks/monitoring/scripts/blackbox-targets.sh --demo ls
+stacks/monitoring/scripts/blackbox-targets.sh --demo add blackbox-http https://httpstat.us/200
+stacks/monitoring/scripts/blackbox-targets.sh --demo rm  blackbox-http https://httpstat.us/200
+```
+
+**Explicit file selection** (advanced; absolute or repo-relative paths supported):
+
+```
+stacks/monitoring/scripts/blackbox-targets.sh \
+  --file stacks/monitoring/prometheus/prometheus.yml \
+  add blackbox-http https://cloudflare.com
+```
+
+After a change the script runs a `promtool check config`.
+To apply the new targets, reload Prometheus:
+
+```
+make reload-prom         # main stack
+make demo-reload-prom    # demo stack
+```
+
+> SELinux: if enforcing, the script automatically uses `:Z` on bind mounts.
+
+---
+
+### B) Makefile wrappers (easier)
+
+These delegate to the script above and pick the right file automatically:
+
+```
+# Main stack (mon-)
+make bb-ls                 [JOB=blackbox-http]
+make bb-add  TARGET=<url>  [JOB=blackbox-http]
+make bb-rm   TARGET=<url>  [JOB=blackbox-http]
+make reload-prom
+
+# Demo stack (demo-)
+make bb-ls-demo            [JOB=blackbox-http]
+make bb-add-demo TARGET=<url>  [JOB=blackbox-http]
+make bb-rm-demo  TARGET=<url>  [JOB=blackbox-http]
+make demo-reload-prom
+```
+
+**Examples**
+
+```
+make bb-ls
+make bb-add TARGET=https://cloudflare.com
+make reload-prom
+
+make bb-ls-demo
+make bb-add-demo TARGET=https://example.com
+make demo-reload-prom
+```
+
+**Notes**
+
+* Jobs must already exist in the Prometheus config (see `stacks/monitoring/prometheus/*.yml`).
+* The helper ensures the `static_configs[0].targets` list exists, appends the target, `unique | sort`, and writes back safely.
+* If you see `error: no prometheus.(yml|yaml)…`, check the files exist in `stacks/monitoring/prometheus/`.
+
+---
+
 **Done.** Portable monitoring with sane defaults, reproducible images, a clean split between public and runtime — and a **zero‑secrets demo** you can spin up in seconds.
