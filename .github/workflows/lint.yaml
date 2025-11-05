@@ -5,27 +5,23 @@ on:
   pull_request:
 
 jobs:
-  lint:
+  lint_and_validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y yamllint shellcheck docker-compose make
+          sudo apt-get install -y yamllint shellcheck make
 
-      - name: Lint YAML
-        run: |
-          yamllint -d "{extends: default, rules: {line-length: disable}}" stacks
+      - name: Lint (YAML + shell)
+        run: make lint
 
-      - name: Lint shell scripts
-        run: |
-          find stacks -type f -name "*.sh" -print0 | xargs -0 -r -n1 shellcheck
+      - name: Validate compose (bases + demo bundle)
+        run: make validate
 
-      - name: Validate compose files
+      - name: Prometheus config checks
         run: |
-          for f in $(find stacks -name 'compose*.yaml'); do
-            echo "Validating $f"
-            docker compose -f "$f" config > /dev/null
-          done
+          make check-prom
+          make check-prom-demo

@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: mon
+    orgId: 1
+    type: file
+    folder: Monitoring
+    disableDeletion: false
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/exported-mon
+      foldersFromFilesStructure: true

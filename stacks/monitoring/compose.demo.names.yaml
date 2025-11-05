@@ -1,0 +1,30 @@
+services:
+  prometheus:
+    container_name: demo-prometheus
+  alertmanager:
+    container_name: demo-alertmanager
+  blackbox:
+    container_name: demo-blackbox
+  node-exporter:
+    container_name: demo-node-exporter
+  grafana:
+    container_name: demo-grafana
+  loki:
+    container_name: demo-loki
+  promtail:
+    container_name: demo-promtail
+  logspammer:
+    container_name: demo-logspammer
+
+networks:
+  demo-net:
+    name: demo-net
+    external: true
+
+volumes:
+  demo-grafana-data:
+    name: demo-grafana-data
+  demo-loki-data:
+    name: demo-loki-data
+  demo-promtail-positions:
+    name: demo-promtail-positions

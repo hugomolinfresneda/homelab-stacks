@@ -1,0 +1,70 @@
+# homelab-stacks/stacks/monitoring/Makefile.demo
+# -------------------------------------------------------------------
+# Make targets for the Monitoring demo stack
+# - Uses .env.demo for rootful/rootless Promtail binds and Grafana bind
+# - Stops the base stack before bringing the demo up to avoid port conflicts
+# - Files: compose.demo.yaml + compose.demo.logs.yaml + compose.demo.names.yaml
+# -------------------------------------------------------------------
+
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
+
+ENVFILE := .env.demo
+DEMO_CF_ALL := compose.demo.yaml:compose.demo.logs.yaml:compose.demo.names.yaml
+COMPOSE := docker compose
+
+help:
+	@echo "Monitoring demo targets:"
+	@echo "  demo-config      - render combined compose (sanity check)"
+	@echo "  demo-up          - stop base stack; create demo-net; bring demo up"
+	@echo "  demo-down        - bring demo down and remove volumes/orphans"
+	@echo "  demo-ps          - list demo services"
+	@echo "  demo-reload-prom - send SIGHUP to Prometheus (demo)"
+	@echo "  check-demo       - promtool/amtool validation of demo configs"
+
+# Render combined compose (quiet) to validate YAML/merges
+demo-config:
+	COMPOSE_PROJECT_NAME=mon-demo \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) config -q
+
+# Create external network if missing
+demo-net:
+	@docker network create demo-net >/dev/null 2>&1 || true
+
+# Bring demo up (stopping base to avoid conflicts)
+demo-up: demo-net
+	@echo "→ Stopping base stack to avoid conflicts..."
+	- docker compose -f compose.yaml down || true
+	@echo "→ Starting demo stack..."
+	COMPOSE_PROJECT_NAME=mon-demo \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) up -d
+
+# Bring demo down and clean
+demo-down:
+	COMPOSE_PROJECT_NAME=mon-demo \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) down -v --remove-orphans
+	@docker volume rm -f demo-grafana-data demo-loki-data demo-promtail-positions >/dev/null 2>&1 || true
+
+# List demo services
+demo-ps:
+	COMPOSE_PROJECT_NAME=mon-demo \
+	COMPOSE_FILE=$(DEMO_CF_ALL) \
+	$(COMPOSE) --env-file $(ENVFILE) ps
+
+# Reload Prometheus (SIGHUP) without restarting the container
+demo-reload-prom:
+	COMPOSE_PROJECT_NAME=mon-demo \
+	COMPOSE_FILE=compose.demo.yaml \
+	$(COMPOSE) --env-file $(ENVFILE) exec -T prometheus kill -HUP 1
+
+# Validate demo Prometheus/Alertmanager configs
+check-demo:
+	@echo "→ promtool check config (demo)"
+	@docker run --rm -v "$$PWD/prometheus:/cfg:ro" \
+	  --entrypoint promtool prom/prometheus check config /cfg/prometheus.demo.yml
+	@echo "→ amtool check-config (demo)"
+	@docker run --rm -v "$$PWD/alertmanager:/cfg:ro" \
+	  --entrypoint amtool prom/alertmanager check-config /cfg/alertmanager.demo.yml

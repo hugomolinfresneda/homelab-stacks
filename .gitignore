@@ -27,3 +27,5 @@ data/
 *.zip
 stacks/*/data/
 stacks/*/data/
+stacks/monitoring/.env.demo
+stacks/monitoring/compose.yaml.bak*

@@ -1,0 +1,20 @@
+# homelab-stacks/stacks/monitoring/alertmanager/alertmanager.demo.yml
+# -------------------------------------------------------------------
+# Alertmanager (demo): "blackhole" receiver
+# - UI visible for triage; no external notifications are sent
+# - Safe for public repos and quick demos
+# -------------------------------------------------------------------
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: ['alertname', 'instance']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: default
+    # intentionally empty (UI only)
