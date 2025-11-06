@@ -25,6 +25,11 @@ compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
 STACK_HELPER := $(STACKS_REPO)/stacks/$(STACK)/tools/nc
 USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
 
+# -------- Restic (dual-repo) --------
+RESTIC_ENV_FILE ?= /opt/homelab-runtime/ops/backups/.env
+RESTIC_SCRIPT   := $(STACKS_REPO)/ops/backups/restic-backup.sh
+RUN_FORGET      ?= 1
+
 .PHONY: help lint validate up down ps pull logs install post status reset-db backup backup-verify restore echo-vars
 
 help:
@@ -53,6 +58,20 @@ help:
 	@echo "  make bb-add-demo JOB=... TARGET=... - Add target in demo"
 	@echo "  make bb-rm  JOB=... TARGET=...    - Remove target in mon"
 	@echo "  make bb-rm-demo JOB=... TARGET=... - Remove target in demo"
+	@echo ""
+	@echo "Restic (infra dual-repo) helpers:"
+	@echo "  make restic                       - Run restic backup (ENV_FILE=$(RESTIC_ENV_FILE), RUN_FORGET=$(RUN_FORGET))"
+	@echo "  make restic-list                  - Show snapshots"
+	@echo "  make restic-check                 - Check repository integrity"
+	@echo "  make restic-stats                 - Show repository stats"
+	@echo "  make restic-forget                - Apply retention now (delete & prune; honors RESTIC_GROUP_BY if set)"
+	@echo "  make restic-forget-dry            - Preview what would be deleted (no changes) using policy from $(RESTIC_ENV_FILE)"
+	@echo "  make restic-diff [A=.. B=..]      - Diff between two snapshots (auto-pick last two if jq is available)"
+	@echo "  make restic-restore INCLUDE=\"/path ...\" [TARGET=dir] - Restore selected paths from latest snapshot"
+	@echo "  make restic-mount [MOUNTPOINT=dir]- Mount repository via FUSE (background). Unmount with: fusermount -u <dir>"
+	@echo "  make restic-show-env              - Show repository, group-by and effective policy"
+	@echo "  make restic-exclude-show          - Show active exclude file"
+	@echo ""
 
 # ------------------------------------------------------------
 # Lint YAML and shell scripts
@@ -182,6 +201,104 @@ restore: require-stack
 	[ -n "$(BACKUP_TRACE)" ] && { printf '→ Using script: %s\n' "$$script"; printf '→ Using COMPOSE_FILE: %s\n' "$$compose"; printf '→ Using RUNTIME_DIR: %s\n' "$$rt"; printf '→ Using BACKUP_DIR: %s\n' "$(BACKUP_DIR)"; }; \
 	chmod +x "$$script" 2>/dev/null || true; \
 	COMPOSE_FILE="$$compose" RUNTIME_DIR="$$rt" BACKUP_DIR="$(BACKUP_DIR)" bash "$$script"
+
+# ------------------------------------------------------------
+# Restic helpers (dual-repo infra backups via ops/backups/restic-backup.sh)
+# ------------------------------------------------------------
+.PHONY: restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show
+
+# --- Restic: run backup via script (uses ENV_FILE + RUN_FORGET) ---
+restic:
+	@# Pre-checks
+	@test -f "$(RESTIC_ENV_FILE)" || { echo "error: missing RESTIC_ENV_FILE=$(RESTIC_ENV_FILE)"; exit 1; }
+	@test -x "$(RESTIC_SCRIPT)" || chmod +x "$(RESTIC_SCRIPT)" 2>/dev/null || true
+	@ENV_FILE="$(RESTIC_ENV_FILE)" RUN_FORGET="$(RUN_FORGET)" "$(RESTIC_SCRIPT)"
+
+# --- Restic: snapshots ---
+restic-list:
+	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic snapshots'
+
+# --- Restic: integrity check ---
+restic-check:
+	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic check'
+
+# --- Restic: stats ---
+restic-stats:
+	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic stats'
+
+# --- Restic: apply retention now (destructive) ---
+restic-forget:
+	@bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  args=(--prune); \
+	  [[ -n "$${RESTIC_GROUP_BY:-}"    ]] && args+=(--group-by "$$RESTIC_GROUP_BY"); \
+	  [[ -n "$${RESTIC_KEEP_DAILY:-}"   ]] && args+=(--keep-daily   "$$RESTIC_KEEP_DAILY"); \
+	  [[ -n "$${RESTIC_KEEP_WEEKLY:-}"  ]] && args+=(--keep-weekly  "$$RESTIC_KEEP_WEEKLY"); \
+	  [[ -n "$${RESTIC_KEEP_MONTHLY:-}" ]] && args+=(--keep-monthly "$$RESTIC_KEEP_MONTHLY"); \
+	  echo "→ restic forget: $${args[*]}"; \
+	  restic forget "$${args[@]}"'
+
+# --- Restic: dry-run retention (mirror of script policy) ---
+restic-forget-dry:
+	@bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  args=(--prune --dry-run); \
+	  [[ -n "$${RESTIC_GROUP_BY:-}"    ]] && args+=(--group-by "$$RESTIC_GROUP_BY"); \
+	  [[ -n "$${RESTIC_KEEP_DAILY:-}"   ]] && args+=(--keep-daily   "$$RESTIC_KEEP_DAILY"); \
+	  [[ -n "$${RESTIC_KEEP_WEEKLY:-}"  ]] && args+=(--keep-weekly  "$$RESTIC_KEEP_WEEKLY"); \
+	  [[ -n "$${RESTIC_KEEP_MONTHLY:-}" ]] && args+=(--keep-monthly "$$RESTIC_KEEP_MONTHLY"); \
+	  echo "→ restic forget (dry-run): $${args[*]}"; \
+	  restic forget "$${args[@]}"'
+
+# --- Restic: diff between snapshots (auto-pick last two with jq) ---
+restic-diff:
+	@A="$(A)" B="$(B)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  A_ID="$${A:-}"; B_ID="$${B:-}"; \
+	  if command -v jq >/dev/null 2>&1 && [ -z "$$A_ID" ] && [ -z "$$B_ID" ]; then \
+	    ids=$$(restic snapshots --json | jq -r "sort_by(.time) | map(.short_id) | .[-2:] | @tsv"); \
+	    read -r A_ID B_ID <<< "$$ids"; \
+	  fi; \
+	  if [ -z "$$A_ID" ] || [ -z "$$B_ID" ]; then \
+	    echo "error: set A=<id> and B=<id> (or install jq for auto-detection)"; exit 1; \
+	  fi; \
+	  echo "→ restic diff $$A_ID $$B_ID"; \
+	  restic diff "$$A_ID" "$$B_ID"'
+
+# --- Restic: selective restore from latest snapshot ---
+# Usage: make restic-restore INCLUDE="/path1 /path2" [TARGET=/path/to/dir]
+restic-restore:
+	@INCLUDE="$(INCLUDE)" TARGET="$(TARGET)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  target="$${TARGET:-}"; includes="$${INCLUDE:-}"; \
+	  if [ -z "$$includes" ]; then echo "error: set INCLUDE=\"/path /path2 ...\""; exit 1; fi; \
+	  if [ -z "$$target" ]; then target=$$(mktemp -d -t restic-restore.XXXXXX); echo "→ TARGET not set; using $$target"; fi; \
+	  IFS=" " read -r -a arr <<< "$$includes"; \
+	  args=(); for p in "$${arr[@]}"; do args+=(--include "$$p"); done; \
+	  echo "→ Restoring from latest into: $$target"; \
+	  restic restore latest --target "$$target" "$${args[@]}"; \
+	  echo "→ Done. Restored to: $$target"'
+
+# --- Restic: mount repository via FUSE (background) ---
+# Usage: make restic-mount [MOUNTPOINT=~/mnt/restic]
+restic-mount:
+	@MOUNTPOINT="$(MOUNTPOINT)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  mp="$${MOUNTPOINT:-$$HOME/mnt/restic}"; mkdir -p "$$mp"; \
+	  echo "→ Mounting repository on $$mp (background). Unmount with: fusermount -u $$mp"; \
+	  nohup bash -lc "set -ae; . \"$(RESTIC_ENV_FILE)\"; set +a; exec restic mount \"$$mp\"" >/dev/null 2>&1 & \
+	  echo "PID=$$!"'
+
+# --- Restic: print effective env (repo + policy) ---
+restic-env: restic-show-env
+
+restic-show-env:
+	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; \
+	  printf "RESTIC_REPOSITORY=%s\n" "$$RESTIC_REPOSITORY"; \
+	  printf "RESTIC_GROUP_BY=%s\n" "$${RESTIC_GROUP_BY:-<unset>}"; \
+	  printf "KEEP: daily=%s weekly=%s monthly=%s\n" "$${RESTIC_KEEP_DAILY:-}" "$${RESTIC_KEEP_WEEKLY:-}" "$${RESTIC_KEEP_MONTHLY:-}"; \
+	  printf "KUMA_PUSH_URL=%s\n" "$${KUMA_PUSH_URL:-<unset>}"; \
+	  printf "EXCLUDE_FILE=%s\n" "$$ef"; '
+
+# --- Restic: show active exclude file ---
+restic-exclude-show:
+	@bash -lc 'ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; if [ -f "$$ef" ]; then echo "→ Exclude file: $$ef"; cat "$$ef"; else echo "No exclude file found at: $$ef"; fi'
 
 # ------------------------------------------------------------
 # Debug helpers

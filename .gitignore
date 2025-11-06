@@ -29,3 +29,5 @@ stacks/*/data/
 stacks/*/data/
 stacks/monitoring/.env.demo
 stacks/monitoring/compose.yaml.bak*
+stacks/couchdb/local.d/
+!stacks/couchdb/local.d/*.example.ini

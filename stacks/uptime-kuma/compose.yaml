@@ -21,7 +21,7 @@ services:
       start_period: 60s
     networks:
       - proxy
-      - monitoring
+      - mon-net
     restart: unless-stopped
     labels:
       com.repo: homelab-stacks
@@ -32,5 +32,5 @@ services:
 networks:
   proxy:
     external: true
-  monitoring:
+  mon-net:
     external: true
