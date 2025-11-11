@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 # -------------------------------------------------------------------
 # Root Makefile for homelab-stacks
 # - Validates compose files
-# - Starts/stops stacks (delegates to per-stack helper if present)
+# - Starts/stops stacks (delegates to helper if present)
 # - Monitoring helpers (Prometheus/Grafana)
 # - Nextcloud backup helpers
 # -------------------------------------------------------------------
@@ -40,7 +40,7 @@ help:
 	@echo "  make down stack=<name>            - Stop stack"
 	@echo "  make ps stack=<name>              - Show stack status"
 	@echo "  make pull stack=<name>            - Pull images for the stack"
-	@echo "  make logs stack=<name>            - Tail logs (if helper present uses it)"
+	@echo "  make logs stack=<name> [follow=true]- Show/follow logs (if helper present uses it)"
 	@echo "  make install|post|status|reset-db - Extra ops (only if the stack ships a helper)"
 	@echo "  make backup stack=nextcloud BACKUP_DIR=...</path> [BACKUP_ENV=~/.config/nextcloud/nc-backup.env]"
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=...</path>"
@@ -159,7 +159,11 @@ pull: require-stack
 	@$(compose_base) pull
 
 logs: require-stack
-	@$(compose_all) logs -f --tail=100
+	@if [ "$(follow)" = "true" ]; then \
+		$(compose_all) logs -f; \
+	else \
+		$(compose_all) logs --tail=100; \
+	fi
 
 # No-op extras when there is no helper
 install post status reset-db: require-stack
@@ -235,7 +239,7 @@ restic-forget:
 	  [[ -n "$${RESTIC_KEEP_WEEKLY:-}"  ]] && args+=(--keep-weekly  "$$RESTIC_KEEP_WEEKLY"); \
 	  [[ -n "$${RESTIC_KEEP_MONTHLY:-}" ]] && args+=(--keep-monthly "$$RESTIC_KEEP_MONTHLY"); \
 	  echo "→ restic forget: $${args[*]}"; \
-	  restic forget "$${args[@]}"'
+	  restic forget "$${args[@]"}'
 
 # --- Restic: dry-run retention (mirror of script policy) ---
 restic-forget-dry:
@@ -246,7 +250,7 @@ restic-forget-dry:
 	  [[ -n "$${RESTIC_KEEP_WEEKLY:-}"  ]] && args+=(--keep-weekly  "$$RESTIC_KEEP_WEEKLY"); \
 	  [[ -n "$${RESTIC_KEEP_MONTHLY:-}" ]] && args+=(--keep-monthly "$$RESTIC_KEEP_MONTHLY"); \
 	  echo "→ restic forget (dry-run): $${args[*]}"; \
-	  restic forget "$${args[@]}"'
+	  restic forget "$${args[@]"}'
 
 # --- Restic: diff between snapshots (auto-pick last two with jq) ---
 restic-diff:
