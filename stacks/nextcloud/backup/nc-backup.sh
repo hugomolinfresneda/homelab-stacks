@@ -5,6 +5,7 @@
 # - Enters maintenance mode (or stops app/web/cron if config is read-only)
 # - Produces db.sql, vol.tar.gz and a combined .sha256 file
 # - Idempotent, with a simple lock to avoid concurrent runs
+# - Patched to expand BACKUP_DIR (~, $HOME) and pass DB creds from host env
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -33,27 +34,41 @@ load_env_file() {
 
 load_env_file "$ENV_FILE"
 
-# Allow overriding from the environment or the .env
-BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
+# --- Compatibility aliases (accept both NC_* and DB_* styles) -----------------
+: "${NC_DB_NAME:=${DB_NAME:-}}"
+: "${NC_DB_USER:=${DB_USER:-}}"
+: "${NC_DB_PASS:=${DB_PASSWORD:-}}"
+: "${NC_DB_HOST:=${DB_HOST:-nc-db}}"
 
-# Compatibility mapping: accept NC_APP/NC_DB style if *_CONT not provided
+# --- Explicit inputs ----------------------------------------------------------
+# Containers / volume (allow classic names as fallbacks)
 NC_APP_CONT="${NC_APP_CONT:-${NC_APP:-nc-app}}"
 NC_DB_CONT="${NC_DB_CONT:-${NC_DB:-nc-db}}"
 NC_WEB_CONT="${NC_WEB_CONT:-${NC_WEB:-nc-web}}"
 NC_CRON_CONT="${NC_CRON_CONT:-${NC_CRON:-nc-cron}}"
 NC_VOL="${NC_VOL:-nextcloud_nextcloud}"
 
-# --- Required inputs ----------------------------------------------------------
+# Required DB params
 : "${NC_DB_NAME:?NC_DB_NAME is required}"
 : "${NC_DB_USER:?NC_DB_USER is required}"
 : "${NC_DB_PASS:?NC_DB_PASS is required}"
-: "${BACKUP_DIR:?BACKUP_DIR is required}"
+
+# --- Output directory (expand ~ and $HOME; ensure absolute) -------------------
+BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
+# Expand ~ (only leading)
+case "$BACKUP_DIR" in "~"/*) BACKUP_DIR="$HOME${BACKUP_DIR#~}";; esac
+# Expand $HOME and ${HOME}
+BACKUP_DIR="${BACKUP_DIR//'$HOME'/$HOME}"
+BACKUP_DIR="${BACKUP_DIR//\$\{HOME\}/$HOME}"
+# Ensure absolute (docker -v needs it)
+if [[ "$BACKUP_DIR" != /* ]]; then
+  BACKUP_DIR="$(pwd)/$BACKUP_DIR"
+fi
+mkdir -p "$BACKUP_DIR"
 
 # Sanitize quotes in NC_VOL
 NC_VOL=${NC_VOL//\"/}
 NC_VOL=${NC_VOL//\'/}
-
-mkdir -p "$BACKUP_DIR"
 
 ts="$(date -u +%F_%H%M%S)"
 prefix="$BACKUP_DIR/nc-${ts}"
@@ -116,8 +131,10 @@ else
 fi
 
 echo "==> Dumping MariaDB…"
-docker exec "$NC_DB_CONT" sh -lc \
-  'exec mariadb-dump -u"$NC_DB_USER" -p"$NC_DB_PASS" "$NC_DB_NAME" --single-transaction --quick --routines --events' \
+# Pass credentials from host env (no inner-shell placeholder variables)
+docker exec "$NC_DB_CONT" mariadb-dump \
+  -u"$NC_DB_USER" -p"$NC_DB_PASS" "$NC_DB_NAME" \
+  --single-transaction --quick --routines --events \
   > "${prefix}-db.sql"
 
 echo "==> Archiving Nextcloud volume (${NC_VOL})…"
