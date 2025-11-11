@@ -74,3 +74,8 @@ scrape_configs:
     basic_auth:
       username: admin
       password_file: /run/secrets/uptime-kuma
+  # cAdvisor
+  - job_name: 'cadvisor'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['cadvisor:8080']

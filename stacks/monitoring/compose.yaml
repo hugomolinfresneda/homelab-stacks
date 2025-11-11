@@ -1,7 +1,7 @@
 # homelab-stacks/stacks/monitoring/compose.yaml
 # -------------------------------------------------------------------
 # Base monitoring stack: Prometheus, Alertmanager, Loki, Promtail,
-# Grafana, Blackbox Exporter, Node Exporter.
+# Grafana, Blackbox Exporter, Node Exporter, cAdvisor.
 # Portable: no host ports here — publish only Grafana via your
 # reverse proxy / tunnel. Images pinned by digest. External networks:
 # `monitoring` (internal) and `proxy` (reverse proxy).
@@ -137,6 +137,38 @@ services:
       timeout: 3s
       retries: 6
       start_period: 10s
+    labels:
+      com.repo: homelab-stacks
+      com.stack: monitoring
+      com.env: lab
+      com.logging: "true"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor@sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388
+    container_name: mon-cadvisor
+    command:
+      - --docker_only
+      - --housekeeping_interval=30s
+      # Optional noise reduction:
+      - --disable_metrics=hugetlb,referenced_memory,resctrl,sched,tcp,udp,advtcp
+    expose:
+      - "8080"
+    # NOTE: host mounts for /proc, /sys and Docker roots are intentionally
+    # omitted here to keep the base compose portable. Bind them in your
+    # runtime override (rootless example):
+    #   - ${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock:ro
+    #   - ${HOME}/.local/share/docker:/var/lib/docker:ro
+    #   - /proc:/host/proc:ro
+    #   - /sys:/host/sys:ro
+    #   - /:/rootfs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mon-net
+    restart: unless-stopped
     labels:
       com.repo: homelab-stacks
       com.stack: monitoring
