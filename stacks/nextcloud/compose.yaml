@@ -158,8 +158,79 @@ services:
       com.env: lab
       com.logging: "true"
 
+  # --- Exporters (scraped by Prometheus on the external 'mon-net') -------------
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter@sha256:2598c0571f383708e19016d119bb45c06128a9ebc962c9f49483278ac5a94c41
+    container_name: nc-mysqld-exporter
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: "128m"}
+        reservations: {cpus: "0.05", memory: "64m"}
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}
+    # Use file-based credentials. The bind for /etc/mysqld-exporter/.my.cnf
+    # is provided in the runtime override (keep secrets out of public repo).
+    # Uses file-based credentials mounted by the runtime override
+    # (keep secrets out of the public repo).
+    command:
+      - --collect.info_schema.processlist
+      - --collect.info_schema.tables
+      - --collect.engine_innodb_status
+      - --no-collect.slave_status
+    expose:
+      - "9104"
+    depends_on:
+      db: {condition: service_healthy}
+    networks:
+      - default     # reach nc-db on the stack network
+      - mon-net     # allow Prometheus to scrape
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9104/metrics >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    labels:
+      com.repo: homelab-stacks
+      com.stack: nextcloud
+      com.env: lab
+      com.logging: "true"
+
+  redis-exporter:
+    image: oliver006/redis_exporter@sha256:cd5fad1591e585db5b58beec7fca427027c61a4349f50109af67cf2f07964d02
+    container_name: nc-redis-exporter
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: "128m"}
+        reservations: {cpus: "0.05", memory: "64m"}
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "3"}
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      # REDIS_PASSWORD: "${NC_REDIS_PASS:-}"  # if you set one
+    expose:
+      - "9121"
+    depends_on:
+      redis: {condition: service_healthy}
+    networks:
+      - default     # reach nc-redis
+      - mon-net     # allow Prometheus to scrape
+    labels:
+      com.repo: homelab-stacks
+      com.stack: nextcloud
+      com.env: lab
+      com.logging: "true"
+
 networks:
   proxy:
+    external: true
+  mon-net:
     external: true
 
 volumes:

@@ -360,3 +360,79 @@ make install stack=nextcloud
 make post stack=nextcloud
 make status stack=nextcloud
 ```
+
+---
+
+## 15) Exporters (Prometheus): MariaDB & Redis
+
+This stack ships two optional exporters:
+- `mysqld-exporter` (Prometheus): scrapes MariaDB.
+- `redis_exporter` (oliver006): scrapes Redis.
+
+### 1) Create the exporter DB user (from the host)
+```bash
+docker run --rm --network nextcloud_default \
+  -e MYSQL_PWD="$NC_DB_ROOT" mariadb:10.11 \
+  mariadb -h db -uroot -e "
+    CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY '<<STRONG-PASSWORD>>';
+    GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'exporter'@'%';
+    FLUSH PRIVILEGES;"
+```
+
+### 2) Runtime-only credentials file
+
+Create `/opt/homelab-runtime/stacks/nextcloud/exporters/mysqld-exporter.my.cnf`:
+
+```ini
+[client]
+user=exporter
+password=<<STRONG-PASSWORD>>
+host=db
+port=3306
+```
+
+### 3) Runtime override (mount the file and keep generic flags public)
+
+`/opt/homelab-runtime/stacks/nextcloud/compose.override.yml`:
+
+```yaml
+services:
+  mysqld-exporter:
+    command:
+      - --config.my-cnf=/run/secrets/mysql_exporter.cnf
+      - --collect.info_schema.processlist
+      - --collect.info_schema.tables
+      - --collect.engine_innodb_status
+      - --no-collect.slave_status
+    volumes:
+      - /opt/homelab-runtime/stacks/nextcloud/exporters/mysqld-exporter.my.cnf:/run/secrets/mysql_exporter.cnf:ro
+
+  # No healthcheck here; Prometheus is the source of truth
+  redis-exporter:
+    command:
+      - --redis.addr=redis://redis:6379
+      - --web.listen-address=:9121
+```
+
+### 4) Bring exporters up
+
+```bash
+docker compose \
+  -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
+  -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
+  --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+  up -d mysqld-exporter redis-exporter
+```
+
+### 5) Prometheus scrape (example job)
+
+Add to your monitoring stack:
+
+```yaml
+- job_name: 'nextcloud-exporters'
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+      - 'nc-mysqld-exporter:9104'
+      - 'nc-redis-exporter:9121'
+```

@@ -58,8 +58,8 @@ BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
 # Expand ~ (only leading)
 case "$BACKUP_DIR" in "~"/*) BACKUP_DIR="$HOME${BACKUP_DIR#~}";; esac
 # Expand $HOME and ${HOME}
-BACKUP_DIR="${BACKUP_DIR//'$HOME'/$HOME}"
-BACKUP_DIR="${BACKUP_DIR//\$\{HOME\}/$HOME}"
+BACKUP_DIR="${BACKUP_DIR//\$HOME/$HOME}"
+BACKUP_DIR="${BACKUP_DIR/#\~/$HOME}"
 # Ensure absolute (docker -v needs it)
 if [[ "$BACKUP_DIR" != /* ]]; then
   BACKUP_DIR="$(pwd)/$BACKUP_DIR"
