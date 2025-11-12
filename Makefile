@@ -10,6 +10,8 @@ SHELL := /usr/bin/env bash
 
 # -------- Common vars --------
 STACK ?= $(stack)
+# Allow PROFILES=monitoring (or multiple: "monitoring debug"); also profiles=... alias
+PROFILES ?= $(profiles)
 STACKS_REPO := $(abspath $(CURDIR))
 RUNTIME_DIR ?= /opt/homelab-runtime/stacks/$(STACK)
 ENV_FILE     ?= $(RUNTIME_DIR)/.env
@@ -18,7 +20,8 @@ BASE_FILE     := $(STACKS_REPO)/stacks/$(STACK)/compose.yaml
 OVERRIDE_FILE := $(RUNTIME_DIR)/compose.override.yml
 
 # Docker Compose invocations (base vs base+override)
-compose_base = docker compose --project-directory $(RUNTIME_DIR) --env-file $(ENV_FILE) -f $(BASE_FILE)
+# Inject --profile <name> for each item in $(PROFILES). No-op if empty.
+compose_base = docker compose --project-directory $(RUNTIME_DIR) --env-file $(ENV_FILE) $(foreach p,$(PROFILES),--profile $(p)) -f $(BASE_FILE)
 compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
 
 # Helper detection (e.g., stacks/nextcloud/tools/nc)
@@ -30,13 +33,22 @@ RESTIC_ENV_FILE ?= /opt/homelab-runtime/ops/backups/.env
 RESTIC_SCRIPT   := $(STACKS_REPO)/ops/backups/restic-backup.sh
 RUN_FORGET      ?= 1
 
-.PHONY: help lint validate up down ps pull logs install post status reset-db backup backup-verify restore echo-vars
+.PHONY: help lint validate up down ps pull logs install post status reset-db echo-vars \
+        backup backup-verify restore \
+        up-mon down-mon ps-mon \
+        restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show \
+        check-prom check-prom-demo reload-prom demo-reload-prom bb-ls bb-ls-demo bb-add bb-add-demo bb-rm bb-rm-demo print-mon \
+        nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon nc-backup nc-backup-verify nc-restore
 
+# ------------------------------------------------------------
+# Human-friendly help
+# ------------------------------------------------------------
 help:
 	@echo "Available targets:"
 	@echo "  make lint                         - Lint YAML and shell scripts"
 	@echo "  make validate                     - Validate all compose files"
 	@echo "  make up stack=<name>              - Launch stack (delegates to helper if present)"
+	@echo "       (add PROFILES=monitoring to include exporters, if the stack defines them)"
 	@echo "  make down stack=<name>            - Stop stack"
 	@echo "  make ps stack=<name>              - Show stack status"
 	@echo "  make pull stack=<name>            - Pull images for the stack"
@@ -46,6 +58,12 @@ help:
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=...</path>"
 	@echo "  make restore stack=nextcloud BACKUP_DIR=...</path> [RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud]"
 	@echo "  make echo-vars stack=<name>       - Print key variables (paths)"
+	@echo ""
+	@echo "Shortcuts with monitoring profile:"
+	@echo "  make up-mon|down-mon|ps-mon stack=<name>  - Same as up/down/ps with PROFILES=monitoring"
+	@echo ""
+	@echo "Nextcloud shortcuts (friendly aliases):"
+	@echo "  make nc-help                      - Show Nextcloud-specific commands"
 	@echo ""
 	@echo "Monitoring (Prometheus/Grafana) helpers:"
 	@echo "  make check-prom                   - promtool check config (mon)"
@@ -64,14 +82,11 @@ help:
 	@echo "  make restic-list                  - Show snapshots"
 	@echo "  make restic-check                 - Check repository integrity"
 	@echo "  make restic-stats                 - Show repository stats"
-	@echo "  make restic-forget                - Apply retention now (delete & prune; honors RESTIC_GROUP_BY if set)"
-	@echo "  make restic-forget-dry            - Preview what would be deleted (no changes) using policy from $(RESTIC_ENV_FILE)"
-	@echo "  make restic-diff [A=.. B=..]      - Diff between two snapshots (auto-pick last two if jq is available)"
-	@echo "  make restic-restore INCLUDE=\"/path ...\" [TARGET=dir] - Restore selected paths from latest snapshot"
-	@echo "  make restic-mount [MOUNTPOINT=dir]- Mount repository via FUSE (background). Unmount with: fusermount -u <dir>"
-	@echo "  make restic-show-env              - Show repository, group-by and effective policy"
-	@echo "  make restic-exclude-show          - Show active exclude file"
-	@echo ""
+	@echo "  make restic-forget                - Apply retention now (delete & prune)"
+	@echo "  make restic-forget-dry            - Preview retention (no changes)"
+	@echo "  make restic-diff [A=.. B=..]      - Diff between two snapshots"
+	@echo "  make restic-restore INCLUDE=\"/path ...\" [TARGET=dir] - Selective restore"
+	@echo "  make restic-mount [MOUNTPOINT=dir]- Mount repository via FUSE"
 
 # ------------------------------------------------------------
 # Lint YAML and shell scripts
@@ -87,12 +102,10 @@ lint:
 validate:
 	@echo "Validating compose files..."
 	@set -euo pipefail; \
-	# 1) Bases: solo compose.(yml|yaml)
 	for f in $$(find stacks -type f \( -name "compose.yml" -o -name "compose.yaml" \)); do \
 		echo " - $$f"; \
 		docker compose -f "$$f" config -q; \
 	done; \
-	# 2) Bundle demo (monitoring): compose.demo.yaml + overlays
 	if [ -f stacks/monitoring/compose.demo.yaml ]; then \
 		echo " - stacks/monitoring/demo bundle (compose.demo.yaml + overlays)"; \
 		docker compose \
@@ -117,10 +130,10 @@ require-stack:
 ifeq ($(USE_HELPER),$(STACK_HELPER))
 
 up: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" up
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" up
 
 down: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" down
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" down
 
 ps: require-stack
 	@$(compose_all) ps
@@ -129,19 +142,19 @@ pull: require-stack
 	@$(compose_base) pull
 
 logs: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" logs
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" logs
 
 install: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" install
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" install
 
 post: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" post
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" post
 
 status: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" status
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" status
 
 reset-db: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) "$(STACK_HELPER)" reset-db
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" reset-db
 
 # -------- Generic path (no helper) --------
 else
@@ -172,9 +185,18 @@ install post status reset-db: require-stack
 endif
 
 # ------------------------------------------------------------
+# Shortcuts with monitoring profile (generic)
+# ------------------------------------------------------------
+up-mon: require-stack
+	@PROFILES="monitoring" $(MAKE) up stack=$(STACK)
+down-mon: require-stack
+	@PROFILES="monitoring" $(MAKE) down stack=$(STACK)
+ps-mon: require-stack
+	@PROFILES="monitoring" $(MAKE) ps stack=$(STACK)
+
+# ------------------------------------------------------------
 # Backups for Nextcloud (explicit targets; do not depend on helper)
 # ------------------------------------------------------------
-
 backup: require-stack
 	@if [ "$(STACK)" != "nextcloud" ]; then echo "info: 'backup' is only supported for stack=nextcloud"; exit 0; fi; \
 	if [ -z "$(BACKUP_DIR)" ]; then echo "error: set BACKUP_DIR=/path/to/backups"; exit 1; fi; \
@@ -209,28 +231,21 @@ restore: require-stack
 # ------------------------------------------------------------
 # Restic helpers (dual-repo infra backups via ops/backups/restic-backup.sh)
 # ------------------------------------------------------------
-.PHONY: restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show
-
-# --- Restic: run backup via script (uses ENV_FILE + RUN_FORGET) ---
 restic:
 	@# Pre-checks
 	@test -f "$(RESTIC_ENV_FILE)" || { echo "error: missing RESTIC_ENV_FILE=$(RESTIC_ENV_FILE)"; exit 1; }
 	@test -x "$(RESTIC_SCRIPT)" || chmod +x "$(RESTIC_SCRIPT)" 2>/dev/null || true
 	@ENV_FILE="$(RESTIC_ENV_FILE)" RUN_FORGET="$(RUN_FORGET)" "$(RESTIC_SCRIPT)"
 
-# --- Restic: snapshots ---
 restic-list:
 	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic snapshots'
 
-# --- Restic: integrity check ---
 restic-check:
 	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic check'
 
-# --- Restic: stats ---
 restic-stats:
 	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic stats'
 
-# --- Restic: apply retention now (destructive) ---
 restic-forget:
 	@bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  args=(--prune); \
@@ -239,9 +254,8 @@ restic-forget:
 	  [[ -n "$${RESTIC_KEEP_WEEKLY:-}"  ]] && args+=(--keep-weekly  "$$RESTIC_KEEP_WEEKLY"); \
 	  [[ -n "$${RESTIC_KEEP_MONTHLY:-}" ]] && args+=(--keep-monthly "$$RESTIC_KEEP_MONTHLY"); \
 	  echo "→ restic forget: $${args[*]}"; \
-	  restic forget "$${args[@]"}'
+	  restic forget "$${args[@]}"'
 
-# --- Restic: dry-run retention (mirror of script policy) ---
 restic-forget-dry:
 	@bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  args=(--prune --dry-run); \
@@ -250,9 +264,8 @@ restic-forget-dry:
 	  [[ -n "$${RESTIC_KEEP_WEEKLY:-}"  ]] && args+=(--keep-weekly  "$$RESTIC_KEEP_WEEKLY"); \
 	  [[ -n "$${RESTIC_KEEP_MONTHLY:-}" ]] && args+=(--keep-monthly "$$RESTIC_KEEP_MONTHLY"); \
 	  echo "→ restic forget (dry-run): $${args[*]}"; \
-	  restic forget "$${args[@]"}'
+	  restic forget "$${args[@]}"'
 
-# --- Restic: diff between snapshots (auto-pick last two with jq) ---
 restic-diff:
 	@A="$(A)" B="$(B)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  A_ID="$${A:-}"; B_ID="$${B:-}"; \
@@ -266,7 +279,6 @@ restic-diff:
 	  echo "→ restic diff $$A_ID $$B_ID"; \
 	  restic diff "$$A_ID" "$$B_ID"'
 
-# --- Restic: selective restore from latest snapshot ---
 # Usage: make restic-restore INCLUDE="/path1 /path2" [TARGET=/path/to/dir]
 restic-restore:
 	@INCLUDE="$(INCLUDE)" TARGET="$(TARGET)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
@@ -279,13 +291,12 @@ restic-restore:
 	  restic restore latest --target "$$target" "$${args[@]}"; \
 	  echo "→ Done. Restored to: $$target"'
 
-# --- Restic: mount repository via FUSE (background) ---
 # Usage: make restic-mount [MOUNTPOINT=~/mnt/restic]
 restic-mount:
 	@MOUNTPOINT="$(MOUNTPOINT)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  mp="$${MOUNTPOINT:-$$HOME/mnt/restic}"; mkdir -p "$$mp"; \
 	  echo "→ Mounting repository on $$mp (background). Unmount with: fusermount -u $$mp"; \
-	  nohup bash -lc "set -ae; . \"$(RESTIC_ENV_FILE)\"; set +a; exec restic mount \"$$mp\"" >/dev/null 2>&1 & \
+	  nohup bash -lc '"'"'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; exec restic mount "'"'"'"$$mp"'"'"'"'"'"' >/dev/null 2>&1 & \
 	  echo "PID=$$!"'
 
 # --- Restic: print effective env (repo + policy) ---
@@ -324,9 +335,6 @@ MON_PROM_CONTAINER := mon-prometheus
 DEMO_PROM_CONTAINER:= demo-prometheus
 
 promtool = docker run --rm -v "$(MON_STACK_DIR)":/workdir -w /workdir --entrypoint /bin/promtool prom/prometheus:latest
-
-.PHONY: check-prom check-prom-demo reload-prom demo-reload-prom \
-        bb-ls bb-ls-demo bb-add bb-add-demo bb-rm bb-rm-demo print-mon
 
 # ---- promtool checks (mon & demo) ----
 check-prom:
@@ -392,3 +400,46 @@ bb-rm-demo:
 
 print-mon:
 	@printf 'STACKS_REPO=%s\nMON_STACK_DIR=%s\n' '$(STACKS_REPO)' '$(MON_STACK_DIR)'
+
+# -------------------------------------------------------------------
+# Nextcloud namespaced aliases (discoverable & grouped)
+# -------------------------------------------------------------------
+nc-help:
+	@echo "Nextcloud shortcuts:"
+	@echo "  make nc-up              - Start Nextcloud (db, redis, app, web, cron)"
+	@echo "  make nc-up-mon          - Start Nextcloud + monitoring exporters"
+	@echo "  make nc-down            - Stop Nextcloud (auto-includes monitoring if running)"
+	@echo "  make nc-down-mon        - Stop Nextcloud, explicitly including monitoring"
+	@echo "  make nc-ps              - Show Nextcloud containers"
+	@echo "  make nc-ps-mon          - Show Nextcloud containers with monitoring profile"
+	@echo "  make nc-logs [follow=true] - Tail app logs"
+	@echo "  make nc-install         - One-off post-deploy install/seed"
+	@echo "  make nc-post            - Post configuration (cron, trusted_domains, etc.)"
+	@echo "  make nc-status          - Print Nextcloud status and HTTP checks"
+	@echo "  make nc-reset-db        - Drop DB volume only (app data remains)"
+	@echo "  make nc-backup BACKUP_DIR=/path   - Backup (db + data) with checksum"
+	@echo "  make nc-backup-verify BACKUP_DIR=/path - Verify last backup checksum"
+	@echo "  make nc-restore BACKUP_DIR=/path [RUNTIME_DIR=...] - Restore latest backup"
+
+# Core lifecycle
+nc-up:          ; @$(MAKE) up          stack=nextcloud
+nc-down:        ; @$(MAKE) down        stack=nextcloud
+nc-ps:          ; @$(MAKE) ps          stack=nextcloud
+nc-logs:        ; @$(MAKE) logs        stack=nextcloud follow=$(follow)
+nc-install:     ; @$(MAKE) install     stack=nextcloud
+nc-post:        ; @$(MAKE) post        stack=nextcloud
+nc-status:      ; @$(MAKE) status      stack=nextcloud
+nc-reset-db:    ; @$(MAKE) reset-db    stack=nextcloud
+
+# With monitoring profile
+nc-up-mon:      ; @PROFILES=monitoring $(MAKE) up   stack=nextcloud
+nc-down-mon:    ; @PROFILES=monitoring $(MAKE) down stack=nextcloud
+nc-ps-mon:      ; @PROFILES=monitoring $(MAKE) ps   stack=nextcloud
+
+# Backups (grouped under Nextcloud)
+nc-backup:
+	@$(MAKE) backup stack=nextcloud BACKUP_DIR="$(BACKUP_DIR)" BACKUP_ENV="$(BACKUP_ENV)"
+nc-backup-verify:
+	@$(MAKE) backup-verify stack=nextcloud BACKUP_DIR="$(BACKUP_DIR)"
+nc-restore:
+	@$(MAKE) restore stack=nextcloud BACKUP_DIR="$(BACKUP_DIR)" RUNTIME_DIR="$(RUNTIME_DIR)"
