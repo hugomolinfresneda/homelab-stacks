@@ -79,3 +79,11 @@ scrape_configs:
     scrape_interval: 30s
     static_configs:
       - targets: ['cadvisor:8080']
+
+  # Nextcloud - MySQL & redis
+  - job_name: 'nextcloud-exporters'
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - 'nc-mysqld-exporter:9104'
+          - 'nc-redis-exporter:9121'
