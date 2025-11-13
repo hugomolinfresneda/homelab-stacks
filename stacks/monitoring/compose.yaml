@@ -4,7 +4,7 @@
 # Grafana, Blackbox Exporter, Node Exporter, cAdvisor.
 # Portable: no host ports here — publish only Grafana via your
 # reverse proxy / tunnel. Images pinned by digest. External networks:
-# `monitoring` (internal) and `proxy` (reverse proxy).
+# `mon-net` (internal) and `proxy` (reverse proxy).
 # Runtime overrides live in homelab-runtime/stacks/monitoring/.
 # -------------------------------------------------------------------
 
@@ -21,6 +21,7 @@ services:
     volumes:
       - mon-prom-data:/prometheus
       - /opt/homelab-stacks/stacks/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/homelab-stacks/stacks/monitoring/prometheus/rules/:/etc/prometheus/rules/:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
       interval: 10s

@@ -79,7 +79,6 @@ scrape_configs:
     scrape_interval: 30s
     static_configs:
       - targets: ['cadvisor:8080']
-
   # Nextcloud - MySQL & redis
   - job_name: 'nextcloud-exporters'
     scrape_interval: 15s
@@ -87,3 +86,24 @@ scrape_configs:
       - targets:
           - 'nc-mysqld-exporter:9104'
           - 'nc-redis-exporter:9121'
+  # AdGuard exporter
+  - job_name: 'adguard-exporter'
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - 'adguard-exporter:9617'
+  # AdGuard resolve job
+  - job_name: 'blackbox-dns'
+    metrics_path: /probe
+    params:
+      module: [dns_udp]
+    static_configs:
+      - targets:
+          - 'adguard-home:53'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target   # target=DNS server
+      - source_labels: [__address__]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

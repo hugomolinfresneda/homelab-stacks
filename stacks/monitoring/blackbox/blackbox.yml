@@ -17,3 +17,13 @@ modules:
   icmp:
     prober: icmp
     timeout: 5s
+
+  dns_udp:
+    prober: dns
+    timeout: 5s
+    dns:
+      transport_protocol: "udp"
+      preferred_ip_protocol: "ip4"
+      query_name: "www.google.com"
+      query_type: "A"
+      valid_rcodes: ["NOERROR"]
