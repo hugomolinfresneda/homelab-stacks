@@ -1,0 +1,35 @@
+groups:
+  - name: adguard.home
+    rules:
+      - alert: AdGuardExporterDown
+        expr: up{job="adguard-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: adguard-home
+          stack: dns
+        annotations:
+          summary: "AdGuard metrics exporter is not reachable"
+          description: "Prometheus has not been able to scrape job=\"adguard-exporter\" for more than 5 minutes. Verify container status and Docker networking."
+
+      - alert: AdGuardProtectionDisabled
+        expr: protection_enabled{job="adguard-exporter"} == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: adguard-home
+          stack: dns
+        annotations:
+          summary: "AdGuard DNS protection is disabled"
+          description: "AdGuard DNS protection flag has been set to disabled for at least 10 minutes. Review configuration and re-enable filtering if intentional."
+
+      - alert: AdGuardHighLatency
+        expr: adguard_avg_processing_time{job="adguard-exporter"} > 0.15
+        for: 10m
+        labels:
+          severity: warning
+          service: adguard-home
+          stack: dns
+        annotations:
+          summary: "AdGuard DNS average processing time is high"
+          description: "Average AdGuard DNS processing time is above 150ms for 10 minutes. Investigate upstream DNS, network latency or AdGuard resource usage."

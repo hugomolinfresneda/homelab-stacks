@@ -9,7 +9,7 @@ This stack provides **metrics + logs + probes** with Docker, split between the *
 - **Grafana** — dashboards (pre-provisioned datasources; dashboards optional)
 - **Loki** — log store (boltdb-shipper + filesystem chunks)
 - **Promtail** — log shipper (Docker service discovery + stable labels)
-- **Blackbox Exporter** — HTTP(S)/ICMP probing
+- **Blackbox Exporter** — HTTP(S) / ICMP / DNS probing
 - **Node Exporter** — basic host metrics
 
 ---
@@ -475,4 +475,166 @@ make demo-reload-prom
 
 ---
 
-**Done.** Portable monitoring with sane defaults, reproducible images, a clean split between public and runtime — and a **zero‑secrets demo** you can spin up in seconds.
+## 17) AdGuard DNS monitoring (exporter + blackbox)
+
+The monitoring stack integrates **AdGuard Home** as a first-class DNS service, using both **direct metrics** and **end-to-end probes**.
+
+### 17.1 Prometheus scrape jobs
+
+Two jobs are responsible for AdGuard visibility:
+
+```yaml
+# AdGuard exporter (metrics via ebrianne/adguard-exporter)
+- job_name: 'adguard-exporter'
+  scrape_interval: 15s
+  static_configs:
+    - targets:
+        - 'adguard-exporter:9617'
+
+# AdGuard DNS resolution (blackbox → AdGuard)
+- job_name: 'blackbox-dns'
+  metrics_path: /probe
+  params:
+    module: [dns_udp]
+  static_configs:
+    - targets:
+        - 'adguard-home:53'
+  relabel_configs:
+    - source_labels: [__address__]
+      target_label: __param_target   # target = DNS server under test
+    - source_labels: [__address__]
+      target_label: instance
+    - target_label: __address__
+      replacement: blackbox:9115     # blackbox exporter endpoint
+````
+
+These jobs live in:
+
+* `stacks/monitoring/prometheus/prometheus.yml`
+
+and follow the same label conventions used elsewhere in the homelab:
+
+* `job="adguard-exporter"` and `job="blackbox-dns"`
+* `stack="dns"`, `service="adguard-home"`, `env="home"` (used consistently in alerting rules and dashboards)
+
+A reusable template for the exporter scrape job is also provided as:
+
+* `stacks/monitoring/prometheus/adguard-exporter.yml.example`
+
+This file mirrors the `adguard-exporter` job in `prometheus.yml` and can be used as a starting point for other environments or as a snippet in more complex setups.
+
+---
+
+### 17.2 Blackbox DNS module
+
+DNS probing uses the dedicated `dns_udp` module shipped with Blackbox:
+
+```yaml
+modules:
+  dns_udp:
+    prober: dns
+    timeout: 5s
+    dns:
+      transport_protocol: "udp"
+      preferred_ip_protocol: "ip4"
+      query_name: "www.google.com"
+      query_type: "A"
+      valid_rcodes: ["NOERROR"]
+```
+
+The AdGuard DNS job (`blackbox-dns`) configures:
+
+* `module=dns_udp`
+* `target=adguard-home:53`
+
+so that each probe resolves `www.google.com` **through AdGuard**, while Prometheus collects the result via Blackbox’s `/probe` endpoint.
+
+Key metrics:
+
+* `probe_success{job="blackbox-dns"}` — `1` when resolution succeeds, `0` on failure.
+* `probe_duration_seconds{job="blackbox-dns"}` — end-to-end probe duration.
+
+---
+
+### 17.3 Alerting rules for AdGuard
+
+Alert rules for AdGuard are stored under:
+
+* `stacks/monitoring/prometheus/rules/adguard.rules.yml`
+
+and are loaded by Prometheus via:
+
+```yaml
+rule_files:
+  - /etc/prometheus/rules/*.yml
+```
+
+Current rules:
+
+```yaml
+groups:
+  - name: adguard.home
+    rules:
+      - alert: AdGuardExporterDown
+        expr: up{job="adguard-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: adguard-home
+          stack: dns
+        annotations:
+          summary: "AdGuard metrics exporter is not reachable"
+          description: "Prometheus has not been able to scrape job=\"adguard-exporter\" for more than 5 minutes. Verify container status and Docker networking."
+
+      - alert: AdGuardProtectionDisabled
+        expr: protection_enabled{job="adguard-exporter"} == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: adguard-home
+          stack: dns
+        annotations:
+          summary: "AdGuard DNS protection is disabled"
+          description: "AdGuard DNS protection flag has been set to disabled for at least 10 minutes. Review configuration and re-enable filtering if intentional."
+
+      - alert: AdGuardHighLatency
+        expr: adguard_avg_processing_time{job="adguard-exporter"} > 0.15
+        for: 10m
+        labels:
+          severity: warning
+          service: adguard-home
+          stack: dns
+        annotations:
+          summary: "AdGuard DNS average processing time is high"
+          description: "Average AdGuard DNS processing time is above 150ms for 10 minutes. Investigate upstream DNS, network latency or AdGuard resource usage."
+```
+
+In practice:
+
+* `AdGuardExporterDown` ensures that the **metrics path itself** is reachable and scraped.
+* `AdGuardProtectionDisabled` tracks the AdGuard **protection flag** for sustained misconfiguration or manual disablement.
+* `AdGuardHighLatency` watches the average processing time exported by the AdGuard exporter and raises an alert above 150 ms.
+
+All three rules are labelled for consistent routing and dashboarding:
+
+* `severity="warning"`
+* `service="adguard-home"`
+* `stack="dns"`
+
+---
+
+### 17.4 Grafana & dashboards (overview)
+
+From the monitoring stack’s perspective, Grafana is expected to surface AdGuard metrics via:
+
+* `job="adguard-exporter"` — volumetry (queries, blocked ratio, processing time),
+* `job="blackbox-dns"` — probe status and latency (`probe_success`, `probe_duration_seconds`).
+
+Typical panels for a `DNS / AdGuard` dashboard:
+
+* **DNS QPS** and **blocked percentage** over time.
+* **Average processing time** (and/or P95 if derived via recording rules).
+* **Top clients / top blocked domains** (using exporter metrics).
+* **Probe status** from `blackbox-dns` (stat panel mapping `probe_success` 0/1 to FAIL/OK).
+
+The JSON definition of the dashboard is managed in the Grafana provisioning tree under `stacks/monitoring/grafana/…` (see section 8), keeping the public repo free of secrets and environment-specific details.

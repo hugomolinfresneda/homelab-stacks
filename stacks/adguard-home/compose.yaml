@@ -15,6 +15,7 @@ services:
       TZ: ${TZ:-Europe/Madrid}
     networks:
       - proxy
+      - mon-net
     restart: unless-stopped
     labels:
       com.repo: homelab-stacks
@@ -22,6 +23,31 @@ services:
       com.env: lab
       com.logging: "true"
 
+  adguard-exporter:
+    image: ebrianne/adguard-exporter@sha256:03b2fda733121eb7de3310362bc1b5bc0a7b2d93aca6946a6b5c31e97f4cd85b
+    container_name: adguard-exporter
+    environment:
+      adguard_protocol: ${ADGUARD_PROTOCOL}
+      adguard_hostname: ${ADGUARD_HOSTNAME:-adguard-home}
+      adguard_port: ${ADGUARD_PORT:-3000}
+      adguard_username: ${ADGUARD_USER}
+      adguard_password: ${ADGUARD_PASS}
+      server_port: ${ADGUARD_EXPORTER_PORT}
+      interval: ${ADGUARD_SCRAPE_INTERVAL}
+      log_limit: 10000
+    expose:
+      - "${ADGUARD_EXPORTER_PORT}"
+    networks:
+      - proxy
+      - mon-net
+    restart: unless-stopped
+    labels:
+      com.stack: adguard-home
+      com.component: exporter
+
+
 networks:
   proxy:
+    external: true
+  mon-net:
     external: true
