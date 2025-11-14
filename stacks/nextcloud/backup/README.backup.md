@@ -44,8 +44,7 @@ Copy the example to your home (or any location you prefer):
 
 ```bash
 mkdir -p ~/.config/nextcloud
-cp /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.env.example \
-   ~/.config/nextcloud/nc-backup.env
+cp /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.env.example    ~/.config/nextcloud/nc-backup.env
 $EDITOR ~/.config/nextcloud/nc-backup.env
 ```
 
@@ -70,9 +69,17 @@ NC_DB_PASS=CHANGE_ME
 # Where to store artifacts
 BACKUP_DIR=$HOME/Backups/nextcloud
 
+# Optional: push backup result to Uptime Kuma (Push monitor)
+# Create a "Push" monitor in Uptime Kuma and paste its URL here.
+# KUMA_PUSH_URL="https://uptime-kuma.example.com/api/push/<TOKEN>"
+
+# Optional: force the IP used when pushing to Uptime Kuma
+# (useful with hairpin NAT or split DNS)
+# KUMA_RESOLVE_IP=192.168.1.11
+
 # --- Notes --------------------------------------------------------------------
 # - Do not source your runtime .env here. Keep this file minimal and scoped to
-#   backup needs only (containers, volume name, DB credentials).
+#   backup needs only (containers, volume name, DB credentials, optional Kuma).
 # - Do not quote NC_VOL.
 ```
 
@@ -99,6 +106,7 @@ BACKUP_DIR=$HOME/Backups/nextcloud
    - Falls back to **stopping** `app/web/cron` while keeping DB up.
 
 3. Dumps MariaDB with:
+
    ```bash
    mariadb-dump --single-transaction --quick --routines --events
    ```
@@ -106,6 +114,7 @@ BACKUP_DIR=$HOME/Backups/nextcloud
 4. Archives the **named volume** with a minimal BusyBox container (read‑only mount).
 5. Writes a combined `.sha256` file with checksums for both artifacts.
 6. Uses a simple lock (`$BACKUP_DIR/.lock`) to prevent concurrent runs.
+7. Optionally pushes the result to **Uptime Kuma** if `KUMA_PUSH_URL` is configured (see §15).
 
 ### 3.2 `nc-restore.sh`
 
@@ -125,20 +134,16 @@ From `/opt/homelab-runtime`:
 
 ```bash
 # Backup (env in your home)
-make backup stack=nextcloud \
-  BACKUP_DIR=$HOME/Backups/nextcloud \
-  BACKUP_ENV=$HOME/.config/nextcloud/nc-backup.env
+make backup stack=nextcloud   BACKUP_DIR=$HOME/Backups/nextcloud   BACKUP_ENV=$HOME/.config/nextcloud/nc-backup.env
 
 # Verify last backup
-make backup-verify stack=nextcloud \
-  BACKUP_DIR=$HOME/Backups/nextcloud
+make backup-verify stack=nextcloud   BACKUP_DIR=$HOME/Backups/nextcloud
 
 # Restore (latest artifacts; confirm interactive prompt)
-make restore stack=nextcloud \
-  BACKUP_DIR=$HOME/Backups/nextcloud
+make restore stack=nextcloud   BACKUP_DIR=$HOME/Backups/nextcloud
 ```
 
-- The runtime Makefile special‑cases Nextcloud to avoid `--project-directory` path traps and uses your runtime `.env`/`compose.override.yml` automatically.
+The runtime Makefile special‑cases Nextcloud to avoid `--project-directory` path traps and uses your runtime `.env`/`compose.override.yml` automatically.
 
 ---
 
@@ -148,23 +153,16 @@ From `/opt/homelab-stacks`:
 
 ```bash
 # Backup with extra trace (optional)
-make backup stack=nextcloud \
-  BACKUP_DIR="$HOME/Backups/nextcloud" \
-  BACKUP_ENV="$HOME/.config/nextcloud/nc-backup.env" \
-  BACKUP_TRACE=1
+make backup stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"   BACKUP_ENV="$HOME/.config/nextcloud/nc-backup.env"   BACKUP_TRACE=1
 
 # Verify last backup
-make backup-verify stack=nextcloud \
-  BACKUP_DIR="$HOME/Backups/nextcloud"
+make backup-verify stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"
 
 # Restore (point to your runtime dir explicitly)
-make restore stack=nextcloud \
-  BACKUP_DIR="$HOME/Backups/nextcloud" \
-  RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud \
-  BACKUP_TRACE=1
+make restore stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"   RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud   BACKUP_TRACE=1
 ```
 
-> The `BACKUP_TRACE=1` prints which script/paths are being used for easier diagnosis.
+The `BACKUP_TRACE=1` flag prints which script/paths are being used for easier diagnosis.
 
 ---
 
@@ -174,15 +172,10 @@ If you prefer to call the scripts directly:
 
 ```bash
 # Backup
-ENV_FILE="$HOME/.config/nextcloud/nc-backup.env" \
-BACKUP_DIR="$HOME/Backups/nextcloud" \
-bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh
+ENV_FILE="$HOME/.config/nextcloud/nc-backup.env" BACKUP_DIR="$HOME/Backups/nextcloud" bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh
 
 # Restore (public compose base + runtime override)
-COMPOSE_FILE="/opt/homelab-stacks/stacks/nextcloud/compose.yaml" \
-RUNTIME_DIR="/opt/homelab-runtime/stacks/nextcloud" \
-BACKUP_DIR="$HOME/Backups/nextcloud" \
-bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-restore.sh
+COMPOSE_FILE="/opt/homelab-stacks/stacks/nextcloud/compose.yaml" RUNTIME_DIR="/opt/homelab-runtime/stacks/nextcloud" BACKUP_DIR="$HOME/Backups/nextcloud" bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-restore.sh
 ```
 
 ---
@@ -221,8 +214,7 @@ sudo crontab -e
 Add a nightly run at 02:15 (UTC) with 7‑day rotation as an example:
 
 ```cron
-15 2 * * * ENV_FILE=/home/hugo/.config/nextcloud/nc-backup.env BACKUP_DIR=/home/hugo/Backups/nextcloud \
-  bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
+15 2 * * * ENV_FILE=/home/hugo/.config/nextcloud/nc-backup.env BACKUP_DIR=/home/hugo/Backups/nextcloud   bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
 ```
 
 > Rotation and offsite sync are not handled by the script. Use your preferred tooling (e.g., `restic`, `rclone`, ZFS/Btrfs snapshots, object storage versions).
@@ -273,9 +265,11 @@ systemctl list-timers | grep nextcloud-backup
 2. **Stop writers** in prod (`app/web/cron` will be stopped by the restore script anyway).
 3. **Restore** in place (or to a staging host) using `make restore` or direct script.
 4. Ensure `nc-app` reaches **healthy**, browse UI, and check **OCC status**:
+
    ```bash
    /opt/homelab-stacks/stacks/nextcloud/tools/occ status
    ```
+
 5. Validate recent files exist and **login works**.
 
 ---
@@ -296,9 +290,11 @@ systemctl list-timers | grep nextcloud-backup
 
 - **Wrong volume name**
   Confirm with:
+
   ```bash
   docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Name}}{{end}}{{end}}' nc-app
   ```
+
   Then set `NC_VOL` accordingly in your `~/.config/nextcloud/nc-backup.env`.
 
 ---
@@ -330,7 +326,7 @@ make backup-verify  stack=nextcloud BACKUP_DIR=...
 make restore        stack=nextcloud BACKUP_DIR=...
 ```
 
-> Both paths are fully supported and were validated.
+Both paths are fully supported and validated.
 
 ---
 
@@ -350,6 +346,54 @@ make restore        stack=nextcloud BACKUP_DIR=...
 - They don’t handle **retention** or **offsite**.
 - They don’t snapshot the **DB volume** directly—DB contents are captured by a consistent **dump**.
 - They don’t bind‑mount `/var/www/html`; restores always target the **named volume**.
+
+---
+
+## 15) Optional: Uptime Kuma integration
+
+The backup script can report its status to **Uptime Kuma** using a **Push** monitor.
+This is symmetrical to the Restic backup integration and allows you to see both jobs in the same Grafana dashboard.
+
+### 15.1 How it works
+
+- On every successful run, the script calls:
+
+  ```bash
+  push_kuma up "OK"
+  ```
+
+- If any step fails (and is not explicitly masked with `|| true`), the global `ERR` trap fires and sends:
+
+  ```bash
+  push_kuma down "nc-backup-error"
+  ```
+
+- If `KUMA_RESOLVE_IP` is set, the script uses `curl --resolve` to talk to the Uptime Kuma host at a specific IP, which is useful when hairpin NAT or split-DNS would otherwise break the push.
+
+The result is:
+
+- A **`Backup Nextcloud`** monitor in Kuma that goes **UP** on successful runs.
+- A clear **DOWN** state whenever the backup script fails or does not complete.
+
+### 15.2 Configuration steps
+
+1. In Uptime Kuma, create a **Push** monitor (for example: `Backup Nextcloud`).
+2. Copy the generated URL.
+3. Set `KUMA_PUSH_URL` in your `nc-backup.env`:
+
+   ```dotenv
+   KUMA_PUSH_URL="https://uptime-kuma.example.com/api/push/<TOKEN>"
+   ```
+
+4. (Optional) If the URL does not resolve correctly from the backup host, set:
+
+   ```dotenv
+   KUMA_RESOLVE_IP=192.168.1.11
+   ```
+
+5. Verify that the monitor flips to **UP** after a successful backup run.
+
+Once configured, the Uptime-Kuma-based Grafana dashboard can surface this status next to the Restic backup monitor, giving you a consolidated view of backup health.
 
 ---
 
