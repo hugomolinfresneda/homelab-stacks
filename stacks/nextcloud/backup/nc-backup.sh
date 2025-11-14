@@ -34,6 +34,33 @@ load_env_file() {
 
 load_env_file "$ENV_FILE"
 
+# --- Uptime Kuma push integration (optional) ----------------------------------
+push_kuma() {
+  # Usage: push_kuma up|down "MSG"
+  local status="${1:-up}"; shift || true
+  local msg="${1:-OK}"
+  if [[ -n "${KUMA_PUSH_URL:-}" ]]; then
+    local sep='?'; [[ "$KUMA_PUSH_URL" == *\?* ]] && sep='&'
+    local url="$KUMA_PUSH_URL"
+    if [[ -n "${KUMA_RESOLVE_IP:-}" ]]; then
+      # Honour DNS override for Kuma push (hairpin NAT/DNS issues)
+      local scheme="${url%%://*}"
+      local rest="${url#*://}"
+      local hostport="${rest%%/*}"
+      local host="${hostport%%:*}"
+      local port="${hostport#*:}"; [[ "$port" == "$hostport" ]] && { [[ "$scheme" == "https" ]] && port=443 || port=80; }
+      curl --resolve "${host}:${port}:${KUMA_RESOLVE_IP}" -fsS -m 10 \
+        "${url}${sep}status=${status}&msg=${msg}&ping=" >/dev/null || true
+    else
+      curl -fsS -m 10 \
+        "${url}${sep}status=${status}&msg=${msg}&ping=" >/dev/null || true
+    fi
+  fi
+}
+
+# If anything fails (and is not masked with `|| true`), mark the backup as DOWN in Kuma
+trap 'push_kuma down "nc-backup-error"' ERR
+
 # --- Compatibility aliases (accept both NC_* and DB_* styles) -----------------
 : "${NC_DB_NAME:=${DB_NAME:-}}"
 : "${NC_DB_USER:=${DB_USER:-}}"
@@ -154,3 +181,6 @@ echo "Artifacts:"
 echo "  - ${prefix}-db.sql"
 echo "  - ${BACKUP_DIR}/nc-vol-${ts}.tar.gz"
 echo "  - ${prefix}.sha256"
+
+# Report success to Uptime Kuma (if configured)
+push_kuma up "OK"

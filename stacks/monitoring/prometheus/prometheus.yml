@@ -68,12 +68,18 @@ scrape_configs:
       - targets: ['promtail:9080']  # promtail /metrics
   # Uptime Kuma
   - job_name: 'uptime-kuma'
+    scrape_interval: 30s
     metrics_path: /metrics
     static_configs:
-      - targets: ['uptime-kuma:3001']
+      - targets:
+          - 'uptime-kuma:3001'
+        labels:
+          stack: monitoring
+          service: uptime-kuma
+          env: home
     basic_auth:
-      username: admin
-      password_file: /run/secrets/uptime-kuma
+      username: ""
+      password_file: /etc/prometheus/secrets/kuma_password
   # cAdvisor
   - job_name: 'cadvisor'
     scrape_interval: 30s
