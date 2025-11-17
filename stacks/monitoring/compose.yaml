@@ -114,6 +114,7 @@ services:
     volumes:
       - /opt/homelab-stacks/stacks/monitoring/promtail/config.yaml:/etc/promtail/config.yml:ro
       - mon-promtail-positions:/positions
+      - /run/user/1000/docker.sock:/var/run/docker.sock:ro
     networks:
       - mon-net
     restart: unless-stopped

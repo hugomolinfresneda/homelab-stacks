@@ -27,6 +27,7 @@ services:
       com.stack: dozzle
       com.env: lab
       com.logging: "true"
+      service: dozzle
 
 networks:
   proxy:
