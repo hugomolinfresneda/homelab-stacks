@@ -124,4 +124,3 @@ scrape_configs:
           stack: proxy
           service: cloudflared
           env: home
-
