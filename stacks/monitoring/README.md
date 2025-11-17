@@ -90,7 +90,8 @@ stacks/monitoring/
 │  ├─ prometheus.yml
 │  ├─ adguard-exporter.yml.example
 │  └─ rules/
-│     └─ adguard.rules.yml
+│     ├─ adguard.rules.yml
+│     └─ couchdb.rules.yml
 ├─ promtail/
 │  └─ config.yaml
 └─ tools/
@@ -683,6 +684,16 @@ groups:
           description: "Average AdGuard DNS processing time is above 150ms for 10 minutes. Investigate upstream DNS, network latency or AdGuard resource usage."
 ```
 
+Additional HTTP health rules are defined in:
+
+- `stacks/monitoring/prometheus/rules/couchdb.rules.yml`
+
+This file contains `CouchDBEndpointDown`, which fires when the Blackbox HTTP
+probe against `https://couchdb.atardecer-naranja.es/_up` has been failing
+for more than 5 minutes. The rule helps detect issues in CouchDB itself, the
+reverse proxy or the Cloudflare tunnel before they escalate into
+application-level errors in the Nextcloud stack.
+
 In practice:
 
 - `AdGuardExporterDown` ensures that the **metrics path itself** is reachable and scraped.
@@ -694,6 +705,8 @@ All three rules are labelled for consistent routing and dashboarding:
 - `severity="warning"`
 - `service="adguard-home"`
 - `stack="dns"`
+
+
 
 ---
 

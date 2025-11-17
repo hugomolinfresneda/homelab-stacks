@@ -28,7 +28,7 @@ scrape_configs:
     static_configs:
       - targets:
           - https://cloud.atardecer-naranja.es/status.php
-          - https://couchdb.atardecer-naranja.es/_utils
+          - https://couchdb.atardecer-naranja.es/_up
           - https://dozzle.atardecer-naranja.es/
           - https://uptime-kuma.atardecer-naranja.es/
     relabel_configs:

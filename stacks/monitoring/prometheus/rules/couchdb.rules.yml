@@ -1,0 +1,19 @@
+groups:
+  - name: couchdb.http
+    rules:
+      - alert: CouchDBEndpointDown
+        expr: probe_success{
+                job="blackbox-http",
+                instance="https://couchdb.atardecer-naranja.es/_up"
+              } == 0
+        for: 1m
+        labels:
+          severity: warning
+          stack: nextcloud
+          service: couchdb
+        annotations:
+          summary: "CouchDB HTTP endpoint is down"
+          description: >
+            Blackbox HTTP probe for CouchDB (_up endpoint) has been failing
+            for more than 5 minutes. Check CouchDB, the reverse proxy and
+            the Cloudflare tunnel before assuming the database is dead.
