@@ -161,3 +161,18 @@ docker compose pull && docker compose up -d
 ```
 
 Dozzle does not persist application data — backups are not required.
+
+---
+
+## Observability
+
+Dozzle is also monitored as part of the logging stack:
+
+- The container is labelled with `com.logging="true"` so that Promtail
+  picks up its logs and ships them to Loki.
+- The `service="dozzle"` label is used as the canonical selector in
+  Grafana (Loki datasource), for example:
+
+```logql
+{service="dozzle"}
+

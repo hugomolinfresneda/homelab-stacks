@@ -8,27 +8,36 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  # Discover Docker containers and attach useful labels
   - job_name: dockerlogs
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
 
     relabel_configs:
-      # Real path of the container log file
+      # Only keep containers explicitly marked for logging
+      - source_labels: ['__meta_docker_container_label_com_logging']
+        regex: "true"
+        action: keep
+
+      # Map container ID to the JSON log file on disk
       - source_labels: ['__meta_docker_container_id']
         target_label: __path__
         replacement: /var/lib/docker/containers/$1/$1-json.log
 
-      # Fixed job expected by dashboards
+      # Normalised job label for dashboards/queries
       - target_label: job
         replacement: dockerlogs
 
-      # Human-readable container name (strip leading '/')
+      # Human-readable container name (without leading slash)
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'
         target_label: container
 
-      # Compose and custom labels (repo/stack/env)
+      # Mirror container into container_name for convenience
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container_name
+
+      # Compose / repo / stack / env metadata
       - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
         target_label: compose_service
       - source_labels: ['__meta_docker_container_label_com_repo']
@@ -38,7 +47,11 @@ scrape_configs:
       - source_labels: ['__meta_docker_container_label_com_env']
         target_label: env
 
-      # Container hostname if provided
+      # Application-level service label (e.g. service="dozzle")
+      - source_labels: ['__meta_docker_container_label_service']
+        target_label: service
+
+      # Container hostname, if present
       - source_labels: ['__meta_docker_container_hostname']
         target_label: host
 
