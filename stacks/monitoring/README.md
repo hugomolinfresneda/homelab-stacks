@@ -752,3 +752,134 @@ Typical panels for a `DNS / AdGuard` dashboard:
 - **Probe status** from `blackbox-dns` (stat panel mapping `probe_success` 0/1 to FAIL/OK).
 
 The JSON definition of the dashboard lives under the Grafana dashboards tree (see above) and keeps the public repo free of secrets and environment-specific details.
+
+---
+
+## 18) Cloudflared tunnel monitoring (metrics + alerts + logs)
+
+The monitoring stack treats the Cloudflare Tunnel (`cloudflared`) as a
+first-class infrastructure component. Although the tunnel lives in its own
+stack (`stacks/cloudflared`), it is wired into the monitoring network and
+labelled consistently so that you can observe it like any other service.
+
+### 18.1 Prometheus scrape job
+
+`cloudflared` exposes Prometheus metrics on an **internal** HTTP endpoint
+(`--metrics 0.0.0.0:8081`). The monitoring stack scrapes these metrics via a
+dedicated job in `stacks/monitoring/prometheus/prometheus.yml`:
+
+```yaml
+- job_name: 'cloudflared'
+  scrape_interval: 30s
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+        - 'cloudflared:8081'
+      labels:
+        stack: proxy
+        service: cloudflared
+        env: home
+```
+
+Notes:
+
+- The target name `cloudflared:8081` resolves on the shared `mon-net` Docker
+  network; the container joins `mon-net` in its own stack compose.
+- The label set follows the homelab conventions and is used by alerting and
+  dashboards:
+  - `stack="proxy"` — reverse-proxy / ingress layer.
+  - `service="cloudflared"` — canonical service name.
+  - `env="home"` — environment tag.
+
+Key metrics exported by the tunnel include, among others:
+
+- `cloudflared_tunnel_total_requests` — total number of requests proxied.
+- `cloudflared_tunnel_request_errors` — total number of failed proxied
+  requests.
+- `cloudflared_tunnel_ha_connections` — active HA connections to the edge.
+- `cloudflared_tunnel_quic_rtt_milliseconds` — measured RTT over QUIC.
+
+These are used directly or via PromQL (e.g. request rate, error rate,
+24-hour success percentage) in the Grafana dashboard.
+
+### 18.2 Alert rules
+
+Alert rules for the tunnel are defined in:
+
+- `stacks/monitoring/prometheus/rules/cloudflared.rules.yml`
+
+Current rules:
+
+```yaml
+groups:
+  - name: cloudflared.availability
+    rules:
+      - alert: CloudflaredDown
+        expr: up{job="cloudflared"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          stack: proxy
+          service: cloudflared
+          env: home
+
+      - alert: CloudflaredHighErrorRate
+        expr: 100 * sum(rate(cloudflared_tunnel_request_errors{job="cloudflared"}[5m])) /
+              sum(rate(cloudflared_tunnel_total_requests{job="cloudflared"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          stack: proxy
+          service: cloudflared
+          env: home
+```
+
+Semantics:
+
+- **CloudflaredDown** — fires when Prometheus cannot scrape the tunnel for
+  more than 2 minutes (container down, network issue, or credentials
+  problem).
+- **CloudflaredHighErrorRate** — fires when more than 5% of requests
+  proxied through the tunnel are failing for at least 10 minutes, indicating
+  a persistent problem with the tunnel or one of the upstream origins.
+
+Both rules use the standard label set so they can be routed and filtered in
+the same way as the rest of the stack.
+
+### 18.3 Grafana dashboard (Cloudflared – Tunnel Overview)
+
+A dedicated dashboard is expected under the exported dashboards tree, for
+example:
+
+```text
+stacks/monitoring/grafana/dashboards/exported/mon/20_apps/cloudflared-tunnel-overview.json
+```
+
+The **Cloudflared – Tunnel Overview** dashboard surfaces:
+
+- **Tunnel status** — stat based on `up{job="cloudflared"}`.
+- **Success rate (last 24h)** — SLO-style stat computed from the 24-hour
+  ratio of successful vs failed requests.
+- **HA connections (edge)** — number of active connections to Cloudflare's
+  edge.
+- **Edge RTT (QUIC)** — round-trip time to the edge, from the tunnel metrics.
+- **Requests per second** — rate of `cloudflared_tunnel_total_requests`.
+- **Error rate (requests & %)** — absolute error rate and percentage of
+  failed requests over time.
+- **Active TCP / UDP sessions** — session-level view from the tunnel
+  metrics.
+- **Cloudflared logs (errors only)** — Loki panel showing only error-level
+  lines from the `cloudflared` container.
+
+The log panel uses the same label model as the rest of the stack; Promtail
+ingests Docker logs for containers labelled with `com.logging="true"` and
+maps `service="cloudflared"`, so a typical LogQL filter is:
+
+```logql
+{service="cloudflared"} |= " ERR "
+```
+
+This completes the observability loop for the tunnel: you can see whether
+it is up, how well it has behaved in the last 24 hours, how much traffic
+it is carrying, when/where errors occur and what the underlying logs say
+for the same time window.

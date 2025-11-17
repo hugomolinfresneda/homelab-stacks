@@ -6,7 +6,7 @@ groups:
                 job="blackbox-http",
                 instance="https://couchdb.atardecer-naranja.es/_up"
               } == 0
-        for: 1m
+        for: 5m
         labels:
           severity: warning
           stack: nextcloud

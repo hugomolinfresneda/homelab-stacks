@@ -1,0 +1,30 @@
+groups:
+  - name: cloudflared.availability
+    rules:
+      - alert: CloudflaredDown
+        expr: up{job="cloudflared"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          stack: proxy
+          service: cloudflared
+          env: home
+        annotations:
+          summary: "Cloudflared tunnel is down"
+          description: >
+            Prometheus has not been able to scrape job="cloudflared"
+            for more than 2 minutes (instance {{ $labels.instance }}).
+            Check the Cloudflare tunnel container and credentials.
+      - alert: CloudflaredHighErrorRate
+        expr: 100 * sum(rate(cloudflared_tunnel_request_errors{job="cloudflared"}[5m])) / sum(rate(cloudflared_tunnel_total_requests{job="cloudflared"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          stack: proxy
+          service: cloudflared
+          env: home
+        annotations:
+          summary: "High error rate through Cloudflared"
+          description: >
+            Error percentage through the tunnel has been above 5% for 10 minutes.
+            Check origin services and Cloudflared logs in Loki (service="cloudflared").
