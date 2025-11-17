@@ -49,7 +49,7 @@ docker network: mon-net                         │                           �
                                    └───────────────┘
 
    ┌───────────┐
-   │ Promtail  │   (Docker SD; labels: job, container, compose_service, repo, stack, env)
+   │ Promtail  │   (Docker SD; labels: job, container, container_name, compose_service, repo, stack, env, service)
    │  (:9080)  │ ───────────────────────────────────────────────────────────────▶ Loki
    └───────────┘
 ```
@@ -331,14 +331,41 @@ Find a marker inside promtail logs:
 
 ## 11) Notes on Promtail config
 
-The shipped config (`promtail/config.yaml`) uses **Docker service discovery** and applies a minimal label set that matches the dashboards:
+The shipped config (`promtail/config.yaml`) uses **Docker service discovery** and ingests
+Docker container logs into Loki with a small, explicit label set that matches the dashboards.
 
-- `job="dockerlogs"` (constant)
-- `container`, `compose_service`, `repo`, `stack`, `env`, `host`
-- `__path__` derived from container ID → `/var/lib/docker/containers/<id>/<id>-json.log`
+**Discovery**
 
-It also uses `pipeline_stages: docker: {}` to parse Docker JSON log lines.
-We intentionally **avoid** aggressive `labelmap` rules to keep streams small and prevent Loki from rejecting queries due to excessive label cardinality.
+- Uses `docker_sd` against `unix:///var/run/docker.sock`. The Docker socket is mounted
+  into the `mon-promtail` container by the monitoring stack, so Promtail can discover
+  running containers even in a rootless Docker setup.
+
+**Selection**
+
+- Only containers explicitly labelled with `com.logging="true"` are kept. This makes
+  log ingestion an **opt-in** decision and avoids pulling noise from auxiliary or
+  transient containers by default.
+
+**Labelling model**
+
+Promtail normalises a small number of labels that are used consistently across queries
+and dashboards:
+
+- `job="dockerlogs"` — constant for all Docker-based streams.
+- `container` and `container_name` — derived from the Docker container name (without
+  the leading slash).
+- `repo`, `stack`, `env`, `compose_service` — derived from existing container labels
+  (`com.repo`, `com.stack`, `com.env`, `com.docker_compose_service`).
+- `service` — derived from the container label `service` (for example `service="dozzle"`);
+  this is the canonical join key between logs and metrics in Grafana.
+- `host` — populated from the container hostname where available.
+- `__path__` — derived from the container ID and pointing at the underlying Docker log file:
+  `/var/lib/docker/containers/<id>/<id>-json.log`.
+
+Promtail also uses the `docker` pipeline stage (`pipeline_stages: docker: {}`) to parse
+Docker JSON log lines into structured fields. Combined with the explicit label mapping,
+this keeps streams small, queries predictable and avoids excessive label cardinality
+in Loki.
 
 ---
 
