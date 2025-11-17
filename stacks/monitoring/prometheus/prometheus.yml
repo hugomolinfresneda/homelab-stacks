@@ -113,3 +113,14 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: blackbox:9115
+  # Cloudflared
+  - job_name: 'cloudflared'
+    scrape_interval: 30s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - 'cloudflared:8081'
+        labels:
+          stack: proxy
+          service: cloudflared
+          env: home
