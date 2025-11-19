@@ -436,3 +436,43 @@ Add to your monitoring stack:
       - 'nc-mysqld-exporter:9104'
       - 'nc-redis-exporter:9121'
 ```
+
+### 6) How this integrates with the monitoring stack
+
+If you also deploy the `monitoring` stack from this repository, these exporters are consumed automatically:
+
+- Prometheus loads `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`, which adds basic
+  alerts for the public `status.php` probe, the MariaDB exporter and the Redis exporter.
+- Grafana exposes the dashboard **20_Apps / Nextcloud – Service overview** from
+  `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/nextcloud-service-overview.json`.
+
+The only expectations are:
+
+- The Nextcloud stack is attached to the `mon-net` network (see this stack's `compose.yaml`).
+- The `nc-mysqld-exporter` and `nc-redis-exporter` containers are running.
+- The public Nextcloud URL you actually use is the one configured in the monitoring stack
+  for the Blackbox HTTP probe to `status.php`.
+
+With this in place you get:
+
+- SLO‑style HTTP availability metrics for `status.php`.
+- Basic health signals for MariaDB and Redis as used by this instance.
+- A log view in Grafana built on top of the `nc-app` container logs.
+
+### 7) Optional: make Nextcloud logs visible in Loki
+
+The dashboards assume that Nextcloud writes structured messages to the PHP error log.
+From the Docker host this can be enforced with the `occ` wrapper provided by the stack:
+
+```bash
+cd /opt/homelab-stacks
+
+./stacks/nextcloud/tools/occ config:system:set log_type --value=errorlog
+./stacks/nextcloud/tools/occ config:system:set loglevel --value=2
+./stacks/nextcloud/tools/occ config:system:set logdateformat --value=c
+```
+
+With the default promtail configuration in the monitoring stack, anything written by the
+`nc-app` container to `stderr` is picked up under `job="dockerlogs", stack="nextcloud"`
+and used by the *Nextcloud – Application errors (filtered)* and
+*Nextcloud – Known noisy diagnostics* panels.

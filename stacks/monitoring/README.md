@@ -883,3 +883,73 @@ This completes the observability loop for the tunnel: you can see whether
 it is up, how well it has behaved in the last 24 hours, how much traffic
 it is carrying, when/where errors occur and what the underlying logs say
 for the same time window.
+
+## 19) Nextcloud monitoring (service, DB/Redis and logs)
+
+This stack also exposes a small observability bundle for the Nextcloud stack defined in this repository:
+
+- One Prometheus rule file:
+
+  - `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`
+
+- One Grafana dashboard:
+
+  - `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/nextcloud-service-overview.json`
+    (appears in Grafana under **20_Apps / Nextcloud – Service overview**).
+
+The only assumption is that the Nextcloud stack is running on the same Docker host and that:
+
+- The `nextcloud` stack is attached to the `mon-net` network.
+- The exporters `nc-mysqld-exporter` and `nc-redis-exporter` are running (see the Nextcloud README).
+- The public HTTPS endpoint you actually use in production is the one configured in the
+  Blackbox HTTP probe to `status.php` in the monitoring stack.
+
+### 1) Prometheus rules
+
+The `nextcloud.rules.yml` file adds basic "is it alive?" alerts for Nextcloud:
+
+- Blackbox probe to `status.php` failing for several minutes.
+- `mysql_up` for the Nextcloud mysqld_exporter staying at `0` (exporter cannot reach MariaDB).
+- `redis_up` for the Nextcloud redis_exporter staying at `0` (exporter cannot reach Redis).
+
+All rules follow the same pattern: if the condition stays bad for 5 minutes the alert fires
+at *warning* level. This gives you early signal that the service or one of its dependencies
+is down, or that the monitoring side is misconfigured (wrong network, credentials, etc.).
+
+Exact rule names and labels are not important for day‑to‑day usage; they only drive
+Alertmanager.
+
+### 2) Grafana – Nextcloud – Service overview
+
+The dashboard is meant to answer three questions in one screen:
+
+1. Is the public Nextcloud endpoint up and within its SLO?
+2. Are MariaDB and Redis behaving normally for this instance?
+3. Are there unexpected application errors in the logs?
+
+Layout summary (the dashboard lives in **20_Apps / Nextcloud – Service overview**):
+
+**Top row – availability & SLO**
+
+- Status of the public `status.php` probe (panel override: *Last 5 minutes*).
+- 24‑hour HTTP probe success rate for `status.php`.
+- Availability of the mysqld_exporter and redis_exporter (panels overridden to *Last 5 minutes*).
+
+**Second row – behaviour under normal load**
+
+- HTTP latency to `status.php` from the Blackbox exporter.
+- MariaDB queries per second and active connections.
+- Redis commands per second and connected clients.
+
+**Third row – application logs**
+
+- *Nextcloud – Application errors (filtered)* – Loki query that shows application‑level errors
+  from the `nc-app` container, excluding known noisy diagnostics.
+- *Nextcloud – Known noisy diagnostics* – Loki query that keeps recurring diagnostic
+  messages (for example *dirty table reads* or *The loading of lazy AppConfig values have been requested*)
+  in a dedicated panel so that they do not pollute the main error stream.
+
+No additional promtail configuration is required: logs are collected via the generic
+`dockerlogs` pipeline; the only expectation is that Nextcloud is configured to log to
+PHP's `error_log`. The Nextcloud README shows the `occ config:system:set` commands used
+to enforce this inside the container.
