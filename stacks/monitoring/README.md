@@ -884,7 +884,77 @@ it is up, how well it has behaved in the last 24 hours, how much traffic
 it is carrying, when/where errors occur and what the underlying logs say
 for the same time window.
 
-## 19) Nextcloud monitoring (service, DB/Redis and logs)
+---
+
+## 19) Host monitoring (system overview)
+
+The monitoring stack also exposes a base Grafana dashboard for the Docker host itself.
+This is intended to be the **landing page** for infrastructure health: CPU, memory,
+filesystem and basic network saturation at node level.
+
+- One Grafana dashboard:
+
+  - `stacks/monitoring/grafana/dashboards/exported/mon/10_infra/host-system-overview.json`
+    (appears in Grafana under **10_Infra / Host – System overview**).
+
+The only assumptions are:
+
+- The monitoring stack (Prometheus, Loki, etc.) runs on the same Docker host.
+- `mon-node-exporter` is attached to the `mon-net` network and scrapes the host via the
+  `/host` bind-mount (see the monitoring compose).
+- Prometheus scrapes node-exporter as `job="node"` and uses the `instance` label to
+  distinguish targets.
+
+### 1) Grafana – Host – System overview
+
+The **Host – System overview** dashboard is meant to answer, on a single screen:
+
+1. Is the node-exporter scrape healthy?
+2. How busy is the host in terms of CPU and load averages?
+3. Is memory (and swap) usage within reasonable limits?
+4. Are the main filesystems close to full?
+5. Is the host network behaving normally?
+
+Layout summary (the dashboard lives in **10_Infra / Host – System overview**):
+
+**Top row – health & saturation**
+
+- **Node-exporter status** — stat panel based on `up{job="node"}`, with a time range
+  override to *Last 5 minutes*. If this is down, host-level metrics are stale or missing.
+- **CPU usage (last 5 minutes)** — percentage of host CPU used, computed from
+  `node_cpu_seconds_total` (all cores) and normalised to 0–100%.
+- **Load average (1 / 5 / 15 min)** — time series for `node_load1`, `node_load5` and
+  `node_load15`, with thresholds relative to the host core count. This gives an early
+  signal of sustained overload or CPU contention.
+- **Filesystem usage (%)** — stat panel showing the percentage of space used on the root
+  filesystem (`/`). The panel is wired to the `node_filesystem_` metrics and filters out
+  pseudo-mounts and bind-mount noise.
+
+**Second row – memory & swap**
+
+- **Memory usage** — percentage of RAM used, computed from
+  `node_memory_MemTotal_bytes` and `node_memory_MemAvailable_bytes`. This is more
+  meaningful than “used vs free” in modern kernels with cache and buffers.
+- **Swap usage** — percentage of swap used. In a healthy homelab node this is expected
+  to stay close to `0%`; any sustained swap usage usually points to memory pressure or
+  mis-sized containers/VMs.
+
+**Third row – host network**
+
+- **Network throughput (Rx / Tx)** — time series based on
+  `node_network_receive_bytes_total` and `node_network_transmit_bytes_total`, filtered to
+  the primary network interface. This gives a quick sense of whether the host is idle,
+  under normal load or saturated from a bandwidth perspective.
+
+Usage notes:
+
+- Host-level alerting rules (high load, filesystem almost full, etc.) are intentionally
+  **out of scope for this change**. They will be added later in a dedicated
+  `infra.rules.yml` bundle together with the containers overview dashboard.
+
+---
+
+## 20) Nextcloud monitoring (service, DB/Redis and logs)
 
 This stack also exposes a small observability bundle for the Nextcloud stack defined in this repository:
 
