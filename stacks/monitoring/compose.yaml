@@ -114,7 +114,8 @@ services:
     volumes:
       - /opt/homelab-stacks/stacks/monitoring/promtail/config.yaml:/etc/promtail/config.yml:ro
       - mon-promtail-positions:/positions
-      - /run/user/1000/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - mon-net
     restart: unless-stopped
@@ -127,7 +128,10 @@ services:
   node-exporter:
     image: prom/node-exporter@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
     container_name: mon-node-exporter
-    command: ["--path.rootfs=/host"]
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
     expose:
       - "9100"
     networks:
@@ -146,23 +150,21 @@ services:
       com.logging: "true"
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor@sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388
+    image: gcr.io/cadvisor/cadvisor@sha256:505e2c61e74e5d5eae522d01e2e971e91b793bc405270315a64da806ba033640
     container_name: mon-cadvisor
+    expose:
+      - "8080"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
     command:
       - --docker_only
       - --housekeeping_interval=30s
       # Optional noise reduction:
       - --disable_metrics=hugetlb,referenced_memory,resctrl,sched,tcp,udp,advtcp
-    expose:
-      - "8080"
-    # NOTE: host mounts for /proc, /sys and Docker roots are intentionally
-    # omitted here to keep the base compose portable. Bind them in your
-    # runtime override (rootless example):
-    #   - ${XDG_RUNTIME_DIR}/docker.sock:/var/run/docker.sock:ro
-    #   - ${HOME}/.local/share/docker:/var/lib/docker:ro
-    #   - /proc:/host/proc:ro
-    #   - /sys:/host/sys:ro
-    #   - /:/rootfs:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
       interval: 30s
