@@ -109,7 +109,47 @@ stacks/monitoring/
 
 ---
 
-## 3) Prerequisites
+
+## 3) Runtime assumptions: Docker & host
+
+This stack is designed to run on a Linux host with a **rootful Docker daemon**.
+The public `compose.yaml` assumes a conventional layout:
+
+- The Docker API is exposed via the Unix socket at `/var/run/docker.sock`.
+- Docker data lives under `/var/lib/docker`.
+- The host root filesystem `/` can be mounted read‑only inside some monitoring containers.
+
+In particular:
+
+- **cAdvisor**
+  - Runs with `privileged: true` and mounts:
+    - `/` → `/rootfs:ro`
+    - `/var/run` → `/var/run:ro`
+    - `/var/lib/docker` → `/var/lib/docker:ro`
+    - `/sys` → `/sys:ro`
+  - This is required for cgroups and per‑container metrics (CPU, memory, network)
+    with Docker / Compose labels. Without these mounts, cAdvisor only sees a
+    single aggregate cgroup and the containers overview dashboard becomes useless.
+
+- **node-exporter**
+  - Uses `--path.rootfs=/host` and expects the host root filesystem to be
+    bound as `/host:ro`. This makes filesystem and memory metrics reflect the
+    real host instead of the container.
+
+- **Promtail**
+  - Connects to the Docker API at `/var/run/docker.sock`.
+  - Reads Docker JSON log files from `/var/lib/docker/containers`.
+  - Only containers explicitly labelled with `com.logging="true"` are scraped.
+
+If you run Docker in **rootless mode** or with a non‑standard directory layout, you
+should adapt these mounts in your private runtime overrides (for example in a
+separate `homelab-runtime` repository) or by using the demo stack and its
+`.env.demo` file as a template. The public `compose.yaml` remains opinionated
+towards the rootful Docker defaults so that dashboards and alert rules work
+out of the box on a typical single‑node homelab host.
+
+
+## 4) Prerequisites
 
 - Docker Engine + **Docker Compose v2**
 - External docker networks created: `mon-net`, `proxy`
@@ -120,7 +160,7 @@ stacks/monitoring/
 
 ---
 
-## 4) Compose files
+## 5) Compose files
 
 - **Base (public):** `/opt/homelab-stacks/stacks/monitoring/compose.yaml`
   Pinned digests, healthchecks, no host ports, networks `mon-net` (+ `proxy` for Grafana).
@@ -158,7 +198,7 @@ stacks/monitoring/
 
 ---
 
-## 5) Uptime Kuma metrics (runtime password file)
+## 6) Uptime Kuma metrics (runtime password file)
 
 Prometheus scrapes Uptime Kuma’s `/metrics` endpoint using HTTP basic auth.
 The username is deliberately left empty; authentication is performed via the password file only.
@@ -198,7 +238,7 @@ Key metrics:
 
 ---
 
-## 6) Operations
+## 7) Operations
 
 **Using the runtime Makefile (recommended)**
 
@@ -217,7 +257,7 @@ docker compose   -f /opt/homelab-stacks/stacks/monitoring/compose.yaml   -f /opt
 
 ---
 
-## 7) Reverse proxy / Tunnel (example: Cloudflare Tunnel)
+## 8) Reverse proxy / Tunnel (example: Cloudflare Tunnel)
 
 Example `cloudflared` config:
 
@@ -232,7 +272,7 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 ---
 
-## 8) Grafana provisioning & dashboards
+## 9) Grafana provisioning & dashboards
 
 - **Datasources** are pre-provisioned (`grafana/provisioning/datasources/datasources.yml`):
 
@@ -270,7 +310,7 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 ---
 
-## 9) Health & smoke tests
+## 10) Health & smoke tests
 
 **Loki**
 
@@ -295,7 +335,7 @@ docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://blackbox:91
 
 ---
 
-## 10) LogQL quick cheatsheet (Loki)
+## 11) LogQL quick cheatsheet (Loki)
 
 Raw logs:
 
@@ -329,7 +369,7 @@ Find a marker inside promtail logs:
 
 ---
 
-## 11) Notes on Promtail config
+## 12) Notes on Promtail config
 
 The shipped config (`promtail/config.yaml`) uses **Docker service discovery** and ingests
 Docker container logs into Loki with a small, explicit label set that matches the dashboards.
@@ -369,7 +409,7 @@ in Loki.
 
 ---
 
-## 12) Backups (what to keep)
+## 13) Backups (what to keep)
 
 - **Prometheus TSDB:** `mon-prom-data`
 - **Grafana:** `mon-grafana-data`
@@ -386,7 +426,7 @@ done
 
 ---
 
-## 13) Updates (safe flow)
+## 14) Updates (safe flow)
 
 1. Ensure a recent backup of the volumes above.
 2. When ready, bump image **digests** in `compose.yaml` (dedicated PR).
@@ -404,7 +444,7 @@ done
 
 ---
 
-## 14) Quick start (TL;DR)
+## 15) Quick start (TL;DR)
 
 ```bash
 # 0) Networks (once)
@@ -429,7 +469,7 @@ docker run --rm --network mon-net curlimages/curl:8.10.1 -G -sS   --data-urlenco
 
 ---
 
-## 15) Demo mode (isolated **demo-** stack)
+## 16) Demo mode (isolated **demo-** stack)
 
 Run a full, self-contained demo without touching your runtime secrets. The demo uses **container/volume/network prefixes `demo-*`** and stops the base stack first to avoid port conflicts.
 
@@ -497,7 +537,7 @@ make -f Makefile.demo rm-target-demo  JOB=blackbox-http TARGET=http://127.0.0.1:
 
 ---
 
-## 16) Blackbox targets manager (script + Makefile)
+## 17) Blackbox targets manager (script + Makefile)
 
 Manage the HTTP/ICMP probe target lists that Prometheus scrapes via **Blackbox Exporter**.
 
@@ -577,7 +617,7 @@ make demo-reload-prom
 
 ---
 
-## 17) AdGuard DNS monitoring (exporter + blackbox)
+## 18) AdGuard DNS monitoring (exporter + blackbox)
 
 The monitoring stack integrates **AdGuard Home** as a first-class DNS service, using both **direct metrics** and **end-to-end probes**.
 
@@ -755,7 +795,7 @@ The JSON definition of the dashboard lives under the Grafana dashboards tree (se
 
 ---
 
-## 18) Cloudflared tunnel monitoring (metrics + alerts + logs)
+## 19) Cloudflared tunnel monitoring (metrics + alerts + logs)
 
 The monitoring stack treats the Cloudflare Tunnel (`cloudflared`) as a
 first-class infrastructure component. Although the tunnel lives in its own
@@ -886,7 +926,7 @@ for the same time window.
 
 ---
 
-## 19) Host monitoring (system overview)
+## 20) Host monitoring (system overview)
 
 The monitoring stack also exposes a base Grafana dashboard for the Docker host itself.
 This is intended to be the **landing page** for infrastructure health: CPU, memory,
@@ -954,7 +994,7 @@ Usage notes:
 
 ---
 
-## 20) Nextcloud monitoring (service, DB/Redis and logs)
+## 21) Nextcloud monitoring (service, DB/Redis and logs)
 
 This stack also exposes a small observability bundle for the Nextcloud stack defined in this repository:
 
