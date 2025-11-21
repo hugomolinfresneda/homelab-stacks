@@ -926,24 +926,28 @@ for the same time window.
 
 ---
 
-## 20) Host monitoring (system overview)
+## 20) Host & containers monitoring (infra overview)
 
-The monitoring stack also exposes a base Grafana dashboard for the Docker host itself.
-This is intended to be the **landing page** for infrastructure health: CPU, memory,
-filesystem and basic network saturation at node level.
+The monitoring stack also exposes two base Grafana dashboards for the Docker host and the
+containers it runs. They are intended to be the **landing pages** for infrastructure health:
+CPU, memory, filesystems and basic network saturation at node level, plus a cAdvisor-based
+view of stacks and containers on the same node.
 
-- One Grafana dashboard:
-
-  - `stacks/monitoring/grafana/dashboards/exported/mon/10_infra/host-system-overview.json`
-    (appears in Grafana under **10_Infra / Host – System overview**).
+- `stacks/monitoring/grafana/dashboards/exported/mon/10_infra/host-system-overview.json`
+  (appears in Grafana under **10_Infra / Host – System overview**).
+- `stacks/monitoring/grafana/dashboards/exported/mon/10_infra/containers-docker-overview.json`
+  (appears in Grafana under **10_Infra / Containers – Docker overview**).
 
 The only assumptions are:
 
-- The monitoring stack (Prometheus, Loki, etc.) runs on the same Docker host.
+- The monitoring stack (Prometheus, Loki, etc.) runs on the same Docker host as the containers
+  you care about.
 - `mon-node-exporter` is attached to the `mon-net` network and scrapes the host via the
   `/host` bind-mount (see the monitoring compose).
-- Prometheus scrapes node-exporter as `job="node"` and uses the `instance` label to
-  distinguish targets.
+- `mon-cadvisor` is attached to `mon-net`, runs `privileged: true` with the host mounts
+  described above, and Docker containers are started via Compose so that standard
+  `com.docker.compose.*` labels are present (used to derive `stack`, `service` and
+  `container` in the dashboard).
 
 ### 1) Grafana – Host – System overview
 
@@ -986,11 +990,60 @@ Layout summary (the dashboard lives in **10_Infra / Host – System overview**):
   the primary network interface. This gives a quick sense of whether the host is idle,
   under normal load or saturated from a bandwidth perspective.
 
-Usage notes:
+### 2) Grafana – Containers – Docker overview
 
-- Host-level alerting rules (high load, filesystem almost full, etc.) are intentionally
-  **out of scope for this change**. They will be added later in a dedicated
-  `infra.rules.yml` bundle together with the containers overview dashboard.
+The **Containers – Docker overview** dashboard is the companion to the host view and
+answers the question “which stacks and containers are actually using the host?”.
+
+Layout summary (the dashboard lives in **10_Infra / Containers – Docker overview**):
+
+**Top row – health & footprint**
+
+- **cAdvisor exporter status** — stat panel based on `up{job="cadvisor"}`, with a time
+  range override to *Last 5 minutes*. If this is down, container-level metrics are stale.
+- **Running containers** — approximate count of containers seen by cAdvisor in the last
+  5 minutes.
+- **Containers CPU vs host** — share of total host CPU currently consumed by all Docker
+  containers (5-minute average).
+- **Containers memory vs host** — share of host RAM used by all containers (working set).
+
+**Middle rows – per-stack view**
+
+- **CPU by stack** — per-stack CPU usage as a percentage of total host CPU, grouped by
+  Docker Compose project (`stack` label) and averaged over the last 5 minutes.
+- **Memory by stack** — aggregated working set memory per stack, in MiB/GiB.
+- **Disk I/O by stack** — combined read+write throughput per stack.
+- **Network by stack** — combined receive+transmit throughput per stack.
+
+Each of these panels is meant to answer “which stack is driving CPU / RAM / disk / network
+right now?” before you drill down.
+
+**Right column – top containers**
+
+Three tables show the top containers per resource in the last 5 minutes, grouped by
+`stack`, `service` and `container`:
+
+- **Top containers – CPU**
+- **Top containers – memory**
+- **Top containers – disk I/O**
+- **Top containers – network**
+
+They are the bridge between “stack X is noisy” and “this specific container inside that
+stack is the culprit”.
+
+**Bottom row – container detail**
+
+The last row exposes per-container detail controlled by three Grafana variables:
+`$stack`, `$service` and `$container`. For the selected container it shows:
+
+- CPU usage as a share of host CPU (5-minute average).
+- Working set memory in MiB/GiB.
+- Disk I/O throughput (read+write).
+- Network throughput (Rx+Tx).
+
+This makes it possible to go from “the host is slow” → “this stack is the heavy one”
+→ “this container is actually burning CPU / RAM / I/O” without leaving a single
+dashboard.
 
 ---
 
