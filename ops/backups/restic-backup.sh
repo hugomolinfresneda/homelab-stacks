@@ -8,6 +8,7 @@
 #
 # Safe to re-run. Idempotent. Produces concise logs.
 set -euo pipefail
+: "${ENV_FILE:=/opt/homelab-runtime/ops/backups/.env}"
 
 ts() { date +"[%Y-%m-%dT%H:%M:%S%z]"; }
 log() { echo "$(ts) $*"; }
