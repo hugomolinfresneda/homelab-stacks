@@ -28,11 +28,6 @@ compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
 STACK_HELPER := $(STACKS_REPO)/stacks/$(STACK)/tools/nc
 USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
 
-# -------- Restic (dual-repo) --------
-RESTIC_ENV_FILE ?= /opt/homelab-runtime/ops/backups/.env
-RESTIC_SCRIPT   := $(STACKS_REPO)/ops/backups/restic-backup.sh
-RUN_FORGET      ?= 1
-
 .PHONY: help lint validate up down ps pull logs install post status reset-db echo-vars \
         backup backup-verify restore \
         up-mon down-mon ps-mon \
@@ -78,7 +73,7 @@ help:
 	@echo "  make bb-rm-demo JOB=... TARGET=... - Remove target in demo"
 	@echo ""
 	@echo "Restic (infra dual-repo) helpers:"
-	@echo "  make restic                       - Run restic backup (ENV_FILE=$(RESTIC_ENV_FILE), RUN_FORGET=$(RUN_FORGET))"
+	@echo "  make restic                       - Run restic backup via systemd (ENV_FILE=$(RESTIC_ENV_FILE))"
 	@echo "  make restic-list                  - Show snapshots"
 	@echo "  make restic-check                 - Check repository integrity"
 	@echo "  make restic-stats                 - Show repository stats"
@@ -231,23 +226,33 @@ restore: require-stack
 # ------------------------------------------------------------
 # Restic helpers (dual-repo infra backups via ops/backups/restic-backup.sh)
 # ------------------------------------------------------------
+
+# restic — shared config for all restic targets
+RESTIC_ENV_FILE        ?= /opt/homelab-runtime/ops/backups/.env
+RESTIC_SCRIPT          ?= $(STACKS_REPO)/ops/backups/restic-backup.sh
+RESTIC_SYSTEMD_SERVICE ?= homelab-restic-backup.service
+
+# restic — Run full backup via systemd as root (oneshot service)
 restic:
-	@# Pre-checks
 	@test -f "$(RESTIC_ENV_FILE)" || { echo "error: missing RESTIC_ENV_FILE=$(RESTIC_ENV_FILE)"; exit 1; }
-	@test -x "$(RESTIC_SCRIPT)" || chmod +x "$(RESTIC_SCRIPT)" 2>/dev/null || true
-	@ENV_FILE="$(RESTIC_ENV_FILE)" RUN_FORGET="$(RUN_FORGET)" "$(RESTIC_SCRIPT)"
+	@echo "→ [restic] Launching backup via systemd as root: $(RESTIC_SYSTEMD_SERVICE)"
+	@sudo systemctl start "$(RESTIC_SYSTEMD_SERVICE)"
 
+# restic-list — List snapshots in the configured repository (root)
 restic-list:
-	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic snapshots'
+	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic snapshots'
 
+# restic-check — Verify repository integrity (root)
 restic-check:
-	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic check'
+	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic check'
 
+# restic-stats — Show repository statistics (root)
 restic-stats:
-	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic stats'
+	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic stats'
 
+# restic-forget — Apply retention policy (delete & prune) as defined in .env (root)
 restic-forget:
-	@bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	@sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  args=(--prune); \
 	  [[ -n "$${RESTIC_GROUP_BY:-}"    ]] && args+=(--group-by "$$RESTIC_GROUP_BY"); \
 	  [[ -n "$${RESTIC_KEEP_DAILY:-}"   ]] && args+=(--keep-daily   "$$RESTIC_KEEP_DAILY"); \
@@ -256,8 +261,9 @@ restic-forget:
 	  echo "→ restic forget: $${args[*]}"; \
 	  restic forget "$${args[@]}"'
 
+# restic-forget-dry — Simulate retention (no deletions), for safety review (root)
 restic-forget-dry:
-	@bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	@sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  args=(--prune --dry-run); \
 	  [[ -n "$${RESTIC_GROUP_BY:-}"    ]] && args+=(--group-by "$$RESTIC_GROUP_BY"); \
 	  [[ -n "$${RESTIC_KEEP_DAILY:-}"   ]] && args+=(--keep-daily   "$$RESTIC_KEEP_DAILY"); \
@@ -266,8 +272,9 @@ restic-forget-dry:
 	  echo "→ restic forget (dry-run): $${args[*]}"; \
 	  restic forget "$${args[@]}"'
 
+# restic-diff — Compare two snapshots (or last two if jq present) (root)
 restic-diff:
-	@A="$(A)" B="$(B)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	@A="$(A)" B="$(B)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  A_ID="$${A:-}"; B_ID="$${B:-}"; \
 	  if command -v jq >/dev/null 2>&1 && [ -z "$$A_ID" ] && [ -z "$$B_ID" ]; then \
 	    ids=$$(restic snapshots --json | jq -r "sort_by(.time) | map(.short_id) | .[-2:] | @tsv"); \
@@ -279,9 +286,10 @@ restic-diff:
 	  echo "→ restic diff $$A_ID $$B_ID"; \
 	  restic diff "$$A_ID" "$$B_ID"'
 
+# restic-restore — Selective restore from latest snapshot into target dir (root)
 # Usage: make restic-restore INCLUDE="/path1 /path2" [TARGET=/path/to/dir]
 restic-restore:
-	@INCLUDE="$(INCLUDE)" TARGET="$(TARGET)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	@INCLUDE="$(INCLUDE)" TARGET="$(TARGET)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  target="$${TARGET:-}"; includes="$${INCLUDE:-}"; \
 	  if [ -z "$$includes" ]; then echo "error: set INCLUDE=\"/path /path2 ...\""; exit 1; fi; \
 	  if [ -z "$$target" ]; then target=$$(mktemp -d -t restic-restore.XXXXXX); echo "→ TARGET not set; using $$target"; fi; \
@@ -291,19 +299,21 @@ restic-restore:
 	  restic restore latest --target "$$target" "$${args[@]}"; \
 	  echo "→ Done. Restored to: $$target"'
 
+# restic-mount — FUSE-mount repository for browsing (background) (root)
 # Usage: make restic-mount [MOUNTPOINT=~/mnt/restic]
 restic-mount:
-	@MOUNTPOINT="$(MOUNTPOINT)" bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	@MOUNTPOINT="$(MOUNTPOINT)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  mp="$${MOUNTPOINT:-$$HOME/mnt/restic}"; mkdir -p "$$mp"; \
 	  echo "→ Mounting repository on $$mp (background). Unmount with: fusermount -u $$mp"; \
 	  nohup bash -lc '"'"'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; exec restic mount "'"'"'"$$mp"'"'"'"'"'"' >/dev/null 2>&1 & \
 	  echo "PID=$$!"'
 
-# --- Restic: print effective env (repo + policy) ---
+# restic-env — Alias for restic-show-env (root)
 restic-env: restic-show-env
 
+# restic-show-env — Print effective repo, policy and Kuma URL (root)
 restic-show-env:
-	@bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; \
+	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; \
 	  printf "RESTIC_REPOSITORY=%s\n" "$$RESTIC_REPOSITORY"; \
 	  printf "RESTIC_GROUP_BY=%s\n" "$${RESTIC_GROUP_BY:-<unset>}"; \
@@ -311,9 +321,10 @@ restic-show-env:
 	  printf "KUMA_PUSH_URL=%s\n" "$${KUMA_PUSH_URL:-<unset>}"; \
 	  printf "EXCLUDE_FILE=%s\n" "$$ef"; '
 
-# --- Restic: show active exclude file ---
+# restic-exclude-show — Print active exclude file contents (root)
 restic-exclude-show:
-	@bash -lc 'ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; if [ -f "$$ef" ]; then echo "→ Exclude file: $$ef"; cat "$$ef"; else echo "No exclude file found at: $$ef"; fi'
+	@sudo bash -lc 'ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; \
+	  if [ -f "$$ef" ]; then echo "→ Exclude file: $$ef"; cat "$$ef"; else echo "No exclude file found at: $$ef"; fi'
 
 # ------------------------------------------------------------
 # Debug helpers
