@@ -5,7 +5,7 @@
 # - Enters maintenance mode (or stops app/web/cron if config is read-only)
 # - Produces db.sql, vol.tar.gz and a combined .sha256 file
 # - Idempotent, with a simple lock to avoid concurrent runs
-# - Patched to expand BACKUP_DIR (~, $HOME) and pass DB creds from host env
+# - Expands BACKUP_DIR (~, $HOME) and passes DB creds from host env
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -16,7 +16,10 @@ case "$ENV_FILE" in "~"/*) ENV_FILE="$HOME${ENV_FILE#~}";; esac
 
 load_env_file() {
   local f="$1" line key val
-  [[ -f "$f" ]] || return 0
+
+  # Only attempt to load if the file is readable by the current user
+  [[ -r "$f" ]] || return 0
+
   # Temporarily relax -u while parsing
   set +u
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -33,6 +36,19 @@ load_env_file() {
 }
 
 load_env_file "$ENV_FILE"
+
+# --- Prometheus backup metrics helper (textfile collector) --------------------
+BACKUP_METRICS_ENABLED=0
+BACKUP_TEXTFILE_DIR="${BACKUP_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
+METRIC_FILE="${BACKUP_TEXTFILE_DIR}/nextcloud_backup.prom"
+
+if [[ -r /opt/homelab-stacks/ops/backups/lib/backup-metrics.sh ]]; then
+  # shellcheck source=/dev/null
+  . /opt/homelab-stacks/ops/backups/lib/backup-metrics.sh
+  BACKUP_METRICS_ENABLED=1
+else
+  echo "[WARN] backup-metrics helper not found; Prometheus metrics disabled" >&2
+fi
 
 # --- Uptime Kuma push integration (optional) ----------------------------------
 push_kuma() {
@@ -58,8 +74,46 @@ push_kuma() {
   fi
 }
 
-# If anything fails (and is not masked with `|| true`), mark the backup as DOWN in Kuma
-trap 'push_kuma down "nc-backup-error"' ERR
+# If anything fails (and is not masked with `|| true`), emit metrics (if enabled)
+# and mark the backup as DOWN in Kuma.
+_nc_err_trap() {
+  local rc=$?
+  # Avoid ERR recursion inside the trap itself
+  set +e
+  trap - ERR
+
+  echo "[ERR] nc-backup failed with exit code ${rc}" >&2
+
+  if [[ "${BACKUP_METRICS_ENABLED:-0}" -eq 1 ]]; then
+    local end_ts duration size_bytes=0
+
+    end_ts="$(date +%s)"
+    if [[ -n "${BACKUP_START_TS:-}" ]]; then
+      duration="$(( end_ts - BACKUP_START_TS ))"
+    else
+      duration=0
+    fi
+
+    if [[ -n "${BACKUP_TAR_PATH:-}" && -f "${BACKUP_TAR_PATH}" ]]; then
+      size_bytes="$(stat -c%s "${BACKUP_TAR_PATH}" 2>/dev/null || echo 0)"
+    fi
+
+    backup_emit_metrics \
+      --metric-file "${METRIC_FILE:-}" \
+      --ts-metric "nextcloud_backup_last_success_timestamp" \
+      --duration-metric "nextcloud_backup_last_duration_seconds" \
+      --size-metric "nextcloud_backup_last_size_bytes" \
+      --status-metric "nextcloud_backup_last_status" \
+      --end-ts "$end_ts" \
+      --duration "$duration" \
+      --size-bytes "$size_bytes" \
+      --exit-code "$rc"
+  fi
+
+  push_kuma down "nc-backup-error"
+}
+
+trap _nc_err_trap ERR
 
 # --- Compatibility aliases (accept both NC_* and DB_* styles) -----------------
 : "${NC_DB_NAME:=${DB_NAME:-}}"
@@ -97,13 +151,15 @@ mkdir -p "$BACKUP_DIR"
 NC_VOL=${NC_VOL//\"/}
 NC_VOL=${NC_VOL//\'/}
 
+BACKUP_START_TS="$(date +%s)"
 ts="$(date -u +%F_%H%M%S)"
 prefix="$BACKUP_DIR/nc-${ts}"
 lock="$BACKUP_DIR/.lock"
+BACKUP_TAR_PATH="${BACKUP_DIR}/nc-vol-${ts}.tar.gz"
 
 # Prevent concurrent runs
 exec 9>"$lock"
-flock -n 9 || { echo "Another backup is running. Exiting."; exit 1; }
+flock -n 9 || { echo "[ERR] Another Nextcloud backup is already running (lock: ${lock}). Exiting." >&2; exit 1; }
 
 # --- Helpers ------------------------------------------------------------------
 wait_ready() {
@@ -116,7 +172,7 @@ wait_ready() {
     fi
     sleep 2
   done
-  echo "Timeout waiting for $c" >&2
+  echo "[WARN] Timeout waiting for container: ${c}" >&2
   return 1
 }
 
@@ -181,6 +237,28 @@ echo "Artifacts:"
 echo "  - ${prefix}-db.sql"
 echo "  - ${BACKUP_DIR}/nc-vol-${ts}.tar.gz"
 echo "  - ${prefix}.sha256"
+
+# Emit Prometheus backup metrics (success path)
+if [[ "${BACKUP_METRICS_ENABLED:-0}" -eq 1 ]]; then
+  end_ts="$(date +%s)"
+  duration="$(( end_ts - BACKUP_START_TS ))"
+  size_bytes=0
+
+  if [[ -n "${BACKUP_TAR_PATH:-}" && -f "${BACKUP_TAR_PATH}" ]]; then
+    size_bytes="$(stat -c%s "${BACKUP_TAR_PATH}" 2>/dev/null || echo 0)"
+  fi
+
+  backup_emit_metrics \
+    --metric-file "${METRIC_FILE:-}" \
+    --ts-metric "nextcloud_backup_last_success_timestamp" \
+    --duration-metric "nextcloud_backup_last_duration_seconds" \
+    --size-metric "nextcloud_backup_last_size_bytes" \
+    --status-metric "nextcloud_backup_last_status" \
+    --end-ts "$end_ts" \
+    --duration "$duration" \
+    --size-bytes "$size_bytes" \
+    --exit-code 0
+fi
 
 # Report success to Uptime Kuma (if configured)
 push_kuma up "OK"

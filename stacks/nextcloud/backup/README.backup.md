@@ -1,11 +1,11 @@
-# Nextcloud Backups — Enterprise‑Friendly Guide
+# Nextcloud Backups — Enterprise-Friendly Guide
 
-This document explains the **backup & restore** workflow for the Nextcloud stack, aligned with the repo split you’re using:
+This document explains the **backup & restore** workflow for the Nextcloud stack, aligned with the repo split you are using:
 
-- **Public stacks repo** (e.g., `/opt/homelab-stacks`)
-- **Private runtime repo** (e.g., `/opt/homelab-runtime`)
+- **Public stacks repo** (for example, `/opt/homelab-stacks`)
+- **Private runtime repo** (for example, `/opt/homelab-runtime`)
 
-It covers **how the scripts work**, **required environment**, **usage from both repos**, **verification**, **scheduling**, and **troubleshooting**—with a focus on **reproducibility**, **safety**, and **boring operations**.
+It covers **how the scripts work**, **required environment**, **usage from both repos**, **verification**, **scheduling**, **observability** and **troubleshooting**—with a focus on **reproducibility**, **safety**, and **boring operations**.
 
 ---
 
@@ -13,9 +13,9 @@ It covers **how the scripts work**, **required environment**, **usage from both 
 
 Artifacts are written to `BACKUP_DIR` as **three files per run**:
 
-- `nc-<UTC_TS>-db.sql` — MariaDB dump (transactionally consistent)
-- `nc-vol-<UTC_TS>.tar.gz` — Tarball of the **named** volume that stores Nextcloud code/config/data
-- `nc-<UTC_TS>.sha256` — Combined checksums for both artifacts above
+- `nc-<UTC_TS>-db.sql` — MariaDB dump (transactionally consistent).
+- `nc-vol-<UTC_TS>.tar.gz` — Tarball of the **named** volume that stores Nextcloud code/config/data.
+- `nc-<UTC_TS>.sha256` — Combined checksums for both artifacts above.
 
 > The **Nextcloud data/code/config** live in the **named volume** (default `nextcloud_nextcloud`). **Do not** bind-mount `/var/www/html` from the host; keep it as a named volume.
 
@@ -25,9 +25,9 @@ Artifacts are written to `BACKUP_DIR` as **three files per run**:
 
 Public repo:
 
-```
+```text
 /opt/homelab-stacks/stacks/nextcloud/backup/
-├─ nc-backup.sh          # DB dump + volume archive + .sha256
+├─ nc-backup.sh          # DB dump + volume archive + .sha256 + optional Kuma/Prometheus metrics
 ├─ nc-restore.sh         # Volume restore + DB import (with verification)
 └─ nc-backup.env.example # Example env for backups (copy to your home)
 ```
@@ -36,7 +36,7 @@ You can call these directly or through **Makefile** targets (see §4 and §5).
 
 ---
 
-## 2) One‑time setup
+## 2) One-time setup
 
 ### 2.1 Create your backup environment file
 
@@ -83,13 +83,16 @@ BACKUP_DIR=$HOME/Backups/nextcloud
 # - Do not quote NC_VOL.
 ```
 
-> **Do not** put secrets in git. This file stays in your **home**.
+> **Do not** put secrets in git. This file stays in your **home** (or in a private runtime path if you override `ENV_FILE`).
 
 ### 2.2 Requirements on the host
 
-- Docker Engine + Docker Compose v2
-- The Nextcloud stack is deployed per the main README (named volumes in use)
-- Sufficient disk space under `BACKUP_DIR` for tarballs + SQL dumps
+- Docker Engine + Docker Compose v2.
+- The Nextcloud stack is deployed per the main README (named volumes in use).
+- Sufficient disk space under `BACKUP_DIR` for tarballs and SQL dumps.
+- Optional observability:
+  - `node_exporter` with the textfile collector enabled if you want Prometheus metrics.
+  - Uptime Kuma if you want to track the job as a Push monitor.
 
 ---
 
@@ -97,24 +100,24 @@ BACKUP_DIR=$HOME/Backups/nextcloud
 
 ### 3.1 `nc-backup.sh`
 
-1. Loads a **minimal** env from `ENV_FILE` (defaults to `~/.config/nextcloud/nc-backup.env`), robust to:
-   - Spaces around `=`
-   - CRLF lines
-   - Unquoted values
-
+1. Loads a **minimal** environment from `ENV_FILE` (defaults to `~/.config/nextcloud/nc-backup.env`), robust to:
+   - Spaces around `=`.
+   - CRLF line endings.
+   - Unquoted values.
 2. Enters **maintenance mode** via `occ`. If `config_is_read_only` prevents that:
-   - Falls back to **stopping** `app/web/cron` while keeping DB up.
-
+   - Falls back to **stopping** `app/web/cron` while keeping the database up.
 3. Dumps MariaDB with:
 
    ```bash
    mariadb-dump --single-transaction --quick --routines --events
    ```
 
-4. Archives the **named volume** with a minimal BusyBox container (read‑only mount).
+4. Archives the **named volume** with a minimal BusyBox container (read-only mount).
 5. Writes a combined `.sha256` file with checksums for both artifacts.
 6. Uses a simple lock (`$BACKUP_DIR/.lock`) to prevent concurrent runs.
-7. Optionally pushes the result to **Uptime Kuma** if `KUMA_PUSH_URL` is configured (see §15).
+7. Optionally:
+   - pushes the result to **Uptime Kuma** if `KUMA_PUSH_URL` is configured (see §15),
+   - emits backup metrics for **Prometheus** if it can write to the node_exporter textfile collector directory (see §16).
 
 ### 3.2 `nc-restore.sh`
 
@@ -123,7 +126,7 @@ BACKUP_DIR=$HOME/Backups/nextcloud
 3. If a matching `.sha256` exists, it **verifies** checksums.
 4. Stops writers (`app/web/cron`) and **enables maintenance** (best effort).
 5. **Wipes** the target volume contents and extracts the tarball.
-6. Ensures `db` and `redis` are up; **imports** the DB.
+6. Ensures `db` and `redis` are up; **imports** the database.
 7. Brings back `app → web/cron`, runs `occ maintenance:repair`, and disables maintenance.
 
 ---
@@ -143,7 +146,7 @@ make backup-verify stack=nextcloud   BACKUP_DIR=$HOME/Backups/nextcloud
 make restore stack=nextcloud   BACKUP_DIR=$HOME/Backups/nextcloud
 ```
 
-The runtime Makefile special‑cases Nextcloud to avoid `--project-directory` path traps and uses your runtime `.env`/`compose.override.yml` automatically.
+The runtime Makefile special-cases Nextcloud to avoid `--project-directory` path traps and uses your runtime `.env` and `compose.override.yml` automatically.
 
 ---
 
@@ -162,7 +165,7 @@ make backup-verify stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"
 make restore stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"   RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud   BACKUP_TRACE=1
 ```
 
-The `BACKUP_TRACE=1` flag prints which script/paths are being used for easier diagnosis.
+The `BACKUP_TRACE=1` flag prints which script and paths are being used for easier diagnosis.
 
 ---
 
@@ -211,13 +214,13 @@ Edit root’s crontab:
 sudo crontab -e
 ```
 
-Add a nightly run at 02:15 (UTC) with 7‑day rotation as an example:
+Add a nightly run at 02:15 (UTC) with a seven-day retention as a simple example:
 
 ```cron
 15 2 * * * ENV_FILE=/home/hugo/.config/nextcloud/nc-backup.env BACKUP_DIR=/home/hugo/Backups/nextcloud   bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
 ```
 
-> Rotation and offsite sync are not handled by the script. Use your preferred tooling (e.g., `restic`, `rclone`, ZFS/Btrfs snapshots, object storage versions).
+> Rotation and offsite sync are not handled by the script. Use your preferred tooling (for example, `restic`, `rclone`, ZFS/Btrfs snapshots, object storage versions).
 
 ### Option B — systemd timer (more control)
 
@@ -259,27 +262,27 @@ systemctl list-timers | grep nextcloud-backup
 
 ---
 
-## 9) Disaster‑recovery drill (5‑minute sanity test)
+## 9) Disaster-recovery drill (5-minute sanity test)
 
-1. **Create** a fresh backup and verify checksums (see §4/§5/§7).
-2. **Stop writers** in prod (`app/web/cron` will be stopped by the restore script anyway).
-3. **Restore** in place (or to a staging host) using `make restore` or direct script.
-4. Ensure `nc-app` reaches **healthy**, browse UI, and check **OCC status**:
+1. Create a fresh backup and verify checksums (see §4, §5 and §7).
+2. Stop writers in production (`app/web/cron` will be stopped by the restore script anyway).
+3. Restore in place (or to a staging host) using `make restore` or the script directly.
+4. Ensure `nc-app` reaches **healthy**, browse the UI, and check **OCC status**:
 
    ```bash
    /opt/homelab-stacks/stacks/nextcloud/tools/occ status
    ```
 
-5. Validate recent files exist and **login works**.
+5. Validate that recent files exist and that login works.
 
 ---
 
 ## 10) Troubleshooting
 
 - **“Another backup is running. Exiting.”**
-  A lock file exists (`$BACKUP_DIR/.lock`). If you’re sure nothing is running, remove it.
+  A lock file exists (`$BACKUP_DIR/.lock`). If you are sure nothing is running, remove it.
 
-- **Maintenance mode toggle fails with “read‑only configuration”**
+- **Maintenance mode toggle fails with “read-only configuration”**
   The backup script will **stop** `app/web/cron` as a fallback and proceed safely.
 
 - **`nc-restore.sh` complains about missing artifacts**
@@ -295,15 +298,15 @@ systemctl list-timers | grep nextcloud-backup
   docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Name}}{{end}}{{end}}' nc-app
   ```
 
-  Then set `NC_VOL` accordingly in your `~/.config/nextcloud/nc-backup.env`.
+  Then set `NC_VOL` accordingly in your `nc-backup.env`.
 
 ---
 
-## 11) Security & hygiene
+## 11) Security and hygiene
 
-- Keep `~/.config/nextcloud/nc-backup.env` **out of git**.
+- Keep your `nc-backup.env` **out of git** (home directory or private runtime).
 - Ensure `BACKUP_DIR` is on **trustworthy storage** and protect filesystem permissions.
-- Consider **encryption** of offsite copies (restic/rclone).
+- Consider **encryption** of offsite copies (for example, restic or rclone).
 - Always **verify** backups and **test** restores before upgrades.
 
 ---
@@ -332,27 +335,27 @@ Both paths are fully supported and validated.
 
 ## 13) Change management tips
 
-- Run backup **immediately** before:
-  - Upgrading Nextcloud or pinned image digests
-  - Changing DB settings or PHP limits
-  - Modifying reverse proxy ingress
-- Keep one **golden restore** transcript (commands + timestamps) inside your team wiki.
-- Automate **retention** and **offsite** as separate concerns.
+- Run a backup **immediately** before:
+  - Upgrading Nextcloud or pinned image digests.
+  - Changing database settings or PHP limits.
+  - Modifying reverse proxy ingress.
+- Keep one **golden restore** transcript (commands and timestamps) in your team wiki.
+- Automate **retention** and **offsite** handling as separate concerns.
 
 ---
 
 ## 14) Appendix: What the scripts deliberately do **not** do
 
-- They don’t handle **retention** or **offsite**.
-- They don’t snapshot the **DB volume** directly—DB contents are captured by a consistent **dump**.
-- They don’t bind‑mount `/var/www/html`; restores always target the **named volume**.
+- They do not handle **retention** or **offsite** storage.
+- They do not snapshot the **database volume** directly—DB contents are captured by a consistent **dump**.
+- They do not bind-mount `/var/www/html`; restores always target the **named volume**.
 
 ---
 
 ## 15) Optional: Uptime Kuma integration
 
 The backup script can report its status to **Uptime Kuma** using a **Push** monitor.
-This is symmetrical to the Restic backup integration and allows you to see both jobs in the same Grafana dashboard.
+This mirrors the Restic backup integration and allows you to see both jobs in the same Grafana dashboard.
 
 ### 15.1 How it works
 
@@ -368,7 +371,7 @@ This is symmetrical to the Restic backup integration and allows you to see both 
   push_kuma down "nc-backup-error"
   ```
 
-- If `KUMA_RESOLVE_IP` is set, the script uses `curl --resolve` to talk to the Uptime Kuma host at a specific IP, which is useful when hairpin NAT or split-DNS would otherwise break the push.
+- If `KUMA_RESOLVE_IP` is set, the script uses `curl --resolve` to talk to the Uptime Kuma host at a specific IP, which is useful when hairpin NAT or split DNS would otherwise break the push.
 
 The result is:
 
@@ -397,6 +400,47 @@ Once configured, the Uptime-Kuma-based Grafana dashboard can surface this status
 
 ---
 
-## See also
+## 16) Optional: Prometheus metrics and Backups overview
 
-**DR Runbook:** [backup/README.dr.md](./README.dr.md)
+When `nc-backup.sh` is able to source the shared helper:
+
+```text
+/opt/homelab-stacks/ops/backups/lib/backup-metrics.sh
+```
+
+and has permission to write to the node_exporter textfile directory:
+
+```text
+/var/lib/node_exporter/textfile_collector
+```
+
+it emits a file:
+
+```text
+/var/lib/node_exporter/textfile_collector/nextcloud_backup.prom
+```
+
+with these gauges:
+
+- `nextcloud_backup_last_success_timestamp` — Unix timestamp of the last successful Nextcloud backup.
+- `nextcloud_backup_last_duration_seconds` — Duration in seconds of the last backup run.
+- `nextcloud_backup_last_size_bytes` — Size in bytes of the latest tarball (volume archive).
+- `nextcloud_backup_last_status` — Exit code of the last run (0=success, non-zero=failure).
+
+These metrics are combined with the Restic metrics in:
+
+- the `NextcloudBackup*` alert rules in `stacks/monitoring/prometheus/rules/backups.rules.yml`, and
+- the `Backups – Overview` dashboard (`40_Backups`) that shows age, duration and size for each job.
+
+If you run the backup as a **non-root** user and the script cannot write to the textfile collector directory, the helper remains **silent** (it does not break the backup). In that case you still have:
+
+- artifacts on disk (`db.sql`, tarball, `.sha256`), and
+- a monitor in Uptime Kuma,
+
+but you will not see Prometheus metrics for that job.
+
+---
+
+## 17) See also
+
+**DR Runbook:** [`backup/README.dr.md`](./README.dr.md)

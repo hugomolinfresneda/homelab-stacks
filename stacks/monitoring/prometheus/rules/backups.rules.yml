@@ -1,0 +1,143 @@
+groups:
+  - name: backups-alerts
+    rules:
+      # ------------------------------------------------------------
+      # Metrics missing / never succeeded
+      # ------------------------------------------------------------
+      - alert: ResticBackupNeverSucceeded
+        expr: absent(restic_last_success_timestamp)
+        for: 30m
+        labels:
+          severity: warning
+          stack: backups
+          service: restic
+        annotations:
+          summary: "Restic backup metrics are missing"
+          description: >
+            Prometheus cannot find the 'restic_last_success_timestamp' gauge
+            from the node_exporter textfile collector. Either the backup job
+            has never succeeded, or Prometheus is not scraping the exporter,
+            or the textfile metrics are not being written correctly.
+
+      - alert: NextcloudBackupNeverSucceeded
+        expr: absent(nextcloud_backup_last_success_timestamp)
+        for: 30m
+        labels:
+          severity: warning
+          stack: backups
+          service: nextcloud-backup
+        annotations:
+          summary: "Nextcloud backup metrics are missing"
+          description: >
+            Prometheus cannot find the 'nextcloud_backup_last_success_timestamp'
+            gauge from the node_exporter textfile collector. Either the backup
+            job has never succeeded, or Prometheus is not scraping the exporter,
+            or the textfile metrics are not being written correctly.
+
+      # ------------------------------------------------------------
+      # Backups stale (last success too old)
+      # ------------------------------------------------------------
+      - alert: ResticBackupStale
+        expr: (time() - restic_last_success_timestamp) > 36 * 60 * 60
+        labels:
+          severity: critical
+          stack: backups
+          service: restic
+        annotations:
+          summary: "Restic backup is stale"
+          description: >
+            The last successful Restic backup finished more than 36 hours ago
+            (current age: {{ humanizeDuration $value }}). Check the backup job
+            logs, the systemd timer for the Restic backup and the repository
+            health.
+
+      - alert: NextcloudBackupStale
+        expr: (time() - nextcloud_backup_last_success_timestamp) > 36 * 60 * 60
+        labels:
+          severity: critical
+          stack: backups
+          service: nextcloud-backup
+        annotations:
+          summary: "Nextcloud backup is stale"
+          description: >
+            The last successful Nextcloud backup finished more than 36 hours ago
+            (current age: {{ humanizeDuration $value }}). Check the Nextcloud
+            backup job, disk space on the backup target and Nextcloud
+            application status.
+
+      # ------------------------------------------------------------
+      # Last run failed (non-zero exit code)
+      # ------------------------------------------------------------
+      - alert: ResticBackupFailedRecently
+        expr: restic_last_status > 0
+        for: 15m
+        labels:
+          severity: warning
+          stack: backups
+          service: restic
+        annotations:
+          summary: "Restic backup is failing"
+          description: >
+            The last Restic backup finished with a non-zero exit code
+            ({{ $value }}). Check the backup logs, the systemd unit for the
+            Restic backup and the Restic repository health.
+
+      - alert: NextcloudBackupFailedRecently
+        expr: nextcloud_backup_last_status > 0
+        for: 15m
+        labels:
+          severity: warning
+          stack: backups
+          service: nextcloud-backup
+        annotations:
+          summary: "Nextcloud backup is failing"
+          description: >
+            The last Nextcloud backup finished with a non-zero exit code
+            ({{ $value }}). Check the Nextcloud backup script logs, disk space
+            on the backup target and the health of the Nextcloud containers.
+
+      # ------------------------------------------------------------
+      # Duration anomalies (backups taking too long)
+      # ------------------------------------------------------------
+      - alert: ResticBackupDurationHigh
+        expr: restic_last_duration_seconds > 60 * 60
+        labels:
+          severity: warning
+          stack: backups
+          service: restic
+        annotations:
+          summary: "Restic backup is taking unusually long"
+          description: >
+            The last Restic backup duration was {{ humanizeDuration $value }},
+            above the 1-hour budget. Check for I/O throttling, repository
+            compaction or network issues affecting the backup host.
+
+      - alert: NextcloudBackupDurationHigh
+        expr: nextcloud_backup_last_duration_seconds > 45 * 60
+        labels:
+          severity: warning
+          stack: backups
+          service: nextcloud-backup
+        annotations:
+          summary: "Nextcloud backup is taking unusually long"
+          description: >
+            The last Nextcloud backup duration was {{ humanizeDuration $value }}.
+            Verify that the Nextcloud containers are healthy and that the backup
+            target is not saturated or running out of space.
+
+      # ------------------------------------------------------------
+      # Growth spike (Restic added too much data)
+      # ------------------------------------------------------------
+      - alert: ResticBackupGrowthSpike
+        expr: restic_last_added_bytes > 50 * 1024 * 1024 * 1024
+        labels:
+          severity: warning
+          stack: backups
+          service: restic
+        annotations:
+          summary: "Restic backup size growth spike"
+          description: >
+            The last Restic backup added more than 50 GiB of data to the
+            repository (current added size: {{ humanize $value }}). Check for
+            unexpected paths in BACKUP_PATHS or unusually large data changes
+            that might quickly exhaust backup storage.

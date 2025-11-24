@@ -129,9 +129,12 @@ services:
     image: prom/node-exporter@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
     container_name: mon-node-exporter
     command:
-      - --path.rootfs=/host
+      - '--path.rootfs=/host'
+      - '--collector.textfile'
+      - '--collector.textfile.directory=/textfile-collector'
     volumes:
       - /:/host:ro,rslave
+      - /var/lib/node_exporter/textfile_collector:/textfile-collector:ro
     expose:
       - "9100"
     networks:
