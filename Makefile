@@ -96,7 +96,7 @@ lint:
 # ------------------------------------------------------------
 validate:
 	@echo "Validating compose files..."
-	@set -euo pipefail; \
+	@set -eu; \
 	for f in $$(find stacks -type f \( -name "compose.yml" -o -name "compose.yaml" \)); do \
 		echo " - $$f"; \
 		docker compose -f "$$f" config -q; \
