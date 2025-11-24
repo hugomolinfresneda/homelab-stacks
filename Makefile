@@ -1,11 +1,11 @@
-SHELL := /usr/bin/env bash
+çSHELL := /usr/bin/env bash
 # homelab-stacks/Makefile
 # -------------------------------------------------------------------
 # Root Makefile for homelab-stacks
 # - Validates compose files
 # - Starts/stops stacks (delegates to helper if present)
 # - Monitoring helpers (Prometheus/Grafana)
-# - Nextcloud backup helpers
+# - Backup helpers (Restic + Nextcloud)
 # -------------------------------------------------------------------
 
 # -------- Common vars --------
@@ -33,7 +33,7 @@ USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
         up-mon down-mon ps-mon \
         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show \
         check-prom check-prom-demo reload-prom demo-reload-prom bb-ls bb-ls-demo bb-add bb-add-demo bb-rm bb-rm-demo print-mon \
-        nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon nc-backup nc-backup-verify nc-restore
+        nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon
 
 # ------------------------------------------------------------
 # Human-friendly help
@@ -49,10 +49,10 @@ help:
 	@echo "  make pull stack=<name>            - Pull images for the stack"
 	@echo "  make logs stack=<name> [follow=true]- Show/follow logs (if helper present uses it)"
 	@echo "  make install|post|status|reset-db - Extra ops (only if the stack ships a helper)"
-	@echo "  make backup stack=nextcloud BACKUP_DIR=...</path> [BACKUP_ENV=~/.config/nextcloud/nc-backup.env]"
+	@echo "  make backup stack=restic          - Run Restic infra backup via systemd (root)"
+	@echo "  make backup stack=nextcloud BACKUP_DIR=...</path> [BACKUP_ENV=/opt/homelab-runtime/ops/backups/nc-backup.env]"
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=...</path>"
 	@echo "  make restore stack=nextcloud BACKUP_DIR=...</path> [RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud]"
-	@echo "  make echo-vars stack=<name>       - Print key variables (paths)"
 	@echo ""
 	@echo "Shortcuts with monitoring profile:"
 	@echo "  make up-mon|down-mon|ps-mon stack=<name>  - Same as up/down/ps with PROFILES=monitoring"
@@ -73,7 +73,7 @@ help:
 	@echo "  make bb-rm-demo JOB=... TARGET=... - Remove target in demo"
 	@echo ""
 	@echo "Restic (infra dual-repo) helpers:"
-	@echo "  make restic                       - Run restic backup via systemd (ENV_FILE=$(RESTIC_ENV_FILE))"
+	@echo "  make backup stack=restic          - Run Restic backup via systemd (uses $(RESTIC_ENV_FILE))"
 	@echo "  make restic-list                  - Show snapshots"
 	@echo "  make restic-check                 - Check repository integrity"
 	@echo "  make restic-stats                 - Show repository stats"
@@ -190,36 +190,76 @@ ps-mon: require-stack
 	@PROFILES="monitoring" $(MAKE) ps stack=$(STACK)
 
 # ------------------------------------------------------------
-# Backups for Nextcloud (explicit targets; do not depend on helper)
+# Backups
+# - Unified entrypoint for infra (Restic) + app (Nextcloud)
+# - Validation & restore helpers for Nextcloud backups
 # ------------------------------------------------------------
 backup: require-stack
-	@if [ "$(STACK)" != "nextcloud" ]; then echo "info: 'backup' is only supported for stack=nextcloud"; exit 0; fi; \
-	if [ -z "$(BACKUP_DIR)" ]; then echo "error: set BACKUP_DIR=/path/to/backups"; exit 1; fi; \
-	script="$(STACKS_REPO)/stacks/nextcloud/backup/nc-backup.sh"; \
-	[ -n "$(BACKUP_TRACE)" ] && { printf '→ Using script: %s\n' "$$script"; printf '→ Using BACKUP_DIR: %s\n' "$(BACKUP_DIR)"; [ -n "$(BACKUP_ENV)" ] && printf '→ Using BACKUP_ENV: %s\n' "$(BACKUP_ENV)"; }; \
-	chmod +x "$$script" 2>/dev/null || true; \
-	if [ -n "$(BACKUP_ENV)" ]; then \
-		ENV_FILE="$(BACKUP_ENV)" BACKUP_DIR="$(BACKUP_DIR)" bash "$$script"; \
+	@if [ -z "$(STACK)" ]; then \
+		echo "error: set stack=restic|nextcloud"; \
+		exit 1; \
+	fi; \
+	if [ "$(STACK)" = "restic" ]; then \
+		echo "→ [backup] Running Restic backup via systemd (stack=restic)"; \
+		$(MAKE) restic; \
+	elif [ "$(STACK)" = "nextcloud" ]; then \
+		if [ -z "$(BACKUP_DIR)" ]; then \
+			echo "error: set BACKUP_DIR=/path/to/backups (e.g. /mnt/backups/nextcloud)"; \
+			exit 1; \
+		fi; \
+		script="$(STACKS_REPO)/stacks/nextcloud/backup/nc-backup.sh"; \
+		[ -n "$(BACKUP_TRACE)" ] && { \
+		  printf '→ Using script: %s\n' "$$script"; \
+		  printf '→ Using BACKUP_DIR: %s\n' "$(BACKUP_DIR)"; \
+		  [ -n "$(BACKUP_ENV)" ] && printf '→ Using BACKUP_ENV: %s\n' "$(BACKUP_ENV)"; \
+		}; \
+		chmod +x "$$script" 2>/dev/null || true; \
+		if [ -n "$(BACKUP_ENV)" ]; then \
+		  BACKUP_DIR="$(BACKUP_DIR)" ENV_FILE="$(BACKUP_ENV)" bash "$$script"; \
+		else \
+		  BACKUP_DIR="$(BACKUP_DIR)" bash "$$script"; \
+		fi; \
 	else \
-		BACKUP_DIR="$(BACKUP_DIR)" bash "$$script"; \
+		echo "error: unsupported stack=$(STACK) (expected restic|nextcloud)"; \
+		exit 1; \
 	fi
 
 backup-verify: require-stack
-	@if [ "$(STACK)" != "nextcloud" ]; then echo "info: 'backup-verify' is only supported for stack=nextcloud"; exit 0; fi; \
-	if [ -z "$(BACKUP_DIR)" ]; then echo "error: set BACKUP_DIR=/path/to/backups"; exit 1; fi; \
+	@if [ "$(STACK)" != "nextcloud" ]; then \
+		echo "info: 'backup-verify' is only supported for stack=nextcloud"; \
+		exit 0; \
+	fi; \
+	if [ -z "$(BACKUP_DIR)" ]; then \
+		echo "error: set BACKUP_DIR=/path/to/backups"; \
+		exit 1; \
+	fi; \
 	latest=$$(find "$(BACKUP_DIR)" -maxdepth 1 -type f -name 'nc-*.sha256' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-); \
-	if [ -z "$$latest" ]; then echo "No *.sha256 found in $(BACKUP_DIR)"; exit 1; fi; \
+	if [ -z "$$latest" ]; then \
+		echo "No *.sha256 found in $(BACKUP_DIR)"; \
+		exit 1; \
+	fi; \
 	printf '→ Verifying %s\n' "$$latest"; \
-	( cd "$(BACKUP_DIR)" && sha256sum -c "$$(basename "$$latest")" )
+	( cd "$(BACKUP_DIR)" && sha256sum -c "$$([ -n "$$latest" ] && basename "$$latest")" )
 
 restore: require-stack
-	@if [ "$(STACK)" != "nextcloud" ]; then echo "info: 'restore' is only supported for stack=nextcloud"; exit 0; fi; \
-	if [ -z "$(BACKUP_DIR)" ]; then echo "error: set BACKUP_DIR=/path/to/backups"; exit 1; fi; \
+	@if [ "$(STACK)" != "nextcloud" ]; then \
+		echo "info: 'restore' is only supported for stack=nextcloud"; \
+		exit 0; \
+	fi; \
+	if [ -z "$(BACKUP_DIR)" ]; then \
+		echo "error: set BACKUP_DIR=/path/to/backups"; \
+		exit 1; \
+	fi; \
 	script="$(STACKS_REPO)/stacks/nextcloud/backup/nc-restore.sh"; \
 	compose="$(BASE_FILE)"; \
 	rt="$(RUNTIME_DIR)"; \
 	[ -z "$$rt" ] && rt="/opt/homelab-runtime/stacks/$(STACK)"; \
-	[ -n "$(BACKUP_TRACE)" ] && { printf '→ Using script: %s\n' "$$script"; printf '→ Using COMPOSE_FILE: %s\n' "$$compose"; printf '→ Using RUNTIME_DIR: %s\n' "$$rt"; printf '→ Using BACKUP_DIR: %s\n' "$(BACKUP_DIR)"; }; \
+	[ -n "$(BACKUP_TRACE)" ] && { \
+	  printf '→ Using script: %s\n' "$$script"; \
+	  printf '→ Using compose: %s\n' "$$compose"; \
+	  printf '→ Using RUNTIME_DIR: %s\n' "$$rt"; \
+	  printf '→ Using BACKUP_DIR: %s\n' "$(BACKUP_DIR)"; \
+	}; \
 	chmod +x "$$script" 2>/dev/null || true; \
 	COMPOSE_FILE="$$compose" RUNTIME_DIR="$$rt" BACKUP_DIR="$(BACKUP_DIR)" bash "$$script"
 
@@ -228,7 +268,7 @@ restore: require-stack
 # ------------------------------------------------------------
 
 # restic — shared config for all restic targets
-RESTIC_ENV_FILE        ?= /opt/homelab-runtime/ops/backups/.env
+RESTIC_ENV_FILE        ?= /opt/homelab-runtime/ops/backups/restic.env
 RESTIC_SCRIPT          ?= $(STACKS_REPO)/ops/backups/restic-backup.sh
 RESTIC_SYSTEMD_SERVICE ?= homelab-restic-backup.service
 
@@ -348,18 +388,18 @@ DEMO_PROM_CONTAINER:= demo-prometheus
 promtool = docker run --rm -v "$(MON_STACK_DIR)":/workdir -w /workdir --entrypoint /bin/promtool prom/prometheus:latest
 
 # ---- promtool checks (mon & demo) ----
+# ---- promtool checks (mon & demo) ----
 check-prom:
 	@cd "$(MON_STACK_DIR)" && \
-	f="prometheus/prometheus.yml"; [ -f "$$f" ] || f="prometheus/prometheus.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	$(promtool) check config "$$f"
+	  f="prometheus/prometheus.yml"; [ -f "$$f" ] || f="prometheus/prometheus.yaml"; \
+	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
+	  $(promtool) check config "$$f"
 
 check-prom-demo:
 	@cd "$(MON_STACK_DIR)" && \
-	f="prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="prometheus/prometheus.demo.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	$(promtool) check config "$$f"
-
+	  f="prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="prometheus/prometheus.demo.yaml"; \
+	  [ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
+	  $(promtool) check config "$$f"
 # ---- reload via HUP (mon & demo) ----
 reload-prom:
 	@docker kill -s HUP $(MON_PROM_CONTAINER) >/dev/null 2>&1 || \
@@ -374,13 +414,6 @@ demo-reload-prom:
 # ---- blackbox targets (wrappers over stacks/monitoring/scripts/blackbox-targets.sh) ----
 # Variables: JOB (defaults to blackbox-http), TARGET (required for add/rm)
 JOB ?= blackbox-http
-
-bb-ls:
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
-
-bb-ls-demo:
 	@f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yaml"; \
 	[ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
@@ -411,6 +444,18 @@ bb-rm-demo:
 
 print-mon:
 	@printf 'STACKS_REPO=%s\nMON_STACK_DIR=%s\n' '$(STACKS_REPO)' '$(MON_STACK_DIR)'
+# ---- blackbox targets (wrappers over stacks/monitoring/scripts/blackbox-targets.sh) ----
+# Variables: JOB (defaults to blackbox-http), TARGET (required for add/rm)
+JOB ?= blackbox-http
+bb-ls:
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
+	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
+
+bb-ls-demo:
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yaml"; \
+	  [ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
 
 # -------------------------------------------------------------------
 # Nextcloud namespaced aliases (discoverable & grouped)
@@ -428,9 +473,9 @@ nc-help:
 	@echo "  make nc-post            - Post configuration (cron, trusted_domains, etc.)"
 	@echo "  make nc-status          - Print Nextcloud status and HTTP checks"
 	@echo "  make nc-reset-db        - Drop DB volume only (app data remains)"
-	@echo "  make nc-backup BACKUP_DIR=/path   - Backup (db + data) with checksum"
-	@echo "  make nc-backup-verify BACKUP_DIR=/path - Verify last backup checksum"
-	@echo "  make nc-restore BACKUP_DIR=/path [RUNTIME_DIR=...] - Restore latest backup"
+	@echo "  make backup stack=nextcloud BACKUP_DIR=/path [BACKUP_ENV=/opt/homelab-runtime/ops/backups/nc-backup.env] - Backup (db + data) with checksum"
+	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=/path - Verify last backup checksum"
+	@echo "  make restore stack=nextcloud BACKUP_DIR=/path [RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud] - Restore latest backup"
 
 # Core lifecycle
 nc-up:          ; @$(MAKE) up          stack=nextcloud
@@ -446,11 +491,3 @@ nc-reset-db:    ; @$(MAKE) reset-db    stack=nextcloud
 nc-up-mon:      ; @PROFILES=monitoring $(MAKE) up   stack=nextcloud
 nc-down-mon:    ; @PROFILES=monitoring $(MAKE) down stack=nextcloud
 nc-ps-mon:      ; @PROFILES=monitoring $(MAKE) ps   stack=nextcloud
-
-# Backups (grouped under Nextcloud)
-nc-backup:
-	@$(MAKE) backup stack=nextcloud BACKUP_DIR="$(BACKUP_DIR)" BACKUP_ENV="$(BACKUP_ENV)"
-nc-backup-verify:
-	@$(MAKE) backup-verify stack=nextcloud BACKUP_DIR="$(BACKUP_DIR)"
-nc-restore:
-	@$(MAKE) restore stack=nextcloud BACKUP_DIR="$(BACKUP_DIR)" RUNTIME_DIR="$(RUNTIME_DIR)"
