@@ -51,33 +51,38 @@ It is intended to be published via **Cloudflare Tunnel** (no host ports exposed)
 ### `.env` (copied from `.env.example`)
 
 ```dotenv
+# Copy to homelab-runtime/stacks/couchdb/.env and CHANGE the password
 COUCHDB_USER=admin
 COUCHDB_PASSWORD=change-me
 
-# Optional local bind for testing only
+# Local bind for testing and troubleshooting
 # BIND_LOCALHOST=127.0.0.1
 # HTTP_PORT=5984
 ```
 
-### `local.d/` (real config mounted into the container)
+### `local.d/` (runtime config)
 
-* **Required:** `30-auth.ini` with a unique secret
+* **Required:** `00-local.ini` (single-node + bind)
+
+  ```ini
+  [couchdb]
+  single_node = true
+
+  [chttpd]
+  bind_address = 0.0.0.0
+````
+
+* **Required:** `30-auth.ini` (auth cookie secret)
 
   ```ini
   [chttpd_auth]
-  secret = <HEX_64>  ; generate with: openssl rand -hex 32
+  secret = <HEX_64>  ; openssl rand -hex 32
   ```
 
-  Create it once:
+  Template: `local.d/30-auth.ini.example` in `homelab-stacks`.
+  Real file: `/opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini` (mode `600`, not versioned).
 
-  ```bash
-  mkdir -p /opt/homelab-runtime/stacks/couchdb/local.d
-  printf "[chttpd_auth]\nsecret = %s\n" "$(openssl rand -hex 32)" \
-    > /opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini
-  chmod 600 /opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini
-  ```
-
-* **Optional:** `10-cors.ini` (useful for LiveSync or web frontends)
+* **Optional:** `10-cors.ini` (CORS for LiveSync / web frontends)
 
   ```ini
   [cors]
@@ -88,13 +93,6 @@ COUCHDB_PASSWORD=change-me
 
   [chttpd]
   enable_cors = true
-  ```
-
-* **Optional:** `00-local.ini`
-
-  ```ini
-  [chttpd]
-  bind_address = 0.0.0.0
   ```
 
 ---
