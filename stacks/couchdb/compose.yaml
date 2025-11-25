@@ -29,6 +29,29 @@ services:
       com.stack: couchdb
       com.env: lab
 
+
+  couchdb-exporter:
+    image: gesellix/couchdb-prometheus-exporter@sha256:a4e3425024a608fb92c9252919f71f5c0bff7cdb83d9f4e7ede59e0b9bcf8a1b
+    container_name: couchdb-exporter
+    restart: unless-stopped
+    depends_on:
+      couchdb:
+        condition: service_healthy
+    command:
+      - --couchdb.uri=http://couchdb:5984
+    environment:
+      COUCHDB_USERNAME: ${COUCHDB_USER}
+      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
+    networks:
+      - proxy
+      - mon-net
+    labels:
+      com.repo: homelab-stacks
+      com.stack: couchdb
+      com.env: lab
+
 networks:
   proxy:
+    external: true
+  mon-net:
     external: true
