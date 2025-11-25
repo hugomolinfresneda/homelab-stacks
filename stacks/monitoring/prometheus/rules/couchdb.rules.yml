@@ -1,4 +1,7 @@
 groups:
+  #
+  # HTTP-level checks via blackbox exporter
+  #
   - name: couchdb.http
     rules:
       - alert: CouchDBEndpointDown
@@ -9,11 +12,61 @@ groups:
         for: 5m
         labels:
           severity: warning
-          stack: nextcloud
+          stack: couchdb
           service: couchdb
         annotations:
-          summary: "CouchDB HTTP endpoint is down"
+          summary: "CouchDB public HTTPS endpoint is down"
           description: >
-            Blackbox HTTP probe for CouchDB (_up endpoint) has been failing
-            for more than 5 minutes. Check CouchDB, the reverse proxy and
-            the Cloudflare tunnel before assuming the database is dead.
+            The external HTTPS probe to CouchDB (_up endpoint) has been failing
+            for more than 5 minutes. This may be caused by CouchDB itself,
+            the reverse proxy, DNS or the Cloudflare tunnel. Verify the HTTP
+            path before assuming the database node is dead.
+
+  #
+  # CouchDB core health based on the Prometheus exporter
+  #
+  - name: couchdb.core
+    rules:
+      - alert: CouchDBDown
+        expr: up{job="couchdb"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          stack: couchdb
+          service: couchdb
+        annotations:
+          summary: "CouchDB exporter is unreachable"
+          description: >
+            Prometheus has been unable to scrape the CouchDB exporter (job="couchdb")
+            for more than 5 minutes. This usually means that the CouchDB container
+            or the exporter are down, or that there is a networking issue on mon-net.
+            Check the couchdb and couchdb-exporter containers first.
+
+      - alert: CouchDBHigh5xxErrorRate
+        expr: |
+          (
+            sum by (instance) (
+              rate(couchdb_httpd_status_codes{code=~"5.."}[5m])
+            )
+          )
+          /
+          clamp_min(
+            sum by (instance) (
+              rate(couchdb_httpd_status_codes[5m])
+            ),
+            0.001
+          )
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          stack: couchdb
+          service: couchdb
+        annotations:
+          summary: "CouchDB is returning a high rate of HTTP 5xx errors"
+          description: >
+            CouchDB has been returning more than 5% HTTP 5xx responses over the
+            last 10 minutes according to the exporter metrics.
+            This points to an application-level problem (queries, shards, disk,
+            configuration) rather than a pure connectivity issue. Investigate the
+            CouchDB logs and recent changes in clients using this database.

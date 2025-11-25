@@ -1,0 +1,12 @@
+# Example scrape config for CouchDB Prometheus exporter (gesellix/couchdb-prometheus-exporter)
+- job_name: 'couchdb'
+  scrape_interval: 30s
+  metrics_path: /metrics
+
+  static_configs:
+    - targets:
+        - 'couchdb-exporter:9984'
+      labels:
+        stack: 'couchdb'
+        service: 'couchdb'
+        env: 'lab'

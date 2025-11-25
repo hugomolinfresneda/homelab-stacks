@@ -42,7 +42,15 @@ It is intended to be published via **Cloudflare Tunnel** (no host ports exposed)
   ```bash
   docker network create proxy || true
   ```
+
+* External Docker network shared with the monitoring stack:
+
+  ```bash
+  docker network create mon-net || true
+  ```
+
 * Cloudflared Tunnel running on the same `proxy` network (see the `cloudflared` stack).
+
 
 ---
 
@@ -190,6 +198,66 @@ Backups (include in your restic policy):
 | `{"error":"unauthorized"}` on requests     | Wrong `COUCHDB_USER`/`COUCHDB_PASSWORD` or missing CORS settings. |
 | `_up` fails internally                     | Container not healthy; check `make logs stack=couchdb`.           |
 | Data not persisted                         | Missing `./data:/opt/couchdb/data` bind in runtime override.      |
+
+---
+
+## Monitoring
+
+This stack ships with a Prometheus exporter for CouchDB metrics.
+
+### Exporter container
+
+A `couchdb-exporter` container based on
+[`gesellix/couchdb-prometheus-exporter`](https://hub.docker.com/r/gesellix/couchdb-prometheus-exporter)
+is started alongside the main `couchdb` service.
+
+The exporter is attached to two Docker networks:
+
+- `proxy`: used to reach the `couchdb` container at `http://couchdb:5984`.
+- `mon-net`: shared with the monitoring stack so that Prometheus can
+  scrape the exporter.
+
+The exporter exposes Prometheus metrics on:
+
+```text
+http://couchdb-exporter:9984/metrics
+```
+
+### Authentication
+
+For simplicity in this homelab setup, the exporter reuses the CouchDB
+admin credentials defined in the `.env` file:
+
+```env
+COUCHDB_USER=
+COUCHDB_PASSWORD=
+```
+
+These are passed to the exporter via:
+
+```yaml
+environment:
+  COUCHDB_USERNAME: ${COUCHDB_USER}
+  COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
+```
+
+No additional CouchDB user is created for monitoring. If you need
+separate credentials in the future, you can introduce a dedicated
+`COUCHDB_MON_USER` / `COUCHDB_MON_PASSWORD` pair and adjust the
+exporter configuration accordingly.
+
+### Prometheus integration
+
+The `couchdb` scrape job is defined in the monitoring stack and targets
+the exporter on `mon-net`. An example scrape config is provided in:
+
+```text
+stacks/monitoring/prometheus/couchdb.yml.example
+```
+
+For details on alerting rules and dashboards that consume these
+metrics, refer to the `stacks/monitoring/README.md` document.
+
 
 ---
 

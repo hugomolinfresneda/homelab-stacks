@@ -88,10 +88,16 @@ stacks/monitoring/
 │  └─ config.yaml
 ├─ prometheus/
 │  ├─ prometheus.yml
+│  ├─ prometheus.demo.yml
 │  ├─ adguard-exporter.yml.example
+│  ├─ nextcloud-exporters.yml.example
+│  ├─ couchdb.yml.example
 │  └─ rules/
 │     ├─ adguard.rules.yml
-│     └─ couchdb.rules.yml
+│     ├─ backups.rules.yml
+│     ├─ cloudflared.rules.yml
+│     ├─ couchdb.rules.yml
+│     └─ nextcloud.rules.yml
 ├─ promtail/
 │  └─ config.yaml
 └─ tools/
@@ -754,16 +760,6 @@ groups:
           description: "Average AdGuard DNS processing time is above 150ms for 10 minutes. Investigate upstream DNS, network latency or AdGuard resource usage."
 ```
 
-Additional HTTP health rules are defined in:
-
-- `stacks/monitoring/prometheus/rules/couchdb.rules.yml`
-
-This file contains `CouchDBEndpointDown`, which fires when the Blackbox HTTP
-probe against `https://couchdb.atardecer-naranja.es/_up` has been failing
-for more than 5 minutes. The rule helps detect issues in CouchDB itself, the
-reverse proxy or the Cloudflare tunnel before they escalate into
-application-level errors in the Nextcloud stack.
-
 In practice:
 
 - `AdGuardExporterDown` ensures that the **metrics path itself** is reachable and scraped.
@@ -1199,3 +1195,99 @@ Layout summary (the dashboard lives in **40_Backups / Backups – Overview**):
 Taken together with the Uptime Kuma service/backup status dashboard, this gives you a
 full picture of "are backups running, recent and roughly the right size and duration?"
 from both a **status** and a **metrics** perspective.
+
+---
+
+## 23) CouchDB monitoring (service overview)
+
+The monitoring stack also exposes a small observability bundle for the
+CouchDB instance used by the homelab. It covers both the internal exporter
+metrics and the public HTTPS health check used by Nextcloud and other
+clients.
+
+- One Prometheus rule file:
+
+  - `stacks/monitoring/prometheus/rules/couchdb.rules.yml`
+
+- One Grafana dashboard:
+
+  - `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/couchdb-service-overview.json`
+    (appears in Grafana under **20_Apps / CouchDB – Service overview**).
+
+The only assumptions are that:
+
+- The CouchDB stack is attached to the `mon-net` network and runs the
+  `couchdb-exporter` container as documented in the CouchDB README.
+- The exporter is scraped by Prometheus under `job="couchdb"` and labelled
+  consistently with the rest of the homelab (`stack="couchdb"`,
+  `service="couchdb"`, `env="home|lab"`).
+- The public HTTPS endpoint exposed through the reverse proxy / tunnel is
+  the one configured in the Blackbox HTTP probe to `/_up`.
+
+### 1) Prometheus rules
+
+`couchdb.rules.yml` adds basic availability and quality-of-service alerts
+on top of the exporter and blackbox metrics:
+
+- **CouchDBEndpointDown**
+
+  Fires when the Blackbox HTTP probe against the public `/_up` endpoint
+  (`https://couchdb.atardecer-naranja.es/_up`) has been failing for more
+  than 5 minutes. This captures issues in the HTTP path (DNS, reverse
+  proxy, Cloudflare tunnel) as well as CouchDB itself.
+
+- **CouchDBDown**
+
+  Raised when `up{job="couchdb"}` stays at `0` for more than 5 minutes.
+  This usually points to a broken exporter, container or `mon-net` wiring
+  rather than an application-level error.
+
+- **CouchDBHigh5xxErrorRate**
+
+  Warns when the share of HTTP 5xx responses reported by the exporter is
+  above a small threshold for several minutes, indicating server-side
+  failures under otherwise healthy load.
+
+All rules follow the standard labelling conventions:
+
+- `stack="couchdb"`
+- `service="couchdb"`
+- `severity="warning"` / `severity="critical"`
+
+so they can be routed and filtered alongside the rest of the monitoring
+stack.
+
+### 2) Grafana – CouchDB – Service overview
+
+The **CouchDB – Service overview** dashboard is meant to answer, on a
+single screen:
+
+1. Is CouchDB reachable both from Prometheus and from the public HTTP
+   entrypoint?
+2. How much traffic is the node handling and how clean are the responses?
+3. Are there signs of internal resource pressure inside the Erlang VM?
+
+Layout summary (the dashboard lives in **20_Apps / CouchDB – Service overview**):
+
+**Top row – health & external reachability**
+
+- Exporter scrape status via `up{job="couchdb"}` with a time override to
+  *Last 5 minutes*.
+- Public HTTPS endpoint health via the Blackbox probe to `/_up`.
+- HTTP 5xx error share over the last 5 minutes.
+
+**Second row – traffic & status codes**
+
+- Total HTTP requests per second derived from `couchdb_httpd_status_codes`.
+- HTTP requests per second broken down by status code (2xx / 3xx / 4xx / 5xx).
+
+**Third row – internals**
+
+- Erlang VM memory usage broken down by atom, binary and code segments.
+- Internal resource counters such as open databases and open OS file
+  descriptors for the CouchDB node.
+
+Taken together with the CouchDB alert rules, this dashboard provides a
+clear landing page for CouchDB-related incidents before you need to jump
+into logs or lower-level debugging.
+
