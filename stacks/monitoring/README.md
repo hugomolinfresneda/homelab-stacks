@@ -295,6 +295,9 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
   - Status of backup jobs (Nextcloud application backup + Restic repository backup).
   - Infra checks for gateway and Internet reachability.
 
+  Detailed backup metrics (age, duration and data volume) are covered by the
+  separate **Backups – Overview** dashboard described in section 22.
+
   Example file provider for Grafana:
 
   ```yaml
@@ -1116,3 +1119,83 @@ No additional promtail configuration is required: logs are collected via the gen
 `dockerlogs` pipeline; the only expectation is that Nextcloud is configured to log to
 PHP's `error_log`. The Nextcloud README shows the `occ config:system:set` commands used
 to enforce this inside the container.
+
+---
+
+## 22) Backups monitoring (Restic + Nextcloud overview)
+
+The monitoring stack also ships a small bundle for backup observability, focused on
+the Restic repository and the application-level Nextcloud backup:
+
+- One Prometheus rule file:
+
+  - `stacks/monitoring/prometheus/rules/backups.rules.yml`
+
+- One Grafana dashboard:
+
+  - `stacks/monitoring/grafana/dashboards/exported/mon/40_backups/backups-overview.json`
+    (appears in Grafana under **40_Backups / Backups – Overview**).
+
+The only assumption is that the backup scripts in the Restic and Nextcloud stacks are
+already exporting textfile metrics via node_exporter, as documented in their respective
+READMEs. The dashboard is a pure consumer of those metrics; it does not introduce any
+new runtime requirements.
+
+### 1) Prometheus rules
+
+`backups.rules.yml` adds basic "is it running and fresh?" alerts on top of the textfile
+metrics:
+
+- Restic backup considered *stale* when the last successful run timestamp is too old.
+- Nextcloud backup considered *stale* under the same condition.
+- Optional rules for suspiciously small Restic runs or other sanity checks.
+
+All rules follow the existing labelling conventions:
+
+- `stack="backups"`
+- `service="restic"` or `service="nextcloud-backup"`
+- `severity="warning"` / `severity="critical"`
+
+so they can be routed alongside the rest of the monitoring stack.
+
+### 2) Grafana – Backups – Overview
+
+The **Backups – Overview** dashboard is meant to answer, on a single screen:
+
+1. Are the Restic and Nextcloud backups running successfully and within their expected
+   freshness window?
+2. How long do the latest backup runs take at each layer?
+3. How much data is being added to the Restic repository, and how does that relate to
+   the logical size of the Nextcloud backup?
+
+Layout summary (the dashboard lives in **40_Backups / Backups – Overview**):
+
+**Top row – freshness & status**
+
+- **Restic – age** and **Nextcloud – age** — stat panels showing hours since the last
+  successful backup run for each layer, with thresholds aligned with the Prometheus
+  "backup stale" rules.
+- **Restic – status** and **Nextcloud – status** — last exit code of each backup job
+  (0 = OK, non-zero = failed).
+- **Backup metrics – sanity** — simple sanity check that both Restic and Nextcloud
+  backup metrics are currently being scraped.
+
+**Second row – duration**
+
+- **Restic – backup duration** — time series of the last backup duration in seconds.
+- **Nextcloud – backup duration** — same for the application-level backup.
+- **Backups – duration overlay (Restic vs Nextcloud)** — both durations on a single
+  panel to highlight shared bottlenecks vs app-only slowdowns.
+
+**Third row – data volume & growth**
+
+- **Restic – data added per run** — amount of new data written to the Restic repository
+  on the last run, derived from the corresponding `*_added_bytes` metric.
+- **Nextcloud – backup size** — logical size of the latest Nextcloud backup snapshot.
+- **Restic vs Nextcloud – data relationship** — combined view that compares Restic's
+  added data with the total Nextcloud snapshot size, useful to spot mismatches between
+  logical growth and repository growth.
+
+Taken together with the Uptime Kuma service/backup status dashboard, this gives you a
+full picture of "are backups running, recent and roughly the right size and duration?"
+from both a **status** and a **metrics** perspective.
