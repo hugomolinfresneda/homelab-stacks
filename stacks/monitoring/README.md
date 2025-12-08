@@ -1291,3 +1291,116 @@ Taken together with the CouchDB alert rules, this dashboard provides a
 clear landing page for CouchDB-related incidents before you need to jump
 into logs or lower-level debugging.
 
+---
+
+## 24) Loki logs quick search (logs overview)
+
+The monitoring stack also exposes a dedicated Grafana dashboard for exploring
+Loki logs coming from Docker workloads. The goal is to provide a single,
+opinionated entry point for log-based troubleshooting that reuses the same
+`stack → service → container` model as the Docker infra dashboards, instead of
+sending you straight to Grafana Explore.
+
+- One Grafana dashboard:
+
+  - `stacks/monitoring/grafana/dashboards/exported/mon/30_logs/logs-quick-search.json`
+    (appears in Grafana under **30_Logs / Loki – Logs quick search**).
+
+The only assumptions are that:
+
+- Promtail is scraping Docker container logs with `job="dockerlogs"` and
+  attaching the standard labels used in the homelab (`stack`, `compose_service`,
+  `container`, `env`, `repo`, etc.).
+- Loki is configured as a Grafana datasource and uses the same retention,
+  RBAC and access controls as the rest of the monitoring stack.
+- Service dashboards (Nextcloud, AdGuard, Cloudflared, CouchDB) and the
+  Docker containers overview use labels compatible with those Loki log
+  streams (`stack` and `compose_service` in particular).
+
+### 1) Loki label model and error definition
+
+All log exploration in this dashboard is built on top of the following label
+conventions:
+
+- `job="dockerlogs"` for all container logs ingested from the Docker host.
+- `stack` → logical stack (`nextcloud`, `monitoring`, `cloudflared`,
+  `adguard-home`, `couchdb`, …).
+- `compose_service` → Docker Compose service name (`grafana`, `loki`,
+  `nc-web`, `cloudflared`, `adguard-home`, `couchdb`, …).
+- `container` → concrete container name (`mon-grafana`, `mon-loki`, etc.).
+
+For error-focused panels, the dashboard uses a consistent definition of
+“error-level logs”:
+
+- Only log lines where the `level` field is one of
+  `error`, `critical`, `fatal` or `panic` are considered.
+- This is implemented via a Loki filter:
+
+  - `|~ "level=(error|critical|fatal|panic)"`
+
+Panels that show raw logs on purpose **do not** apply this filter; they are
+meant to display all log levels and rely on a free-text search field for
+ad-hoc investigations.
+
+### 2) Grafana – Loki – Logs quick search
+
+The **Loki – Logs quick search** dashboard is designed to answer, on a small
+number of screens:
+
+1. Which stack is currently generating the most error-level logs?
+2. Within that stack, which services are the noisiest?
+3. How have error rates evolved over time for a given service?
+4. What do the actual error log lines look like, and what else is the service
+   logging around those errors?
+
+Layout summary (the dashboard lives in **30_Logs / Loki – Logs quick search**):
+
+**Row 1 – stack and service error overview**
+
+- **Error log volume by stack**
+  Time series showing error-level log counts per `stack` over the selected
+  time range, aggregated from `{job="dockerlogs"}` and filtered with
+  `level=(error|critical|fatal|panic)`.
+
+- **Top services by error volume**
+  Top-10 `compose_service` entries per stack by error-level log count, based
+  on the same filter and restricted to the selected `$stack` value.
+
+**Row 2 – selected service error detail**
+
+- **Errors over time (selected service)**
+  Error-level log counts for the selected `stack` / `service`
+  (and `container`, if specified) in 5-minute buckets. This helps distinguish
+  between brief spikes and sustained error periods.
+
+- **Recent error samples (selected service)**
+  Recent error-level log lines for the same filters, to quickly see what kind
+  of failures are happening (timeouts, auth issues, backend errors, etc.)
+  without having to jump straight into Explore.
+
+**Row 3 – raw logs with search**
+
+- **Raw logs (selected service, with search)**
+  Full Loki log view for the same `stack` / `service` / `container` filters,
+  without any log-level restrictions, plus a `$search` text box that applies
+  a simple `|= "$search"` filter to match arbitrary substrings such as host
+  names, SQLSTATE codes or request IDs.
+
+To avoid having to rebuild filters manually, several dashboards expose direct
+links into this logs quick search:
+
+- **20_Apps / AdGuard, Cloudflared, CouchDB, Nextcloud**
+  Each service overview dashboard includes a `View logs in Loki (…)` link
+  that opens the logs quick search with the corresponding `stack` and
+  `service` pre-selected and the current time range preserved.
+
+- **10_Infra / Containers – Docker overview**
+  Provides a `View logs in Loki (selected container)` link that passes the
+  currently selected `stack`, `service` and `container` to the logs quick
+  search dashboard, acting as a natural second step after spotting CPU/RAM
+  or restart anomalies in Docker.
+
+Taken together, the Loki logs quick search dashboard and these data links
+provide a clear, repeatable troubleshooting path: from service or infra
+overviews, to error-level log behaviour, and finally to raw logs and
+free-text search when deeper analysis is required.
