@@ -19,7 +19,21 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "links": [],
+  "id": 21,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "View logs in Loki (CouchDB)",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=couchdb&var-service=couchdb&var-container=All&var-search="
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -1001,5 +1015,5 @@
   "timezone": "browser",
   "title": "CouchDB – Service overview",
   "uid": "couchdb-service-overview",
-  "version": 40
+  "version": 41
 }

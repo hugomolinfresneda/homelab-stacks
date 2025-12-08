@@ -19,8 +19,21 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 17,
-  "links": [],
+  "id": 18,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "View logs in Loki (selected container)",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=${stack}&var-service=${service}&var-container=${container}&var-search="
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -785,10 +798,12 @@
               "container_label_maintainer": true,
               "container_label_name": true,
               "container_label_org_opencontainers_image_authors": true,
+              "container_label_org_opencontainers_image_base_name": true,
               "container_label_org_opencontainers_image_created": true,
               "container_label_org_opencontainers_image_description": true,
               "container_label_org_opencontainers_image_documentation": true,
               "container_label_org_opencontainers_image_licenses": true,
+              "container_label_org_opencontainers_image_ref_name": true,
               "container_label_org_opencontainers_image_revision": true,
               "container_label_org_opencontainers_image_source": true,
               "container_label_org_opencontainers_image_title": true,
@@ -1408,9 +1423,13 @@
               "container_label_com_docker_compose_service": false,
               "container_label_com_docker_compose_version": true,
               "container_label_com_env": true,
+              "container_label_com_logging": true,
               "container_label_com_repo": true,
               "container_label_com_stack": true,
               "container_label_maintainer": true,
+              "container_label_org_opencontainers_image_ref_name": true,
+              "container_label_org_opencontainers_image_source": true,
+              "container_label_org_opencontainers_image_version": true,
               "id": true,
               "image": true,
               "instance": true,
@@ -2136,5 +2155,5 @@
   "timezone": "",
   "title": "Containers – Docker overview",
   "uid": "containers-docker-overview",
-  "version": 89
+  "version": 2
 }
