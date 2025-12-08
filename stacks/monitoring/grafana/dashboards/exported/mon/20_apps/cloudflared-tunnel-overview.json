@@ -19,7 +19,21 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "links": [],
+  "id": 13,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "View logs in Loki (Cloudflared)",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=cloudflared&var-service=cloudflared&var-container=All&var-search="
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -710,5 +724,5 @@
   "timezone": "",
   "title": "Cloudflared – Tunnel Overview",
   "uid": "cloudflared",
-  "version": 5
+  "version": 1
 }

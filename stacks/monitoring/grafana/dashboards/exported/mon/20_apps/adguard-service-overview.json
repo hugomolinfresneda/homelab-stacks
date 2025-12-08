@@ -19,7 +19,21 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "links": [],
+  "id": 5,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "View logs in Loki (AdGuard Home)",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=adguard-home&var-service=adguard-home&var-container=All&var-search="
+    }
+  ],
   "panels": [
     {
       "collapsed": false,
@@ -1320,5 +1334,5 @@
   "timezone": "",
   "title": "Adguard Exporter",
   "uid": "MIBVglomg",
-  "version": 7
+  "version": 1
 }

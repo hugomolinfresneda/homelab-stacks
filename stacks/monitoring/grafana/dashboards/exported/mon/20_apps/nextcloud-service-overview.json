@@ -19,8 +19,21 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 0,
-  "links": [],
+  "id": 6,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": true,
+      "title": "View logs in Loki (Nextcloud)",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=nextcloud&var-service=nc-web&var-container=All&var-search="
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -962,5 +975,5 @@
   "timezone": "browser",
   "title": "Nextcloud – Service & Application Overview",
   "uid": "nextcloud-app-slo",
-  "version": 9
+  "version": 1
 }

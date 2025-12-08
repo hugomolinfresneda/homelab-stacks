@@ -28,7 +28,7 @@ services:
       com.repo: homelab-stacks
       com.stack: couchdb
       com.env: lab
-
+      com.logging: "true"
 
   couchdb-exporter:
     image: gesellix/couchdb-prometheus-exporter@sha256:a4e3425024a608fb92c9252919f71f5c0bff7cdb83d9f4e7ede59e0b9bcf8a1b
