@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "End-to-end operational overview of the self-hosted Nextcloud service.\n\nThe top row focuses on service health as seen from the outside: HTTP reachability of /status.php, 24-hour success rate, and availability of the backing MariaDB and Redis instances (via dedicated exporters).\n\nThe second row provides load and capacity signals for the database and cache layers (queries per second, active connections, Redis commands and clients), helping correlate latency spikes with changes in backend activity.\n\nThe bottom row surfaces application logs from the nc-app container, separating unexpected errors from known noisy diagnostics. This allows quick triage of real issues while keeping recurring but non-critical patterns visible for awareness.\n\nIntended use: day-to-day monitoring of Nextcloud, quick incident triage, and portfolio-style demonstration of observability practices around a single, production-like application stack.",
+  "description": "Operational overview of the self-hosted Nextcloud service exposed via Cloudflared.\n\nTop row: external health via Blackbox probing of /status.php (availability, 24h success rate/SLO, and HTTP latency).\n\nMiddle row: dependency health and workload for MariaDB and Redis via dedicated exporters (DB/Redis availability, queries/s, active connections, commands/s, and connected clients).\n\nBottom row: application error signal from nc-app logs (Loki). Use “View logs in Loki (Nextcloud)” for deeper triage and context.\n\nSecurity: This dashboard includes public service endpoints and may surface sensitive log content; restrict access and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -40,7 +40,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Shows whether the public Nextcloud endpoint at /status.php is reachable via the Blackbox HTTP probe over the last 5 minutes. Based on probe_success for the Nextcloud target; if this flips to DOWN, either the application stack (nc-web / PHP-FPM / DB) is failing or the HTTPS path through Cloudflare is broken.",
+      "description": "Context: External availability of Nextcloud as seen through the Cloudflared-exposed /status.php endpoint.\n\nFocus: Binary UP/DOWN signal indicating whether the Blackbox HTTP probe succeeded continuously over the last 5 minutes.\n\nImplementation: `probe_success{job=\"blackbox-http\", instance=\"https://cloud.atardecer-naranja.es/status.php\"}[5m]`reduced with `min` and value-mapped (0→DOWN, 1→UP). Panel relative time override: 5m.\n\nSecurity: This is a public entrypoint; restrict dashboard access and avoid sharing screenshots/exports that expose the public URL.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -60,15 +60,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -77,7 +77,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 6,
         "x": 0,
         "y": 0
@@ -116,7 +116,8 @@
         }
       ],
       "timeFrom": "5m",
-      "title": "Nextcloud – Status (status.php probe)",
+      "title": "Nextcloud – status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -124,7 +125,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Percentage of successful HTTP probes to /status.php over the last 24 hours. Computed from probe_success for the Nextcloud Blackbox target across a 24h window. Helps answer “how reliable has the public Nextcloud endpoint been today?” at a glance, with SLO-style thresholds at 95% and 99%.",
+      "description": "Context: External reliability of the Cloudflared-exposed /status.php endpoint over a rolling 24-hour window.\n\nFocus: Percentage of successful Blackbox HTTP probes (0–100%) for the last 24 hours.\n\nImplementation: `100 * avg_over_time(probe_success{job=\"blackbox-http\", instance=\"https://cloud.atardecer-naranja.es/status.php\"}[24h])`displayed as the latest value. Thresholds: <95% (red), 95–99% (orange), ≥99% (green). Panel relative time override: 24h.\n\nSecurity: Public availability signal; treat the endpoint URL as sensitive operational metadata when sharing.",
       "fieldConfig": {
         "defaults": {
           "decimals": 1,
@@ -135,15 +136,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "orange",
+                "color": "dark-orange",
                 "value": 95
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 99
               }
             ]
@@ -153,7 +154,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 6,
         "x": 6,
         "y": 0
@@ -188,7 +189,8 @@
         }
       ],
       "timeFrom": "24h",
-      "title": "Nextcloud – Success rate (last 24h)",
+      "title": "Nextcloud – success rate (last 24h)",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -196,7 +198,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Shows whether mysqld_exporter can successfully connect to the Nextcloud MariaDB instance over the last 5 minutes. Based on mysql_up from the nextcloud-exporters job; if this goes DOWN, the DB container, network path, or credentials are broken from the exporter’s point of view.",
+      "description": "Context: MariaDB reachability from mysqld_exporter (connectivity/auth sanity from the monitoring plane).\n\nFocus: Binary UP/DOWN signal indicating whether mysqld_exporter can successfully reach the Nextcloud MariaDB instance.\n\nImplementation: `max_over_time(mysql_up{job=\"nextcloud-exporters\"}[5m])`reduced with `min` and value-mapped (0→DOWN, 1→UP). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -216,15 +218,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -233,7 +235,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 6,
         "x": 12,
         "y": 0
@@ -268,7 +270,8 @@
         }
       ],
       "timeFrom": "5m",
-      "title": "Nextcloud DB – Availability (mysqld_exporter)",
+      "title": "Nextcloud DB – availability",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -276,7 +279,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Shows whether redis_exporter can successfully reach the Redis instance used by Nextcloud over the last 5 minutes. Uses redis_up from the nextcloud-exporters job; a DOWN state usually means Redis is stopped, unreachable on the network, or misconfigured, which will degrade caching and locking in Nextcloud.",
+      "description": "Context: Redis reachability from redis_exporter (connectivity/auth sanity from the monitoring plane).\n\nFocus: Binary UP/DOWN signal indicating whether redis_exporter can successfully reach the Redis instance backing Nextcloud.\n\nImplementation: `max_over_time(redis_up{job=\"nextcloud-exporters\"}[5m])`, reduced with `min` and value-mapped (0→DOWN, 1→UP). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -296,15 +299,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -313,7 +316,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 6,
         "x": 18,
         "y": 0
@@ -346,7 +349,8 @@
         }
       ],
       "timeFrom": "5m",
-      "title": "Nextcloud Redis – Availability (redis_exporter)",
+      "title": "Nextcloud Redis – availability",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -354,11 +358,11 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Shows the HTTP response time of the /status.php endpoint as seen by the Blackbox HTTP probe. Uses probe_duration_seconds for the Nextcloud target, converted to milliseconds and plotted over the selected time range. Helps identify latency spikes and correlate them with database/Redis activity or external incidents.",
+      "description": "Context: User-perceived HTTP responsiveness of Nextcloud via the Cloudflared-exposed /status.php endpoint.\n\nFocus: Rolling 5-minute average HTTP probe duration (ms) as observed by the Blackbox HTTP probe.\n\nImplementation: `1000 * avg_over_time(probe_duration_seconds{job=\"blackbox-http\", instance=\"https://cloud.atardecer-naranja.es/status.php\"}[5m])`(seconds → milliseconds), shown as a time series.\n\nSecurity: Public entrypoint performance data; avoid exposing the public URL in shared dashboard exports where possible.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisBorderShow": false,
@@ -377,8 +381,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -400,19 +404,19 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "#EAB839",
+                "color": "dark-yellow",
                 "value": 500
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 800
               }
             ]
@@ -425,7 +429,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 4
       },
       "id": 5,
       "options": {
@@ -450,7 +454,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "1000 *\navg_over_time(\n  probe_duration_seconds{job=\"blackbox-http\", instance=\"https://cloud.atardecer-naranja.es/status.php\"}[5m]\n)\n",
+          "expr": "1000 *\navg_over_time(\n  probe_duration_seconds{job=\"blackbox-http\", instance=\"https://cloud.atardecer-naranja.es/status.php\"}[5m]\n)",
           "interval": "",
           "legendFormat": "status.php",
           "range": true,
@@ -458,6 +462,7 @@
         }
       ],
       "title": "Nextcloud – HTTP latency (status.php)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -465,11 +470,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Query throughput of the Nextcloud MariaDB instance, expressed as questions per second. Derived from mysql_global_status_questions using a rate over several minutes. Helps establish a baseline for normal load and see whether latency issues coincide with unusual database traffic.",
+      "description": "Context: MariaDB workload level for the Nextcloud backend.\n\nFocus: Query throughput (questions per second) derived from the MariaDB global status counter.\n\nImplementation: `rate(mysql_global_status_questions{job=\"nextcloud-exporters\"}[5m])`shown as a time series.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
             "axisBorderShow": false,
@@ -488,8 +494,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -528,7 +534,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 13
+        "y": 12
       },
       "id": 6,
       "options": {
@@ -560,7 +566,8 @@
           "refId": "A"
         }
       ],
-      "title": "MariaDB – Queries per second (Nextcloud)",
+      "title": "MariaDB – queries per second (Nextcloud)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -568,11 +575,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Number of active connections to the Nextcloud MariaDB server. Plots mysql_global_status_threads_connected over time, helping detect connection leaks, slow queries that keep threads busy, or sudden surges in concurrent users.",
+      "description": "Context: MariaDB connection pressure for the Nextcloud backend.\n\nFocus: Number of currently connected threads to MariaDB (active connections gauge).\n\nImplementation: `mysql_global_status_threads_connected{job=\"nextcloud-exporters\"}`shown as a time series.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
             "axisBorderShow": false,
@@ -591,8 +599,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -630,12 +638,17 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 13
+        "y": 12
       },
       "id": 7,
       "options": {
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "last",
+            "min",
+            "max",
+            "mean"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -657,7 +670,8 @@
           "refId": "A"
         }
       ],
-      "title": "MariaDB – Active connections (Nextcloud)",
+      "title": "MariaDB – active connections (Nextcloud)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -665,11 +679,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Command throughput on the Redis instance backing Nextcloud. Computed as a per-second rate over redis_commands_processed_total. Helps distinguish between “quiet but slow” (DB-bound) and “busy cache” scenarios when troubleshooting performance.",
+      "description": "Context: Redis workload level for the Nextcloud caching/locking backend.\n\nFocus: Redis command throughput (operations per second) derived from the Redis command counter.\n\nImplementation: `rate(redis_commands_processed_total{job=\"nextcloud-exporters\"}[5m])`shown as a time series.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
             "axisBorderShow": false,
@@ -688,8 +703,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -728,12 +743,18 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 13
+        "y": 12
       },
       "id": 8,
+      "interval": "30s",
       "options": {
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "last",
+            "min",
+            "max",
+            "mean"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -755,7 +776,8 @@
           "refId": "A"
         }
       ],
-      "title": "Redis – Commands per second (Nextcloud)",
+      "title": "Redis – commands per second (Nextcloud)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -763,11 +785,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Current number of clients connected to the Nextcloud Redis instance. Based on redis_connected_clients from redis_exporter; unexpected growth or spikes may indicate connection leaks or misbehaving components in the application stack.",
+      "description": "Context: Redis connection pressure for the Nextcloud backend.\n\nFocus: Number of connected Redis clients (gauge).\n\nImplementation: `redis_connected_clients{job=\"nextcloud-exporters\"}`shown as a time series.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
             "axisBorderShow": false,
@@ -786,8 +809,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -825,12 +848,17 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 13
+        "y": 12
       },
       "id": 9,
       "options": {
         "legend": {
-          "calcs": [],
+          "calcs": [
+            "last",
+            "min",
+            "max",
+            "mean"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -850,7 +878,8 @@
           "refId": "A"
         }
       ],
-      "title": "Redis – Connected clients (Nextcloud)",
+      "title": "Redis – connected clients (Nextcloud)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -858,7 +887,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Shows application-level errors and warnings from the nc-app container, after excluding known noisy diagnostics (for example dirty table reads and The loading of lazy AppConfig values have been requested). An empty panel over the last 24h/7d usually means no unexpected application errors have been logged by Nextcloud.",
+      "description": "Context: Application-level failures surfaced from the Nextcloud app container logs.\n\nFocus: Error/exception-like log events for nc-app, intended to highlight actionable failures.\n\nImplementation: Loki query:\n`{job=\"dockerlogs\", stack=\"nextcloud\", container=\"nc-app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"`\n\nSecurity: Application logs may contain sensitive data depending on Nextcloud log settings; restrict access and ensure redaction policies if required.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -867,7 +896,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 20
       },
       "id": 10,
       "options": {
@@ -886,73 +915,13 @@
         {
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{job=\"dockerlogs\", stack=\"nextcloud\", container=\"nc-app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"\n!= \"dirty table reads\"\n!= \"The loading of lazy AppConfig values have been requested\"\n",
+          "expr": "{job=\"dockerlogs\", stack=\"nextcloud\", container=\"nc-app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Nextcloud – Application errors (filtered)",
-      "type": "logs"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 29
-      },
-      "id": 12,
-      "panels": [],
-      "title": "Diagnostics / noisy logs",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Tracks recurring diagnostic messages emitted by the nc-app container that are known to be noisy but typically non-critical. The LogQL query selects PHP messages from Nextcloud that contain either dirty table reads or The loading of lazy AppConfig values have been requested over the last 24 hours. This keeps these patterns visible for awareness while they are excluded from the main application error view.",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 24,
-        "x": 0,
-        "y": 30
-      },
-      "id": 11,
-      "options": {
-        "dedupStrategy": "signature",
-        "enableInfiniteScrolling": false,
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": false,
-        "showTime": false,
-        "sortOrder": "Descending",
-        "wrapLogMessage": false
-      },
-      "pluginVersion": "12.2.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "direction": "backward",
-          "editorMode": "code",
-          "expr": "{job=\"dockerlogs\", stack=\"nextcloud\", container=\"nc-app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"dirty table reads|The loading of lazy AppConfig values have been requested\"\n",
-          "legendFormat": "",
-          "maxLines": 300,
-          "queryType": "range",
-          "refId": "A"
-        }
-      ],
-      "timeFrom": "24h",
-      "title": "Nextcloud – Known noisy diagnostics",
+      "title": "Nextcloud – application errors",
+      "transparent": true,
       "type": "logs"
     }
   ],
@@ -960,20 +929,21 @@
   "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
+    "homelab",
+    "apps",
     "nextcloud",
-    "app",
     "slo"
   ],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Nextcloud – Service & Application Overview",
+  "title": "Nextcloud – Service Overview",
   "uid": "nextcloud-app-slo",
-  "version": 1
+  "version": 6
 }

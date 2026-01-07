@@ -15,10 +15,11 @@
       }
     ]
   },
-  "description": "High-level status overview for key services, connectivity, and backup jobs.\n\nThis dashboard uses Uptime Kuma as the health source and exposes its metrics via Prometheus, with Grafana providing the visual layer. It tracks:\n\n- End-user services (Nextcloud, CouchDB, Dozzle, Uptime Kuma itself).\n- Infrastructure reachability (gateway and external Internet).\n- Scheduled backups (Nextcloud application data and Restic repository).",
+  "description": "High-level status overview for key services, basic connectivity, and scheduled backups using Uptime Kuma as the single health source.\n\nTop row: aggregated UP vs DOWN counts for services/infra monitors (HTTP+Ping) and backup heartbeat monitors (Push). Push monitors use a 90,000s (≈25h) heartbeat window.\n\nTables: curated public services and infra reachability (gateway vs Internet) to quickly differentiate “network issue” from “application issue”. HTTP response time (avg over 5m) provides early latency signal even when checks remain UP.\n\nData source: Prometheus (Uptime Kuma exporter).\n\nSecurity: The raw monitor inventory and service tables can expose URLs/hosts and internal topology. Restrict access and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 8,
   "links": [],
   "panels": [
     {
@@ -26,6 +27,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Uptime Kuma monitor status for service checks (HTTP) and basic reachability (Ping).\n\nFocus: Quick count of how many service/infra monitors are UP vs DOWN right now.\n\nImplementation: `UP = sum(monitor_status)` and `DOWN = count(monitor_status) - sum(monitor_status)` for monitor_type in {http, ping}. monitor_status is 1 for UP and 0 for DOWN.",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -33,11 +35,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -56,11 +58,11 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "green",
+                      "color": "dark-green",
                       "value": 0
                     },
                     {
-                      "color": "red",
+                      "color": "dark-red",
                       "value": 1
                     }
                   ]
@@ -72,7 +74,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 19,
+        "w": 12,
         "x": 0,
         "y": 0
       },
@@ -109,7 +111,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(monitor_status{job=\"uptime-kuma\"})\n",
+          "expr": "sum(monitor_status{job=\"uptime-kuma\", monitor_type=~\"http|ping\"})",
           "legendFormat": "UP",
           "range": true,
           "refId": "A"
@@ -120,7 +122,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(monitor_status{job=\"uptime-kuma\"}) - sum(monitor_status{job=\"uptime-kuma\"})\n",
+          "expr": "count(monitor_status{job=\"uptime-kuma\", monitor_type=~\"http|ping\"})\n- sum(monitor_status{job=\"uptime-kuma\", monitor_type=~\"http|ping\"})",
           "hide": false,
           "instant": false,
           "interval": "",
@@ -129,7 +131,8 @@
           "refId": "B"
         }
       ],
-      "title": "Monitors UP vs DOWN",
+      "title": "Services & infra (HTTP+Ping) – UP vs DOWN",
+      "transparent": true,
       "type": "bargauge"
     },
     {
@@ -137,6 +140,120 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Uptime Kuma push monitors for backup jobs.\n\nFocus: Quick count of how many backup monitors are currently healthy vs overdue.\n\nImplementation: `UP = sum(monitor_status)` and `DOWN = count(monitor_status) - sum(monitor_status)` for monitor_type=\"push\". Push monitors are configured with a 90,000s (≈25h) heartbeat window.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-red",
+                "value": 0
+              },
+              {
+                "color": "dark-green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DOWN"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-green",
+                      "value": 0
+                    },
+                    {
+                      "color": "dark-red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "id": 7,
+      "options": {
+        "displayMode": "basic",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "12.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(monitor_status{job=\"uptime-kuma\", monitor_type=\"push\"})",
+          "legendFormat": "UP",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(monitor_status{job=\"uptime-kuma\", monitor_type=\"push\"})\n- sum(monitor_status{job=\"uptime-kuma\", monitor_type=\"push\"})",
+          "hide": false,
+          "instant": false,
+          "interval": "",
+          "legendFormat": "DOWN",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Backups (Push) – UP vs DOWN",
+      "transparent": true,
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Context: Basic network reachability probes (Ping).\n\nFocus: Distinguish “local gateway down” from “internet reachability down” at a glance.\n\nImplementation: `monitor_status` filtered to `monitor_type=\"ping\"` and displayed as a table (1=UP, 0=DOWN with value mapping).",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -177,12 +294,12 @@
                   {
                     "options": {
                       "0": {
-                        "color": "red",
+                        "color": "dark-red",
                         "index": 0,
                         "text": "DOWN"
                       },
                       "1": {
-                        "color": "green",
+                        "color": "dark-green",
                         "index": 1,
                         "text": "UP"
                       }
@@ -197,11 +314,11 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "dark-red",
                       "value": 0
                     },
                     {
-                      "color": "green",
+                      "color": "dark-green",
                       "value": 1
                     }
                   ]
@@ -223,8 +340,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 5,
-        "x": 19,
+        "w": 6,
+        "x": 18,
         "y": 0
       },
       "id": 5,
@@ -236,7 +353,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "monitor_status{job=\"uptime-kuma\", monitor_type=\"ping\"}\n",
+          "expr": "monitor_status{job=\"uptime-kuma\", monitor_type=\"ping\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{monitor_name}}",
@@ -274,6 +391,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -281,6 +399,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: HTTP monitor response time reported by Uptime Kuma.\n\nFocus: Detect latency regressions and short spikes while services remain UP.\n\nImplementation: 5-minute moving average per monitor `(avg_over_time over a 5m subquery)`, filtering out 0ms samples to avoid mixing “no valid response” with real latency.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -303,8 +422,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -337,7 +456,68 @@
           },
           "unit": "ms"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nextcloud"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Uptime Kuma"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CouchDB"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Dozzle"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 10,
@@ -360,7 +540,7 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -368,13 +548,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "avg by (monitor_name) (\n  monitor_response_time{job=\"uptime-kuma\", monitor_type=\"http\"} > 0\n)\n",
+          "expr": "avg by (monitor_name) (\n  avg_over_time(\n    (monitor_response_time{job=\"uptime-kuma\", monitor_type=\"http\"} > 0)[5m:]\n  )\n)",
           "instant": false,
           "legendFormat": "{{monitor_name}}",
           "refId": "A"
         }
       ],
-      "title": "HTTP monitors – response time (avg by monitor)",
+      "title": "HTTP monitors – response time (avg over 5m)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -382,6 +563,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Full inventory of Uptime Kuma monitors.\n\nFocus: Single place to see monitor type, URL/target and current status for all checks.\n\nImplementation: `monitor_status` for all monitors, rendered as a table with value mapping (1=UP, 0=DOWN).\n\nSecurity: This table enumerates monitor targets (URLs/hosts) and operational metadata. Restrict access and avoid sharing raw exports/screenshots without redaction.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -399,11 +581,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -422,12 +604,12 @@
                   {
                     "options": {
                       "0": {
-                        "color": "red",
+                        "color": "dark-red",
                         "index": 0,
                         "text": "DOWN"
                       },
                       "1": {
-                        "color": "green",
+                        "color": "dark-green",
                         "index": 1,
                         "text": "UP"
                       }
@@ -442,11 +624,11 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "dark-red",
                       "value": 0
                     },
                     {
-                      "color": "green",
+                      "color": "dark-green",
                       "value": 1
                     }
                   ]
@@ -454,10 +636,6 @@
               },
               {
                 "id": "color"
-              },
-              {
-                "id": "custom.width",
-                "value": 57
               },
               {
                 "id": "custom.cellOptions",
@@ -475,7 +653,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 553
+                "value": 341
               }
             ]
           },
@@ -487,19 +665,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 55
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Name"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 177
+                "value": 78
               }
             ]
           }
@@ -507,18 +673,25 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 11,
+        "w": 12,
         "x": 0,
         "y": 14
       },
       "id": 2,
       "options": {
         "cellHeight": "sm",
-        "showHeader": true
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Type"
+          }
+        ]
       },
       "pluginVersion": "12.2.0",
       "targets": [
         {
+          "editorMode": "code",
           "expr": "monitor_status{job=\"uptime-kuma\"}",
           "format": "table",
           "instant": true,
@@ -555,6 +728,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -562,6 +736,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Curated subset of external-facing services for the homelab.\n\nFocus: Fast status check for the main public endpoints (without the noise of infra/backups).\n\nImplementation: `monitor_status` filtered by `monitor_name` matching Nextcloud, CouchDB, Dozzle and Uptime Kuma.\n\nSecurity: This table lists public-facing service endpoints. Treat hostnames/URLs as operational metadata and redact before sharing.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -579,29 +754,17 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
           }
         },
         "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "monitor_name"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 121
-              }
-            ]
-          },
           {
             "matcher": {
               "id": "byName",
@@ -614,12 +777,12 @@
                   {
                     "options": {
                       "0": {
-                        "color": "red",
+                        "color": "dark-red",
                         "index": 0,
                         "text": "DOWN"
                       },
                       "1": {
-                        "color": "green",
+                        "color": "dark-green",
                         "index": 1,
                         "text": "UP"
                       }
@@ -634,11 +797,11 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "dark-red",
                       "value": 0
                     },
                     {
-                      "color": "green",
+                      "color": "dark-green",
                       "value": 1
                     }
                   ]
@@ -649,29 +812,38 @@
                 "value": {
                   "type": "color-text"
                 }
-              },
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "URL"
+            },
+            "properties": [
               {
                 "id": "custom.width",
-                "value": 56
+                "value": 394
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 11,
+        "h": 5,
+        "w": 12,
+        "x": 12,
         "y": 14
       },
       "id": 4,
       "options": {
-        "cellHeight": "lg",
+        "cellHeight": "md",
         "showHeader": true
       },
       "pluginVersion": "12.2.0",
       "targets": [
         {
+          "editorMode": "code",
           "expr": "monitor_status{job=\"uptime-kuma\", monitor_name=~\"Nextcloud|CouchDB|Dozzle|Uptime Kuma\"}",
           "format": "table",
           "instant": true,
@@ -708,6 +880,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -715,6 +888,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Backup job heartbeat monitors (Push).\n\nFocus: Confirm that scheduled backups are reporting in within the expected window.\n\nImplementation: `monitor_status` filtered to `monitor_type=\"push\"` (1=UP, 0=DOWN). Push heartbeat is configured to mark monitors DOWN if no push is received within 90,000s (25h).",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -732,11 +906,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -755,12 +929,12 @@
                   {
                     "options": {
                       "0": {
-                        "color": "red",
+                        "color": "dark-red",
                         "index": 0,
                         "text": "DOWN"
                       },
                       "1": {
-                        "color": "green",
+                        "color": "dark-green",
                         "index": 1,
                         "text": "UP"
                       }
@@ -775,11 +949,11 @@
                   "mode": "absolute",
                   "steps": [
                     {
-                      "color": "red",
+                      "color": "dark-red",
                       "value": 0
                     },
                     {
-                      "color": "green",
+                      "color": "dark-green",
                       "value": 1
                     }
                   ]
@@ -801,14 +975,15 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 5,
-        "x": 19,
-        "y": 14
+        "w": 12,
+        "x": 12,
+        "y": 19
       },
       "id": 3,
       "options": {
         "cellHeight": "lg",
-        "showHeader": true
+        "showHeader": true,
+        "sortBy": []
       },
       "pluginVersion": "12.2.0",
       "targets": [
@@ -851,6 +1026,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     }
   ],
@@ -858,8 +1034,10 @@
   "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
-    "monitoring",
-    "uptime-kuma"
+    "homelab",
+    "status",
+    "uptime-kuma",
+    "monitoring"
   ],
   "templating": {
     "list": [
@@ -876,12 +1054,12 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Uptime Kuma – Service & Backup Status",
   "uid": "uptime-kuma-overview",
-  "version": 6
+  "version": 3
 }

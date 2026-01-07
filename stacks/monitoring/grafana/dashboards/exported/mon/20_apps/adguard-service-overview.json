@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "This is a Adguard dashboard when using the https://github.com/ebrianne/adguard-exporter Prometheus exporter",
+  "description": "Operational overview of AdGuard Home, covering service availability, DNS traffic volume, blocking effectiveness, and top domains.\n\nTop row (last 5m): service running status, protection enabled/disabled, and DNS processing time for near-real-time health checks.\n\nTraffic & blocking: total DNS queries, blocked queries, and blocked ratio (%) over the selected time range to spot shifts in load or filtering behaviour.\n\nQuery mix: DNS query types to understand client behaviour and protocol distribution.\n\nTop domains: most queried and most blocked domains (instant snapshot) to support quick triage and tuning.\n\nData sources: Prometheus (AdGuard exporter metrics). Optional Loki logs are available via the dashboard link.\n\nSecurity: Domain lists can reveal user/device behaviour and internal services; treat them as operationally sensitive and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -36,23 +36,11 @@
   ],
   "panels": [
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "id": 60,
-      "panels": [],
-      "title": "AdGuard Home",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: AdGuard Home runtime availability as seen from the monitoring plane.\n\nFocus: Binary UP/DOWN signal indicating whether the AdGuard instance is running.\n\nImplementation: `adguard_running` displayed as the latest value (`lastNotNull`) with value mapping (0→DOWN, 1→UP). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -63,11 +51,13 @@
               "options": {
                 "0": {
                   "color": "dark-red",
-                  "text": "Stopped"
+                  "index": 0,
+                  "text": "DOWN"
                 },
                 "1": {
                   "color": "dark-green",
-                  "text": "Enabled"
+                  "index": 1,
+                  "text": "UP"
                 }
               },
               "type": "value"
@@ -93,10 +83,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 3,
+        "h": 4,
+        "w": 8,
         "x": 0,
-        "y": 1
+        "y": 0
       },
       "id": 84,
       "maxDataPoints": 100,
@@ -124,15 +114,18 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_running{hostname=~'$node'}",
+          "editorMode": "code",
+          "expr": "adguard_running",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 1,
           "legendFormat": "",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Status",
+      "timeFrom": "5m",
+      "title": "AdGuard – status",
       "transparent": true,
       "type": "stat"
     },
@@ -141,6 +134,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: DNS filtering/protection state in AdGuard Home.\n\nFocus: Whether protection (blocking) is enabled or disabled.\n\nImplementation: `adguard_protection_enabled` displayed as the latest value (`lastNotNull`) with value mapping (0→Disabled, 1→Enabled). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -151,7 +145,7 @@
               "options": {
                 "0": {
                   "color": "dark-red",
-                  "text": "Stopped"
+                  "text": "Disabled"
                 },
                 "1": {
                   "color": "dark-green",
@@ -181,10 +175,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 3,
-        "y": 1
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
       },
       "id": 102,
       "maxDataPoints": 100,
@@ -212,15 +206,18 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_protection_enabled{hostname=~'$node'}",
+          "editorMode": "code",
+          "expr": "adguard_protection_enabled",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 1,
           "legendFormat": "",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Protection",
+      "timeFrom": "5m",
+      "title": "AdGuard – protection",
       "transparent": true,
       "type": "stat"
     },
@@ -229,6 +226,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: AdGuard Home DNS request processing latency.\n\nFocus: Average DNS processing time per request (lower is better).\n\nImplementation: `adguard_avg_processing_time` displayed as the latest value (`lastNotNull`). Thresholds (absolute): <0.05s (green), 0.05–0.1s (orange), ≥0.1s (red). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -260,10 +258,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 3,
-        "w": 3,
-        "x": 6,
-        "y": 1
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
       },
       "id": 101,
       "maxDataPoints": 100,
@@ -291,15 +289,18 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_avg_processing_time{hostname=~'$node'}",
+          "editorMode": "code",
+          "expr": "adguard_avg_processing_time",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 1,
           "legendFormat": "{{ legend }}",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Processing TIme",
+      "timeFrom": "5m",
+      "title": "AdGuard – DNS processing time",
       "transparent": true,
       "type": "stat"
     },
@@ -308,10 +309,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: DNS traffic volume handled by AdGuard Home.\n\nFocus: Total DNS queries reported by the AdGuard exporter over the selected time range.\n\nImplementation: `adguard_num_dns_queries` rendered as a time series (legend: `DNS queries`) across the dashboard time range.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
             "axisBorderShow": false,
@@ -322,7 +325,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -330,8 +333,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -366,17 +369,19 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 11,
-        "w": 7,
-        "x": 9,
-        "y": 1
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
       },
-      "id": 97,
+      "id": 66,
       "options": {
         "alertThreshold": true,
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "last"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
@@ -393,13 +398,17 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_query_types{hostname=~'$node'}",
+          "editorMode": "code",
+          "expr": "adguard_num_dns_queries",
+          "format": "time_series",
           "interval": "",
-          "legendFormat": "{{ type }}",
+          "intervalFactor": 1,
+          "legendFormat": "DNS queries",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "DNS Query Types",
+      "title": "AdGuard – DNS queries (all types)",
       "transparent": true,
       "type": "timeseries"
     },
@@ -408,58 +417,85 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: DNS filtering activity in AdGuard Home.\n\nFocus: Total queries blocked by filtering rules (ad/tracking blocklists) over the selected time range.\n\nImplementation: `adguard_num_blocked_filtering` rendered as a time series (legend: `ads blocked`) across the dashboard time range.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
           },
-          "decimals": 0,
           "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 1
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
       },
-      "id": 95,
-      "maxDataPoints": 3,
+      "id": 103,
       "options": {
-        "displayLabels": [
-          "name"
-        ],
+        "alertThreshold": true,
         "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "pieType": "donut",
-        "reduceOptions": {
           "calcs": [
-            "mean"
+            "last"
           ],
-          "fields": "",
-          "values": false
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "sort": "desc",
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -471,27 +507,29 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "topk(50, adguard_top_queried_domains{hostname=~'$node'})",
+          "expr": "adguard_num_blocked_filtering",
           "format": "time_series",
-          "instant": false,
           "interval": "",
           "intervalFactor": 1,
-          "legendFormat": "{{ domain }}",
+          "legendFormat": "ads blocked",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Top queries by domain",
+      "title": "AdGuard – ads blocked",
       "transparent": true,
-      "type": "piechart"
+      "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Composition of DNS traffic handled by AdGuard Home.\n\nFocus: Breakdown of DNS queries by record type (e.g., A, AAAA, CNAME, HTTPS).\n\nImplementation: `adguard_query_types` rendered as multiple time series, grouped by the `type` label (legend: `{{ type }}`), across the dashboard time range.",
       "fieldConfig": {
         "defaults": {
           "color": {
+            "fixedColor": "dark-green",
             "mode": "palette-classic"
           },
           "custom": {
@@ -503,7 +541,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -511,8 +549,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -548,13 +586,13 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "pihole"
+              "options": "A"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "super-light-blue",
+                  "fixedColor": "dark-green",
                   "mode": "fixed"
                 }
               }
@@ -563,13 +601,73 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "pihole"
+              "options": "AAAA"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "super-light-blue",
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CNAME"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTPS"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SRV"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#639b2f",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SOA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#872d7f",
                   "mode": "fixed"
                 }
               }
@@ -579,18 +677,22 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 9,
+        "w": 12,
         "x": 0,
-        "y": 4
+        "y": 12
       },
-      "id": 66,
+      "id": 105,
       "options": {
         "alertThreshold": true,
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": [
+            "last"
+          ],
+          "displayMode": "table",
           "placement": "bottom",
-          "showLegend": false
+          "showLegend": true,
+          "sortBy": "Last",
+          "sortDesc": true
         },
         "tooltip": {
           "hideZeros": false,
@@ -605,15 +707,17 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_num_dns_queries{hostname=~'$node'}",
+          "editorMode": "code",
+          "expr": "adguard_query_types",
           "format": "time_series",
           "interval": "",
           "intervalFactor": 1,
-          "legendFormat": "{{ hostname }}",
+          "legendFormat": "{{ type }}",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "DNS queries all of types",
+      "title": "AdGuard – DNS query types",
       "transparent": true,
       "type": "timeseries"
     },
@@ -622,58 +726,85 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Blocking effectiveness relative to DNS traffic volume.\n\nFocus: Percentage of DNS queries blocked by filtering rules over the selected time range.\n\nImplementation: `adguard_num_blocked_filtering / adguard_num_dns_queries * 100` rendered as a time series across the dashboard time range.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-green",
+            "mode": "fixed"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
           },
-          "decimals": 0,
           "mappings": [],
-          "unit": "short"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percent"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 8
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
       },
-      "id": 99,
-      "maxDataPoints": 3,
+      "id": 104,
       "options": {
-        "displayLabels": [
-          "name"
-        ],
+        "alertThreshold": true,
         "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "pieType": "donut",
-        "reduceOptions": {
           "calcs": [
-            "mean"
+            "last"
           ],
-          "fields": "",
-          "values": false
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
         },
-        "sort": "desc",
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -685,30 +816,32 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "topk(10, adguard_top_blocked_domains{hostname=~'$node'})",
+          "expr": "adguard_num_blocked_filtering / adguard_num_dns_queries * 100",
           "format": "time_series",
-          "instant": false,
           "interval": "",
           "intervalFactor": 1,
-          "legendFormat": "{{ domain }}",
+          "legendFormat": "ads blocked (%)",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Top ads by domain",
+      "title": "AdGuard – ads blocked (%)",
       "transparent": true,
-      "type": "piechart"
+      "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Context: Most frequently queried domains observed by AdGuard Home.\n\nFocus: Top queried domains with their reported query counts.\n\nImplementation: Instant query `adguard_top_queried_domains` (legend: `{{ domain }}`) rendered as a table via `Series to rows`, with fields renamed (Metric→Domain, Value→Queries) and Time hidden.\n\nSecurity: DNS telemetry can reveal user/device behaviour; treat domain lists as sensitive and redact before sharing.",
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
             "cellOptions": {
-              "type": "auto"
+              "type": "auto",
+              "wrapText": false
             },
             "footer": {
               "reducers": []
@@ -766,7 +899,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 289
+                "value": 420
               }
             ]
           },
@@ -778,23 +911,52 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 60
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Queries"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 98
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Domain"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 820
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 7,
+        "h": 9,
+        "w": 12,
         "x": 0,
-        "y": 12
+        "y": 20
       },
       "id": 74,
       "options": {
         "cellHeight": "sm",
         "showHeader": true,
-        "sortBy": []
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Queries"
+          }
+        ]
       },
       "pluginVersion": "12.2.0",
       "targets": [
@@ -803,21 +965,39 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_top_queried_domains{hostname=~'$node'}",
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "adguard_top_queried_domains",
           "format": "time_series",
-          "instant": false,
+          "instant": true,
           "interval": "",
           "intervalFactor": 1,
           "legendFormat": "{{ domain }}",
+          "range": false,
           "refId": "A"
         }
       ],
-      "title": "Top queries",
+      "title": "AdGuard – top queried domains",
       "transformations": [
         {
           "id": "seriesToRows",
           "options": {
             "reducers": []
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "Metric": "Domain",
+              "Time": "",
+              "Value": "Queries"
+            }
           }
         }
       ],
@@ -829,360 +1009,14 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pihole"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pihole"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 9,
-        "x": 7,
-        "y": 12
-      },
-      "id": 62,
-      "options": {
-        "alertThreshold": true,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.2.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "adguard_num_blocked_filtering{hostname=~'$node'}",
-          "format": "time_series",
-          "interval": "",
-          "intervalFactor": 1,
-          "legendFormat": "{{ hostname }}",
-          "refId": "A"
-        }
-      ],
-      "title": "Ads blocked",
-      "transparent": true,
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "decimals": 0,
-          "mappings": [],
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 15
-      },
-      "id": 100,
-      "maxDataPoints": 3,
-      "options": {
-        "displayLabels": [
-          "name",
-          "value",
-          "percent"
-        ],
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": false,
-          "values": [
-            "value",
-            "percent"
-          ]
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "mean"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "sort": "desc",
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.2.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "adguard_query_types{hostname=~'$node'}",
-          "format": "time_series",
-          "instant": false,
-          "interval": "",
-          "intervalFactor": 1,
-          "legendFormat": "{{ type }}",
-          "refId": "A"
-        }
-      ],
-      "title": "Replies by type",
-      "transparent": true,
-      "type": "piechart"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pihole"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "super-light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pihole"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "super-light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 16,
-        "x": 0,
-        "y": 22
-      },
-      "id": 64,
-      "options": {
-        "alertThreshold": true,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.2.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "adguard_num_blocked_filtering{hostname=~'$node'} / adguard_num_dns_queries{hostname=~'$node'} * 100",
-          "format": "time_series",
-          "interval": "",
-          "intervalFactor": 1,
-          "legendFormat": "{{ hostname }}",
-          "refId": "A"
-        }
-      ],
-      "title": "% of ads blocked",
-      "transparent": true,
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "description": "Context: Most frequently blocked domains observed by AdGuard Home.\n\nFocus: Top blocked domains with their reported blocked-query counts.\n\nImplementation: Instant query `adguard_top_blocked_domains` (legend: `{{ domain }}`) rendered as a table via `Series to rows`, with fields renamed (Metric→Domain, Value→Blocked queries) and Time hidden.\n\nSecurity: DNS telemetry can reveal user/device behaviour; treat domain lists as sensitive and redact before sharing.",
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
             "cellOptions": {
-              "type": "auto"
+              "type": "auto",
+              "wrapText": false
             },
             "footer": {
               "reducers": []
@@ -1239,7 +1073,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 52
+                "value": 90
               }
             ]
           },
@@ -1251,22 +1085,52 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 377
+                "value": 420
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Domain"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 767
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Blocked queries"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 147
               }
             ]
           }
         ]
       },
       "gridPos": {
-        "h": 10,
-        "w": 8,
-        "x": 16,
-        "y": 22
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 20
       },
       "id": 90,
       "options": {
         "cellHeight": "sm",
-        "showHeader": true
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Blocked queries"
+          }
+        ]
       },
       "pluginVersion": "12.2.0",
       "targets": [
@@ -1275,20 +1139,38 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "adguard_top_blocked_domains{hostname=~'$node'}",
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "adguard_top_blocked_domains",
           "format": "time_series",
+          "instant": true,
           "interval": "",
           "intervalFactor": 1,
           "legendFormat": "{{ domain }}",
+          "range": false,
           "refId": "A"
         }
       ],
-      "title": "Top ads domains",
+      "title": "AdGuard – top blocked domains",
       "transformations": [
         {
           "id": "seriesToRows",
           "options": {
             "reducers": []
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "Metric": "Domain",
+              "Value": "Blocked queries"
+            }
           }
         }
       ],
@@ -1300,39 +1182,23 @@
   "refresh": "10s",
   "schemaVersion": 42,
   "tags": [
-    "adguard"
+    "homelab",
+    "apps",
+    "adguard",
+    "dns"
   ],
   "templating": {
-    "list": [
-      {
-        "current": {
-          "text": "adguard-home",
-          "value": "adguard-home"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
-        },
-        "definition": "label_values(adguard_num_dns_queries, hostname)",
-        "includeAll": false,
-        "name": "node",
-        "options": [],
-        "query": "label_values(adguard_num_dns_queries, hostname)",
-        "refresh": 1,
-        "regex": "",
-        "type": "query"
-      }
-    ]
+    "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {
     "nowDelay": ""
   },
   "timezone": "",
-  "title": "Adguard Exporter",
+  "title": "AdGuard – Service Overview",
   "uid": "MIBVglomg",
-  "version": 1
+  "version": 14
 }

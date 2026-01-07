@@ -15,10 +15,11 @@
       }
     ]
   },
-  "description": "Node-level system overview for the homelab host: CPU, load,\nmemory and root filesystem usage over time, backed by node_exporter.",
+  "description": "Node-level system overview for the main homelab host: CPU/load, memory pressure, and filesystem capacity (root + backups) over time.\n\nData source: Prometheus via node_exporter. Disk capacity is based on available space (`node_filesystem_avail_bytes`) to reflect usable capacity for services.\n\nSecurity: Host and filesystem metrics can expose internal hostnames, mount points, and capacity posture. Restrict access and redact before sharing publicly.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 12,
   "links": [],
   "panels": [
     {
@@ -26,7 +27,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Boolean scrape status for node_exporter on the host, based on `up{job=\"node\"}` \nover the last 5 minutes. If this is DOWN, host-level CPU, memory and filesystem \nmetrics may be stale or missing.",
+      "description": "Context: Host metrics collection via node_exporter.\n\nFocus: Fast “are we scraping the host?” signal. UP means Prometheus can reach node_exporter and the host metrics are current.\n\nImplementation: Based on the Prometheus `up` metric for the node_exporter scrape target.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -50,15 +51,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "yellow",
+                "color": "dark-yellow",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 1
               }
             ]
@@ -68,8 +69,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
+        "h": 4,
+        "w": 5,
         "x": 0,
         "y": 0
       },
@@ -99,7 +100,9 @@
           "refId": "A"
         }
       ],
+      "timeFrom": "5m",
       "title": "Node exporter status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -107,7 +110,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Host-wide CPU usage percentage over the last 5 minutes, computed as \n`100 - idle` from `node_cpu_seconds_total` across all cores using a 5m rate. \nIntended as a quick view of current CPU pressure on the node.",
+      "description": "Context: Host CPU utilisation.\n\nFocus: Quick current CPU pressure indicator over the last 5 minutes.\n\nImplementation: CPU busy % derived from node_exporter CPU seconds and aggregated across cores over a 5m window.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -133,9 +136,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 6,
-        "x": 6,
+        "x": 5,
         "y": 0
       },
       "id": 7,
@@ -168,6 +171,7 @@
       ],
       "timeFrom": "5m",
       "title": "CPU usage (last 5 minutes)",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -175,7 +179,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Host memory usage over the last 5 minutes, computed as \n`(MemTotal - MemAvailable) / MemTotal` from `node_memory_*` metrics. \nUsing MemAvailable avoids over-reporting usage due to page cache and buffers, and better reflects real memory pressure.",
+      "description": "Context: Host memory utilization.\n\nFocus: Quick current memory pressure indicator over the last 5 minutes.\n\nImplementation: Memory used % computed from total vs available memory reported by node_exporter (5m window).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -201,9 +205,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
+        "h": 4,
         "w": 6,
-        "x": 12,
+        "x": 11,
         "y": 0
       },
       "id": 8,
@@ -236,6 +240,7 @@
       ],
       "timeFrom": "5m",
       "title": "Memory usage (last 5 minutes)",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -243,7 +248,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Usage of the root filesystem (`/`) in percent, based on \n`node_filesystem_size_bytes` and `node_filesystem_free_bytes` for the main \nhost disk. Quick check of how close the node is to running out of disk space.",
+      "description": "Context: Host filesystem capacity (root + backups volumes).\n\nFocus: Fast “are we running out of disk?” check for the OS volume and the backups volume.\n\nImplementation: Usage % from node_exporter filesystem metrics for the two mountpoints/volumes (e.g., root (/) and backups), computed over a 5m window and shown side-by-side.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -269,11 +274,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
+        "h": 4,
+        "w": 7,
+        "x": 17,
         "y": 0
       },
+      "hideTimeOverride": false,
       "id": 9,
       "options": {
         "colorMode": "value",
@@ -296,14 +302,31 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max by (mountpoint) (\n  (\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint!~\"/etc($|/.*)\"\n    }\n    -\n    node_filesystem_free_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint!~\"/etc($|/.*)\"\n    }\n  )\n  /\n  node_filesystem_size_bytes{\n    job=\"node\",\n    fstype=~\"ext4|xfs|btrfs\",\n    mountpoint!~\"/etc($|/.*)\"\n  }\n  * 100\n)\n",
-          "legendFormat": "root",
+          "expr": "max by (mountpoint) (\n  100 * (1 - (\n    node_filesystem_avail_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n    /\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n  ))\n)",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
       "timeFrom": "5m",
       "title": "Disk usage (root, last 5 minutes)",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^/$",
+            "renamePattern": "root"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^/mnt/backups$",
+            "renamePattern": "backups"
+          }
+        }
+      ],
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -311,7 +334,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Host CPU usage computed as 100 - idle across all cores using a 5m rate.\nHighlights sustained CPU saturation versus short spikes.",
+      "description": "Context: Host CPU utilisation over time.\n\nFocus: Identify sustained high CPU, short spikes, and changes in baseline.\n\nImplementation: CPU busy % derived from node_exporter CPU seconds, aggregated across cores.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -335,7 +358,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "smooth",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -359,19 +382,19 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "yellow",
+                "color": "dark-yellow",
                 "value": 70
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 90
               }
             ]
@@ -408,7 +431,7 @@
         "h": 8,
         "w": 14,
         "x": 0,
-        "y": 5
+        "y": 4
       },
       "id": 2,
       "interval": "1m",
@@ -440,6 +463,7 @@
         }
       ],
       "title": "CPU usage (%)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -447,11 +471,11 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "1-minute load average per host, plotted against the number of CPU cores.\nWhen load1 stays above the core count, the host is CPU-saturated.",
+      "description": "Context: Host scheduling pressure (load average).\n\nFocus: Compare load1 to CPU capacity. Sustained load1 above CPU core count usually indicates CPU saturation or runnable queue backlog.\n\nImplementation: node_load1 plotted alongside CPU core count to provide a capacity reference.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisBorderShow": false,
@@ -471,7 +495,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "smooth",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -493,11 +517,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 80
               }
             ]
@@ -540,17 +564,6 @@
             },
             "properties": [
               {
-                "id": "custom.lineWidth",
-                "value": 2
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#37872D",
-                  "mode": "fixed"
-                }
-              },
-              {
                 "id": "displayName",
                 "value": "Host load1"
               }
@@ -562,7 +575,7 @@
         "h": 8,
         "w": 10,
         "x": 14,
-        "y": 5
+        "y": 4
       },
       "id": 6,
       "interval": "1m",
@@ -607,6 +620,7 @@
         }
       ],
       "title": "Load average (1m)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -614,7 +628,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "RAM usage computed as (MemTotal - MemAvailable) / MemTotal, which avoids\nover-reporting usage due to page cache and buffers.",
+      "description": "Context: Host memory utilisation over time.\n\nFocus: Spot sustained memory pressure and upward trends that may lead to swapping or OOM events.\n\nImplementation: Memory used % computed from total vs available memory reported by node_exporter.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -638,7 +652,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "smooth",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -662,56 +676,32 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "yellow",
+                "color": "dark-yellow",
                 "value": 70
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 90
               }
             ]
           },
           "unit": "percent"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "node-exporter:9100"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#37872d",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 2
-              },
-              {
-                "id": "displayName",
-                "value": "Host"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 10,
         "x": 0,
-        "y": 13
+        "y": 12
       },
       "id": 3,
       "interval": "1m",
@@ -742,6 +732,7 @@
         }
       ],
       "title": "Memory usage (%)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -749,7 +740,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Root filesystem (/) usage in percent, based on node_filesystem_size_bytes\nand node_filesystem_free_bytes for the main host disk.",
+      "description": "Context: Host filesystem capacity over time (root + backups volumes).\n\nFocus: Track growth rate and detect runaway disk usage on either the OS volume or the backups volume.\n\nImplementation: Usage % from node_exporter filesystem metrics for the selected mountpoints/volumes, excluding ephemeral/virtual filesystems.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -773,7 +764,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "smooth",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -801,15 +792,15 @@
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "yellow",
+                "color": "dark-yellow",
                 "value": 80
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 90
               }
             ]
@@ -846,7 +837,7 @@
         "h": 8,
         "w": 14,
         "x": 10,
-        "y": 13
+        "y": 12
       },
       "id": 4,
       "interval": "1m",
@@ -861,7 +852,7 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -869,13 +860,30 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "(\n  node_filesystem_size_bytes{\n    job=\"node\",\n    fstype=~\"ext4|xfs|btrfs\",\n    mountpoint=\"/\"\n  }\n  -\n  node_filesystem_free_bytes{\n    job=\"node\",\n    fstype=~\"ext4|xfs|btrfs\",\n    mountpoint=\"/\"\n  }\n)\n/ node_filesystem_size_bytes{\n  job=\"node\",\n  fstype=~\"ext4|xfs|btrfs\",\n  mountpoint=\"/\"\n} * 100\n",
-          "legendFormat": "{{mountpoint}} ({{instance}})",
+          "expr": "max by (mountpoint) (\n  100 * (1 - (\n    node_filesystem_avail_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n    /\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n  ))\n)",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Filesystem usage (%)",
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^/$",
+            "renamePattern": "root"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^/mnt/backups$",
+            "renamePattern": "backups"
+          }
+        }
+      ],
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -883,11 +891,12 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Total network throughput on the host, summed across\nall non-loopback, non-Docker interfaces.\nRx and Tx are computed from node_network_*_bytes_total\nusing a 5m rate.",
+      "description": "Context: Host network throughput.\n\nFocus: Spot sustained traffic spikes, drops, or Rx/Tx asymmetry that may correlate with backups, updates, or service issues.\n\nImplementation: Rx/Tx computed as a 5m rate from `node_network_{receive,transmit}_bytes_total`, summed across non-loopback, non-container/virtual interfaces.",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "dark-red",
+            "mode": "thresholds"
           },
           "custom": {
             "axisBorderShow": false,
@@ -906,8 +915,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -930,7 +939,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               }
             ]
@@ -954,10 +963,6 @@
                   "fixedColor": "dark-green",
                   "mode": "fixed"
                 }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 2
               }
             ]
           },
@@ -977,10 +982,6 @@
                   "fixedColor": "dark-yellow",
                   "mode": "fixed"
                 }
-              },
-              {
-                "id": "custom.lineWidth",
-                "value": 2
               }
             ]
           }
@@ -990,7 +991,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 20
       },
       "id": 5,
       "interval": "30s",
@@ -1014,20 +1015,21 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (instance) (\n  irate(node_network_receive_bytes_total{\n    job=\"node\",\n    device!~\"lo|docker.*|veth.*\"\n  }[5m])\n)\n",
+          "expr": "sum by (instance) (\n  irate(node_network_receive_bytes_total{\n    job=\"node\",\n    device!~\"lo|docker.*|veth.*\"\n  }[5m])\n)",
           "legendFormat": "Rx {{instance}}",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum by (instance) (\n  irate(node_network_transmit_bytes_total{\n    job=\"node\",\n    device!~\"lo|docker.*|veth.*\"\n  }[5m])\n)\n",
+          "expr": "sum by (instance) (\n  irate(node_network_transmit_bytes_total{\n    job=\"node\",\n    device!~\"lo|docker.*|veth.*\"\n  }[5m])\n)",
           "legendFormat": "Tx {{instance}}",
           "range": true,
           "refId": "B"
         }
       ],
       "title": "Network throughput (Rx/Tx)",
+      "transparent": true,
       "type": "timeseries"
     }
   ],
@@ -1035,6 +1037,7 @@
   "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
+    "homelab",
     "infra",
     "host",
     "node_exporter"
@@ -1050,5 +1053,5 @@
   "timezone": "",
   "title": "Host – System overview",
   "uid": "host-system-overview",
-  "version": 20
+  "version": 8
 }
