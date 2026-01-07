@@ -329,6 +329,22 @@ docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://loki:3100/r
 docker run --rm --network mon-net curlimages/curl:8.10.1 -G -sS   --data-urlencode 'query=count_over_time({job="dockerlogs"}[5m])'   http://loki:3100/loki/api/v1/query | jq -r '.data.result[0].value[1]'
 ```
 
+### Loki - late samples
+
+Loki is configured to **reject old samples**, but it allows a small, explicit
+late-arrival window to tolerate Promtail backfill after downtime or position
+resets:
+
+- `reject_old_samples: true`
+- `reject_old_samples_max_age: 336h` (14 days)
+
+This setting is **independent** from log retention (`retention_period`): it only
+controls how far back in time Loki will accept timestamps at ingest.
+
+If you see Promtail/Loki errors like `HTTP 400 ... timestamp too old`, it means
+some log streams are being pushed with timestamps older than the allowed window.
+
+
 **Promtail**
 
 ```bash
