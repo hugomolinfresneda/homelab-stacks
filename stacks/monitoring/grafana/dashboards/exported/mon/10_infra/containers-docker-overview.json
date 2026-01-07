@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "High-level view of Docker container health and resource usage on the main homelab node. Uses cAdvisor metrics to track CPU, memory, disk, network and container uptime, grouped by stack and by container.",
+  "description": "High-level view of Docker container health and resource usage on the main homelab node.\n\nTop-level panels cover fleet health (recent starts and uptime) and resource usage (CPU as % of host CPU, memory working set, disk I/O, and network throughput). Views are grouped by Docker Compose project (“stack”) and container, with a per-container detail section driven by the selected stack/service/container.\n\nData source: Prometheus via cAdvisor.\n\nSecurity: Container metrics can reveal internal service names and operational topology. Restrict access and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -39,7 +39,7 @@
       "datasource": {
         "type": "prometheus"
       },
-      "description": "Health check for the cAdvisor exporter. If this is DOWN, container-level metrics in this dashboard are stale or missing and the rest of the panels should not be trusted.",
+      "description": "Context: Container metrics collection via cAdvisor.\n\nFocus: Fast “are we scraping cAdvisor?” signal for container-level telemetry.\n\nImplementation: `max(up{job=\"cadvisor\"})` over the panel’s relative time window.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -116,6 +116,7 @@
       ],
       "timeFrom": "5m",
       "title": "cAdvisor exporter status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -123,7 +124,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Approximate number of Docker containers seen by cAdvisor in the last 5 minutes. Sudden drops usually mean crashed services or stacks being stopped; spikes typically correspond to deployments or batch jobs.",
+      "description": "Context: Container liveness as seen by cAdvisor.\n\nFocus: Quick count of containers that are currently active/recently seen.\n\nImplementation: Counts containers with `(time() - container_last_seen) < 300s`, summed across all non-empty images.",
       "fieldConfig": {
         "defaults": {
           "decimals": 0,
@@ -184,6 +185,7 @@
       ],
       "timeFrom": "5m",
       "title": "Running containers",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -191,7 +193,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Share of total host CPU time currently consumed by all Docker containers, averaged over the last 5 minutes. High sustained values near the red threshold indicate CPU saturation and little headroom for additional workloads.",
+      "description": "Context: Total container CPU usage relative to host capacity.\n\nFocus: Show how much of the host CPU is being consumed by containers overall.\n\nImplementation: `100 * sum(rate(container_cpu_usage_seconds_total[5m])) / count(host CPU cores)`, excluding empty image series.",
       "fieldConfig": {
         "defaults": {
           "decimals": 1,
@@ -259,6 +261,7 @@
       ],
       "timeFrom": "5m",
       "title": "Containers CPU vs host",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -266,7 +269,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Share of host RAM currently used by Docker containers compared to the node’s total physical memory. Values close to the red threshold leave little room for the OS page cache and other processes, and may lead to swapping or OOM kills.",
+      "description": "Context: Total container memory working set relative to host RAM.\n\nFocus: Show how much host memory is effectively in use by containers.\n\nImplementation: `100 * sum(container_memory_working_set_bytes) / max(node_memory_MemTotal_bytes)`, excluding empty image series.",
       "fieldConfig": {
         "defaults": {
           "decimals": 1,
@@ -326,7 +329,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 *\nsum(container_memory_working_set_bytes{job=\"cadvisor\", image!=\"\"})\n/\nmax(node_memory_MemTotal_bytes{job=\"node\"})\n",
+          "expr": "100 *\nsum(container_memory_working_set_bytes{job=\"cadvisor\", image!=\"\"})\n/\nmax(node_memory_MemTotal_bytes{job=\"node\"})",
           "instant": true,
           "legendFormat": "Memory share",
           "refId": "A"
@@ -334,6 +337,7 @@
       ],
       "timeFrom": "5m",
       "title": "Containers memory vs host",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -341,7 +345,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Per-stack CPU usage as a percentage of total host CPU, grouped by Docker Compose project and averaged over the last 5 minutes. Use this panel to see which stacks are driving overall container CPU usage.",
+      "description": "Context: Per-stack CPU usage (Docker Compose project).\n\nFocus: Identify which stacks are driving overall container CPU consumption over time.\n\nImplementation: sum by (compose project) of `100 * rate(container_cpu_usage_seconds_total[5m]) / host core count`",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -392,11 +396,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 80
               }
             ]
@@ -424,7 +428,7 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -442,6 +446,7 @@
         }
       ],
       "title": "CPU by stack",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -449,7 +454,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Top Docker containers by share of host CPU over the last 5 minutes. Helps identify which specific services are currently the main CPU consumers inside each stack.",
+      "description": "Context: Per-container CPU share of host capacity.\n\nFocus: Quickly pinpoint the main CPU consumers across stacks/services.\n\nImplementation: topk(5) of `100 * rate(container_cpu_usage_seconds_total[5m]) / host core count`; table fields organized via “Organize fields by name”.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -521,7 +526,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "topk(\n  5,\n  100 *\n  rate(container_cpu_usage_seconds_total{job=\"cadvisor\", image!=\"\"}[5m])\n  /\n  scalar(count(node_cpu_seconds_total{job=\"node\", mode=\"idle\"}))\n)\n",
+          "expr": "topk(\n  5,\n  100 *\n  rate(container_cpu_usage_seconds_total{job=\"cadvisor\", image!=\"\"}[5m])\n  /\n  scalar(count(node_cpu_seconds_total{job=\"node\", mode=\"idle\"}))\n)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -584,6 +589,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -591,7 +597,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Per-stack container memory usage (working set), aggregated across all containers in each Docker Compose project and shown in MiB/GiB. Use it to spot stacks that are steadily growing in memory or close to their expected limits.",
+      "description": "Context: Per-stack memory footprint (working set).\n\nFocus: See which stacks hold the largest memory working set over time.\n\nImplementation: sum by (compose project) of `container_memory_working_set_bytes` (excluding empty image series).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -670,7 +676,7 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -687,6 +693,7 @@
         }
       ],
       "title": "Memory by stack",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -694,7 +701,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Docker containers with the highest working set memory usage. Highlights services that are consuming a large share of RAM and may need closer monitoring or tuning.",
+      "description": "Context: Per-container memory working set.\n\nFocus: Identify the containers with the highest current memory footprint.\n\nImplementation: topk(5) of `container_memory_working_set_bytes`; table fields organized via “Organize fields by name”.\n",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -832,6 +839,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -839,7 +847,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Aggregated disk read and write throughput per Docker Compose project, based on cAdvisor container filesystem metrics over the last 5 minutes. Spikes highlight which stacks are stressing the underlying disks.",
+      "description": "Context: Per-stack filesystem I/O throughput.\n\nFocus: Spot stacks generating sustained read/write pressure.\n\nImplementation: sum by (compose project) of `rate(reads_bytes_total[5m]) + rate(writes_bytes_total[5m])` from cAdvisor filesystem counters.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -917,7 +925,7 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -934,6 +942,7 @@
         }
       ],
       "title": "Disk I/O by stack",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -941,7 +950,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Top Docker containers by combined read and write disk throughput over the last 5 minutes. Use this table to pinpoint services that are hammering the disk and may explain high latency or noisy neighbours.",
+      "description": "Context: Per-container filesystem I/O throughput.\n\nFocus: Identify which specific containers are generating the most disk I/O.\n\nImplementation: topk(5) of `rate(reads_bytes_total[5m]) + rate(writes_bytes_total[5m])`; table fields organized via “Organize fields by name”.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1079,6 +1088,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -1086,7 +1096,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Aggregated network receive and transmit throughput per Docker Compose project, calculated from cAdvisor metrics over the last 5 minutes. Shows which stacks are responsible for most of the network traffic on the node.",
+      "description": "Context: Per-stack network throughput (Rx+Tx total).\n\nFocus: Spot which stacks are driving network load and sustained throughput changes.\n\nImplementation: sum by (compose project) of `rate(receive_bytes_total[5m]) + rate(transmit_bytes_total[5m])` from cAdvisor network counters.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1164,7 +1174,7 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
@@ -1179,6 +1189,7 @@
         }
       ],
       "title": "Network by stack",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -1186,7 +1197,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Top Docker containers by combined receive and transmit network throughput over the last 5 minutes. Helps identify chatty services, bandwidth-heavy workloads or unexpected outbound traffic.",
+      "description": "Context: Per-container network throughput (Rx+Tx total).\n\nFocus: Quickly identify the top “network talkers” across stacks/services.\n\nImplementation: topk(5) of `rate(receive_bytes_total[5m]) + rate(transmit_bytes_total[5m])`; table fields organized via “Organize fields by name”.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1326,6 +1337,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -1333,7 +1345,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Containers whose uptime is below 1 hour, derived from cAdvisor start timestamps. Useful to spot frequent restarts, recent deployments or unstable services at a glance.",
+      "description": "Context: Container restarts/starts observed by cAdvisor.\n\nFocus: Surface containers that have started within the last hour (useful for spotting recent restarts).\n\nImplementation: Filters containers where `(time() - container_start_time_seconds) < 3600`; when present, the returned value is the current uptime in seconds.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1427,9 +1439,16 @@
               "container_label_com_repo": true,
               "container_label_com_stack": true,
               "container_label_maintainer": true,
+              "container_label_org_opencontainers_image_created": true,
+              "container_label_org_opencontainers_image_description": true,
+              "container_label_org_opencontainers_image_licenses": true,
               "container_label_org_opencontainers_image_ref_name": true,
+              "container_label_org_opencontainers_image_revision": true,
               "container_label_org_opencontainers_image_source": true,
+              "container_label_org_opencontainers_image_title": true,
+              "container_label_org_opencontainers_image_url": true,
               "container_label_org_opencontainers_image_version": true,
+              "container_label_service": true,
               "id": true,
               "image": true,
               "instance": true,
@@ -1451,6 +1470,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -1458,7 +1478,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Current uptime for all containers scraped by cAdvisor, shown as a point-in-time view. Use it together with the “Recent container starts” panel to distinguish long-running services from containers that are being restarted often.",
+      "description": "Context: Current container uptime.\n\nFocus: Provide a quick “how long has it been running?” snapshot across containers.\n\nImplementation: `time() - container_start_time_seconds`; table fields organized via “Organize fields by name”.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1592,6 +1612,7 @@
           }
         }
       ],
+      "transparent": true,
       "type": "table"
     },
     {
@@ -1612,7 +1633,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "CPU usage for the selected container as a share of host CPU, using a 5-minute moving average.\nUse this panel to inspect short-term spikes and confirm whether a container is actually busy\nwhen it appears in the “Top containers – CPU” table.",
+      "description": "Context: Selected container CPU usage relative to host capacity.\n\nFocus: Inspect CPU behaviour for one container in detail and correlate with spikes above.\n\nImplementation: `100 * rate(container_cpu_usage_seconds_total[5m]) / host core count` filtered by compose project/service and cAdvisor name.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1715,13 +1736,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 *\nsum by (name) (\n  rate(\n    container_cpu_usage_seconds_total{\n      job=\"cadvisor\",\n      image!=\"\",\n      container_label_com_docker_compose_project=\"$stack\",\n      container_label_com_docker_compose_service=\"$service\",\n      name=\"$container\"\n    }[5m]\n  )\n)\n/ scalar(\n  count(node_cpu_seconds_total{job=\"node\", mode=\"idle\"})\n)\n",
+          "expr": "100 *\nsum by (name) (\n  rate(\n    container_cpu_usage_seconds_total{\n      job=\"cadvisor\",\n      image!=\"\",\n      container_label_com_docker_compose_project=\"$stack\",\n      container_label_com_docker_compose_service=\"$service\",\n      name=\"$container\"\n    }[5m]\n  )\n)\n/ scalar(\n  count(node_cpu_seconds_total{job=\"node\", mode=\"idle\"})\n)",
           "instant": false,
           "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
       "title": "CPU – $stack / $service / $container",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -1729,7 +1751,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Working set memory for the selected container over time, shown in MiB/GiB.\nHelps track growth, spot sudden jumps and detect potential memory leaks or mis-sized limits.",
+      "description": "Context: Selected container memory working set.\n\nFocus: Inspect memory footprint for one container and detect step changes or growth.\n\nImplementation: `container_memory_working_set_bytes` filtered by compose project/service and cAdvisor name.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1838,6 +1860,7 @@
         }
       ],
       "title": "Memory  – $stack / $service / $container",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -1845,7 +1868,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Combined read and write disk throughput for the selected container, based on cAdvisor filesystem\nmetrics and calculated over a 5-minute window. Use it to see whether this service is responsible\nfor disk spikes observed at stack level.",
+      "description": "Context: Selected container filesystem I/O throughput.\n\nFocus: Inspect read/write pressure for one container and correlate with host/storage symptoms.\n\nImplementation: `rate(container_fs_reads_bytes_total[5m]) + rate(container_fs_writes_bytes_total[5m])` filtered by compose project/service and cAdvisor name.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1954,6 +1977,7 @@
         }
       ],
       "title": "Disk I/O – $stack / $service / $container",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -1961,7 +1985,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Combined receive and transmit network throughput for the selected container over time.\nHelps confirm whether a service is causing network bursts, sustained bandwidth usage,\nor unusual outbound traffic.",
+      "description": "Context: Selected container network throughput (Rx+Tx total).\n\nFocus: Inspect network activity for one container and correlate with service behaviour.\n\nImplementation: `rate(container_network_receive_bytes_total[5m]) + rate(container_network_transmit_bytes_total[5m])` filtered by compose project/service and cAdvisor name.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2069,6 +2093,7 @@
         }
       ],
       "title": "Network  – $stack / $service / $container",
+      "transparent": true,
       "type": "timeseries"
     }
   ],
@@ -2076,8 +2101,9 @@
   "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
+    "homelab",
     "infra",
-    "docker",
+    "containers",
     "cadvisor"
   ],
   "templating": {
@@ -2085,8 +2111,8 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "nextcloud",
-          "value": "nextcloud"
+          "text": "monitoring",
+          "value": "monitoring"
         },
         "definition": "label_values(container_memory_working_set_bytes{job=\"cadvisor\"},container_label_com_docker_compose_project)",
         "description": "Docker Compose project (stack) discovered by cAdvisor.",
@@ -2106,8 +2132,8 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "app",
-          "value": "app"
+          "text": "grafana",
+          "value": "grafana"
         },
         "definition": "label_values(container_memory_working_set_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=\"$stack\"},container_label_com_docker_compose_service)",
         "description": "Docker Compose service within the selected stack.",
@@ -2127,8 +2153,8 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "nc-app",
-          "value": "nc-app"
+          "text": "mon-grafana",
+          "value": "mon-grafana"
         },
         "definition": "label_values(container_memory_working_set_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=\"$stack\", container_label_com_docker_compose_service=\"$service\"},name)",
         "description": "Container name within the selected stack and service.",
@@ -2155,5 +2181,5 @@
   "timezone": "",
   "title": "Containers – Docker overview",
   "uid": "containers-docker-overview",
-  "version": 2
+  "version": 10
 }

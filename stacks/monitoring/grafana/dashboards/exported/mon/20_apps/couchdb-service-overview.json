@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Service-level overview for the CouchDB instance used by the homelab.\n\nThe dashboard combines three views:\n- Health: exporter scrape status, public HTTPS endpoint availability and HTTP 5xx error share.\n- Traffic: request volume and breakdown by HTTP status code.\n- Internals: Erlang VM memory usage and internal resource counters such as open databases and OS file descriptors.\n\nUse this dashboard to quickly answer:\n- Is CouchDB reachable both from the monitoring stack and from the public HTTP path?\n- How much traffic is the node handling and how clean are the responses?\n- Are there signs of internal resource pressure that could explain latency or error spikes?\n\nAlerting rules for CouchDB are defined in `couchdb.rules.yml` and reuse the same metrics surfaced here.",
+  "description": "Operational overview of the CouchDB service, combining external availability, request health, and internal capacity signals.\n\nTop row (last 5m): exporter scrape status and public endpoint status for near-real-time availability checks.\n\nTraffic & errors: request throughput and HTTP status distribution (req/s), including 5xx rate (req/s) and 5xx share (%, last 5m) to detect and quantify failures.\n\nCapacity & limits: open databases and OS file usage to surface resource pressure that can degrade performance or trigger errors.\n\nData sources: Prometheus (CouchDB exporter metrics) and, where available, Loki (docker logs) for incident triage.\n\nSecurity: This dashboard reflects an Internet-exposed service; treat hostnames, endpoint metadata, and any log content as operationally sensitive. Restrict access and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -40,7 +40,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Scrape status for the CouchDB Prometheus exporter (up{job=\"couchdb\"}) over the last 5 minutes.\nIf this panel is DOWN, Prometheus cannot scrape CouchDB metrics and the rest of the dashboard may be stale.",
+      "description": "Context: Availability of CouchDB metrics from the Prometheus exporter.\n\nFocus: Binary UP/DOWN signal indicating whether Prometheus can scrape the CouchDB exporter.\n\nImplementation: `min by (job) (up{job=\"couchdb\"})` displayed as the latest value and value-mapped (0→DOWN, 1→UP). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -111,7 +111,8 @@
         }
       ],
       "timeFrom": "5m",
-      "title": "CouchDB – Exporter health",
+      "title": "CouchDB – Exporter scrape status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -119,7 +120,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "External HTTPS health for the public CouchDB _up endpoint, measured via the blackbox exporter.\nA DOWN status usually indicates an issue in the HTTP path (DNS, reverse proxy or Cloudflare tunnel) rather than in CouchDB itself.",
+      "description": "Context: External HTTPS reachability of the public CouchDB /_up endpoint.\n\nFocus: Binary UP/DOWN result of the Blackbox HTTPS probe.\n\nImplementation: `probe_success{job=\"blackbox-http\", instance=\"https://couchdb.atardecer-naranja.es/_up\"}` displayed as the latest value and value-mapped (0→DOWN, 1→UP). Panel relative time override: 5m.\n\nSecurity: Public endpoint signal; treat the hostname as operational metadata when sharing.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
@@ -190,14 +191,15 @@
         }
       ],
       "timeFrom": "5m",
-      "title": "CouchDB – Public endpoint health",
+      "title": "CouchDB – Public endpoint status",
+      "transparent": true,
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus"
       },
-      "description": "Percentage of CouchDB HTTP responses that are 5xx over the last 5 minutes.\nExpected to stay at 0% under normal conditions; sustained spikes indicate server-side failures and should be investigated using CouchDB logs and upstream client behaviour.",
+      "description": "Context: Server-side failure share in CouchDB HTTP responses.\n\nFocus: Percentage of responses that are HTTP 5xx (0–100%) over the last 5 minutes.\n\nImplementation: `100 * (sum(rate(couchdb_httpd_status_codes{code=~\"5..\"}[5m])) / clamp_min(sum(rate(couchdb_httpd_status_codes[5m])), 0.001))` displayed as the latest value. Thresholds: <1% (green), 1–5% (orange), ≥5% (red). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "decimals": 1,
@@ -259,7 +261,8 @@
         }
       ],
       "timeFrom": "5m",
-      "title": "CouchDB – HTTP 5xx error rate",
+      "title": "CouchDB – HTTP 5xx share (last 5m)",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -267,7 +270,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "HTTP request volume served by CouchDB, based on couchdb_httpd_status_codes rates.\nUsed to understand overall activity and correlate traffic patterns with error rates or latency.",
+      "description": "Context: CouchDB request throughput.\n\nFocus: Total HTTP requests per second served by CouchDB across all status codes.\n\nImplementation: `sum(rate(couchdb_httpd_status_codes[5m]))` rendered as a time series (5m rate window).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -334,6 +337,7 @@
         "legend": {
           "calcs": [
             "last",
+            "min",
             "max",
             "mean"
           ],
@@ -352,12 +356,13 @@
         {
           "editorMode": "code",
           "expr": "sum(\n  rate(couchdb_httpd_status_codes[5m])\n)",
-          "legendFormat": "Total requests/s",
+          "legendFormat": "total requests/s",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "CouchDB – Requests per second",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -365,7 +370,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "HTTP requests per second grouped by status code using couchdb_httpd_status_codes.\nHelps distinguish normal 2xx traffic from client and server errors and correlate spikes with specific time windows.",
+      "description": "Context: HTTP response mix for CouchDB.\n\nFocus: Requests per second split by HTTP status code to separate normal 2xx traffic from client and server errors.\n\nImplementation: `sum by (code) (rate(couchdb_httpd_status_codes[5m]))` rendered as a time series (5m rate window).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -400,7 +405,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -422,8 +427,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "200"
+              "id": "byRegexp",
+              "options": "^2\\d\\d$"
             },
             "properties": [
               {
@@ -437,83 +442,8 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "409"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "304"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "light-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "500"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "405"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "201"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "dark-yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "202"
+              "id": "byRegexp",
+              "options": "^3\\d\\d$"
             },
             "properties": [
               {
@@ -527,14 +457,14 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "404"
+              "id": "byRegexp",
+              "options": "^4\\d\\d$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "light-blue",
+                  "fixedColor": "dark-yellow",
                   "mode": "fixed"
                 }
               }
@@ -542,14 +472,14 @@
           },
           {
             "matcher": {
-              "id": "byName",
-              "options": "403"
+              "id": "byRegexp",
+              "options": "^5\\d\\d$"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "light-yellow",
+                  "fixedColor": "dark-red",
                   "mode": "fixed"
                 }
               }
@@ -595,6 +525,7 @@
         }
       ],
       "title": "CouchDB – Requests by status code",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -602,7 +533,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "HTTP 5xx responses per second derived from couchdb_httpd_status_codes over a 5-minute rate window.\nHighlights sustained server-side failures that may not be visible from the overall request volume alone.",
+      "description": "Context: Absolute volume of server-side HTTP failures.\n\nFocus: HTTP 5xx responses per second emitted by CouchDB.\n\nImplementation: `sum(rate(couchdb_httpd_status_codes{code=~\"5..\"}[5m]))` rendered as a time series (5m rate window).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -700,7 +631,8 @@
           "refId": "A"
         }
       ],
-      "title": "CouchDB – HTTP 5xx rate",
+      "title": "CouchDB – HTTP 5xx rate (req/s)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -708,7 +640,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Erlang VM memory usage for the CouchDB node, broken down by atom, binary and code segments.\nUsed to detect abnormal growth patterns or memory pressure that may explain latency or error spikes.",
+      "description": "Context: Erlang VM memory usage for the CouchDB node.\n\nFocus: Memory in bytes split by segment (atom, binary, and code) to detect abnormal growth patterns and memory pressure.\n\nImplementation: `couchdb_erlang_memory_atom`, `couchdb_erlang_memory_binary`, and `couchdb_erlang_memory_code` rendered as time series.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -857,6 +789,7 @@
         }
       ],
       "title": "CouchDB – Erlang memory breakdown",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -864,7 +797,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Internal CouchDB resources as reported by the exporter: number of open databases and OS file descriptors.\nUseful to detect resource exhaustion scenarios and correlate them with 5xx spikes or degraded performance.",
+      "description": "Context: Internal CouchDB resource usage.\n\nFocus: Count of open databases and open OS files (file descriptors) reported by the exporter.\n\nImplementation: `couchdb_httpd_open_databases` and `couchdb_httpd_open_os_files` rendered as time series.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -944,7 +877,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "dark-yellow",
+                  "fixedColor": "dark-blue",
                   "mode": "fixed"
                 }
               }
@@ -992,7 +925,8 @@
           "refId": "B"
         }
       ],
-      "title": "CouchDB – Open databases / file handles",
+      "title": "CouchDB – Open databases / OS files",
+      "transparent": true,
       "type": "timeseries"
     }
   ],
@@ -1000,9 +934,10 @@
   "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
+    "homelab",
+    "apps",
     "couchdb",
-    "service",
-    "apps"
+    "database"
   ],
   "templating": {
     "list": []
@@ -1013,7 +948,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "CouchDB – Service overview",
+  "title": "CouchDB – Service Overview",
   "uid": "couchdb-service-overview",
-  "version": 41
+  "version": 46
 }

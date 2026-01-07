@@ -277,14 +277,15 @@ The monitoring stack provides a dedicated Grafana dashboard:
 
 - **Cloudflared – Tunnel Overview**
 
-It surfaces at a glance:
+It is intended to give a single-screen view of tunnel health and behaviour:
 
-- Current tunnel status (`up{job="cloudflared"}`).
-- 24-hour success rate (percentage of successful requests).
-- Edge connections and QUIC RTT.
-- Requests per second and error rate (%).
-- Active TCP / UDP sessions.
-- A log panel filtered to `service="cloudflared"` with only error-level lines.
+- **Near-real-time health (last 5m)**: tunnel scrape status, HA connections to the edge, and QUIC RTT.
+- **SLO-style view (last 24h)**: request success rate.
+- **Traffic & failures**: proxied requests per second and request error rate (req/s and %).
+- **L4 sessions**: *WARP routing – Active TCP/UDP sessions* (may remain at 0 for pure HTTP(S) ingress tunnels).
+- **Logs (last 30m)**: error-only log lines from the `cloudflared` container for fast triage.
+
+Panel descriptions follow the standard `Context / Focus / Implementation / Security` format used across the monitoring dashboards.
 
 Logs are ingested by Promtail from the Docker JSON logs for the
 `cloudflared` container. The container is labelled with `com.logging="true"`

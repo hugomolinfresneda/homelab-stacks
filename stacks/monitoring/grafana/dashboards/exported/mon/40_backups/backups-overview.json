@@ -15,10 +15,11 @@
       }
     ]
   },
-  "description": "Single-page overview of scheduled backups for the homelab: the Restic\nrepository and the application-level Nextcloud backup.\n\nThe first row shows freshness and status of the latest runs, including a\nbasic sanity check that all backup metrics are being scraped. The second\nrow tracks backup duration for each layer and overlays them to highlight\nshared bottlenecks or application-only issues. The third row focuses on\ndata volume and growth, comparing Restic’s added data per run with the\ntotal size of the Nextcloud backup.\n\nAll metrics are exposed via the node_exporter textfile collector and\nthresholds are aligned with the corresponding Prometheus backup alerts.\nUse this dashboard as the first place to answer “Are backups running,\nrecent, and roughly the right size and duration?”",
+  "description": "Single-page overview of scheduled backups for the homelab, covering both the Restic repository layer and the application-level Nextcloud backup.\n\nWorkflow: start from freshness and last-run status to confirm backups are recent and succeeding, then correlate run duration across layers to spot shared bottlenecks or layer-specific slowdowns. Finally, review data volume and growth by comparing Restic added data from the last successful run with the size of the last successful Nextcloud backup.\n\nRow 1: hours since last success, last exit status, and a scrape sanity check for backup metrics.\nRow 2: run duration per layer, overlaid to highlight correlation and contention.\nRow 3: data volume and growth signals for Restic and Nextcloud backups.\n\nData source: Prometheus, fed by node_exporter textfile collector metrics. Thresholds are aligned with the corresponding Prometheus backup alerts.\n\nSecurity: Backup metrics can reveal storage capacity, retention cadence, and operational schedules. Restrict access and avoid sharing raw exports without redaction.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 19,
   "links": [],
   "panels": [
     {
@@ -26,7 +27,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Shows how many hours have passed since the last successful Restic backup,\nas reported by the textfile collector gauge. Use it to spot stale or\nnever-run backups at a glance. Thresholds match the Restic “backup stale”\nalert (warning at 24h, critical at 36h).",
+      "description": "Context: Restic backup freshness.\n\nFocus: Hours since the last successful Restic run.\n\nImplementation: `(time() - restic_last_success_timestamp) / 3600`, evaluated over the panel’s relative time window.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -98,6 +99,7 @@
       ],
       "timeFrom": "1h",
       "title": "Restic – age",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -105,7 +107,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Exit code of the last Restic backup run. Zero means success; any\nnon-zero value indicates a failed backup that should be investigated.\nThresholds align with the “backup failed recently” alert.",
+      "description": "Context: Restic backup last run status.\n\nFocus: Quick success/failure indicator for the latest Restic execution.\n\nImplementation: `restic_last_status` with value mapping: 0 → OK, >0 → Error (threshold: green baseline, red from 0.5).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -188,6 +190,7 @@
       ],
       "timeFrom": "1h",
       "title": "Restic – status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -195,7 +198,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Hours since the last successful application-level Nextcloud backup\nfinished, based on the timestamp gauge exposed by the backup script. This\ncomplements the Restic view by tracking the freshness of the app-level\nbackup itself. Thresholds match the Nextcloud “backup stale” alert.",
+      "description": "Context: Nextcloud backup freshness.\n\nFocus: Hours since the last successful Nextcloud backup.\n\nImplementation: `(time() - nextcloud_backup_last_success_timestamp) / 3600`, evaluated over the panel’s relative time window.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -267,6 +270,7 @@
       ],
       "timeFrom": "1h",
       "title": "Nextcloud – age",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -274,7 +278,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Exit code of the last Nextcloud backup job. A non-zero status means the\napplication backup did not complete successfully, even if Restic still runs\nand reports success at the repository level.",
+      "description": "Context: Nextcloud backup last run status.\n\nFocus: Quick success/failure indicator for the latest Nextcloud backup execution.\n\nImplementation: `nextcloud_backup_last_status` with value mapping: 0 → OK, >0 → Error (threshold: green baseline, red from 0.5).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -357,6 +361,7 @@
       ],
       "timeFrom": "1h",
       "title": "Nextcloud – status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -364,7 +369,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Sanity check that backup metrics are present in Prometheus. A value of 2\nmeans both Restic and Nextcloud backup gauges are visible, 1 indicates only\none of them is being scraped, and 0 usually means the backup jobs have never\nsucceeded or textfile metrics are not configured correctly.",
+      "description": "Context: Backup metrics presence in Prometheus.\n\nFocus: Sanity check that both Restic and Nextcloud backup gauges are being scraped and visible.\n\nImplementation: `count(restic_last_success_timestamp) + count(nextcloud_backup_last_success_timestamp)` with value mapping: 0 → No metrics, 1 → Partial, 2 → OK (thresholds: red/amber/green).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -446,6 +451,7 @@
       ],
       "timeFrom": "1h",
       "title": "Backup metrics – sanity",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -453,7 +459,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Duration of the last Restic backup run, updated every time the job\ncompletes. Spikes or a steady upward trend may indicate storage, network\nor repository contention. The 1h threshold matches the Restic “backup\nduration high” alert.",
+      "description": "Context: Restic backup run duration.\n\nFocus: Track duration changes over time to spot slowdowns or unusually short runs.\n\nImplementation: `restic_last_duration_seconds` (duration of the most recent execution; success tracked separately via `restic_last_success_timestamp` and `restic_last_status`).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -559,6 +565,7 @@
         }
       ],
       "title": "Restic – backup duration",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -566,7 +573,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Duration of the last application-level Nextcloud backup. Track whether\nthe app-level backup window grows as the instance accumulates data or as\nthe underlying storage slows down. The 45-minute threshold matches the\nNextcloud “backup duration high” alert.",
+      "description": "Context: Nextcloud backup run duration.\n\nFocus: Track duration changes over time to spot slowdowns or unusually short runs.\n\nImplementation: `nextcloud_backup_last_duration_seconds` (duration of the most recent execution; success tracked separately via `nextcloud_backup_last_success_timestamp` and `nextcloud_backup_last_status`).\n",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -672,6 +679,7 @@
         }
       ],
       "title": "Nextcloud – backup duration",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -679,7 +687,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Overlay of Restic and Nextcloud backup durations. Use it to see whether\nboth layers slow down at the same time (shared bottleneck) or only one of\nthem is affected. It helps distinguish app-level issues from repository-\nlevel or storage-related problems.",
+      "description": "Context: Backup duration comparison (Restic vs Nextcloud).\n\nFocus: Compare both run durations to spot shared bottlenecks or layer-specific slowdowns.\n\nImplementation: Overlays `restic_last_duration_seconds` and `nextcloud_backup_last_duration_seconds`.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -775,8 +783,8 @@
       "options": {
         "legend": {
           "calcs": [],
-          "displayMode": "table",
-          "placement": "right",
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
@@ -809,6 +817,7 @@
         }
       ],
       "title": "Backups – duration overlay (Restic vs Nextcloud)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -816,7 +825,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Amount of new data added to the Restic repository by the last backup\nrun, expressed in GiB. Sudden drops to near-zero may indicate that relevant\npaths are no longer included, while large spikes can flag unexpected data\ngrowth or misconfigured backup selection. The 50 GiB threshold matches\nthe Restic “backup growth spike” alert.",
+      "description": "Context: Restic backup delta size.\n\nFocus: Track how much data is added on the last successful run to spot unusual growth.\n\nImplementation: `restic_last_added_bytes` (size added in the last successful backup).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -922,6 +931,7 @@
         }
       ],
       "title": "Restic – data added per run",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -929,7 +939,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Size of the last Nextcloud backup snapshot, expressed in GiB. It should\ngrow gradually as the instance accumulates data, except when retention\npolicies or manual cleanups prune old content. Sudden drops without a known\ncleanup are a red flag.",
+      "description": "Context: Nextcloud backup snapshot size.\n\nFocus: Track the last successful backup size over time to detect growth and validate expected footprint.\n\nImplementation: `nextcloud_backup_last_size_bytes` (size of the last successful backup).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1035,6 +1045,7 @@
         }
       ],
       "title": "Nextcloud – backup size",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -1042,7 +1053,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Compares the total Nextcloud backup size with the data added by Restic\non each run, both expressed in GiB. Large Nextcloud growth should roughly\ncorrelate with higher Restic added data; if not, some data may be missing\nfrom the repository or being backed up through a different pipeline.",
+      "description": "Context: Relationship between Nextcloud snapshot size and Restic added data.\n\nFocus: Compare last successful Nextcloud backup size vs last successful Restic added data to spot unusual patterns.\n\nImplementation: Plots `nextcloud_backup_last_size_bytes` and `restic_last_added_bytes` on dual Y-axes (left/right).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1180,19 +1191,18 @@
         }
       ],
       "title": "Restic vs Nextcloud – data relationship",
+      "transparent": true,
       "type": "timeseries"
     }
   ],
   "preload": false,
   "schemaVersion": 42,
   "tags": [
+    "homelab",
     "backups",
     "restic",
     "nextcloud",
-    "operations",
-    "status",
-    "overview",
-    "homelab"
+    "overview"
   ],
   "templating": {
     "list": []
@@ -1205,5 +1215,5 @@
   "timezone": "browser",
   "title": "Backups – Overview",
   "uid": "huvzfwk",
-  "version": 99
+  "version": 102
 }

@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "End-to-end overview of the Cloudflared tunnel that exposes the homelab to the internet.\nIt tracks tunnel availability, request volume, error rate, QUIC RTT, and active TCP/UDP sessions, and surfaces application-level errors from the Cloudflared container.\nUse this dashboard to quickly answer “Is the tunnel healthy right now?” and to diagnose spikes in latency, failures, or connection drops.",
+  "description": "End-to-end health overview of the Cloudflared tunnel that publishes homelab services to the Internet.\n\nTop row (last 5m): exporter scrape status, HA connections to Cloudflare edge, and QUIC RTT for near-real-time tunnel health. The success-rate panel is a rolling 24h SLO-style view.\n\nTraffic: proxied request rate and request error rate (req/s and %) to spot volume changes and failures.\n\nTriage: WARP/L4 active sessions (may remain at 0 for pure HTTP(S) ingress) and error-only cloudflared logs (last 30m) for quick correlation.\n\nData sources: Prometheus (cloudflared metrics) and Loki (docker logs).\n\nSecurity: This dashboard reflects Internet ingress; treat hostnames, tunnel identifiers, and log content as operationally sensitive. Restrict access and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -40,18 +40,20 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Shows whether Prometheus has successfully scraped job=\"cloudflared\" in the last 5 minutes. If this goes DOWN, either the container is dead or mon-net / metrics are broken.",
+      "description": "Context: Scrape health for the cloudflared Prometheus metrics endpoint (exporter availability, not end-to-end tunnel reachability).\n\nFocus: Binary UP/DOWN signal indicating whether Prometheus can scrape cloudflared metrics continuously over the last 5 minutes.\n\nImplementation: `max_over_time(up{job=\"cloudflared\"}[5m])`, reduced with `lastNotNull` and value-mapped (0→DOWN, 1→UP). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "mappings": [
             {
               "options": {
                 "0": {
-                  "color": "red",
+                  "color": "dark-red",
+                  "index": 0,
                   "text": "DOWN"
                 },
                 "1": {
-                  "color": "green",
+                  "color": "dark-green",
+                  "index": 1,
                   "text": "UP"
                 }
               },
@@ -62,11 +64,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0.5
               }
             ]
@@ -77,7 +79,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 6,
         "x": 0,
         "y": 0
       },
@@ -96,7 +98,7 @@
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "value_and_name",
+        "textMode": "value",
         "wideLayout": true
       },
       "pluginVersion": "12.2.0",
@@ -108,7 +110,9 @@
           "refId": "A"
         }
       ],
-      "title": "Cloudflared tunnel status",
+      "timeFrom": "5m",
+      "title": "Cloudflared metrics – scrape status",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -116,7 +120,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Percentage of successful requests proxied through Cloudflared over the last 24 hours. Computed from Prometheus counters using increase(errors[24h]) vs increase(total_requests[24h]). Helps answer “how healthy has the tunnel been today?” at a glance.",
+      "description": "Context: Overall reliability of the tunnel as observed through cloudflared request accounting over a rolling 24-hour window.\n\nFocus: Success rate (%) over the last 24 hours, derived from total requests and request errors.\n\nImplementation: `100 - (100 * sum(increase(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[24h])) / clamp_min(sum(increase(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[24h])), 1))`, displayed as the latest value. Thresholds: <95% (red), 95–99% (orange), ≥99% (green). Panel relative time override: 24h.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -130,20 +134,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "red",
-                "value": ""
+                "color": "dark-yellow",
+                "value": 95
               },
               {
-                "color": "#EAB839",
-                "value": ""
-              },
-              {
-                "color": "green",
-                "value": ""
+                "color": "dark-green",
+                "value": 99
               }
             ]
           },
@@ -153,8 +153,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 6,
+        "x": 6,
         "y": 0
       },
       "id": 8,
@@ -179,13 +179,15 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100\n-\n(\n  100 *\n  sum(increase(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[24h]))\n  /\n  clamp_min(sum(increase(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[24h])), 1)\n)\n",
+          "expr": "100\n-\n(\n  100 *\n  sum(increase(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[24h]))\n  /\n  clamp_min(sum(increase(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[24h])), 1)\n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
+      "timeFrom": "24h",
       "title": "Success rate (last 24h)",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -193,7 +195,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Number of high-availability connections from this node to Cloudflare’s edge. A healthy tunnel keeps at least 4 connections open; fewer indicates connectivity issues or throttling.",
+      "description": "Context: High-availability connectivity between cloudflared and the Cloudflare edge.\n\nFocus: Current number of established HA connections to the edge.\n\nImplementation: `sum(cloudflared_tunnel_ha_connections{job=\"cloudflared\"})`, displayed as the latest value. Thresholds: 0 (red), 1–3 (orange), ≥4 (green). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -201,19 +203,19 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 0
               },
               {
-                "color": "#EAB839",
+                "color": "dark-yellow",
                 "value": 1
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 4
               }
             ]
@@ -224,8 +226,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 12,
         "y": 0
       },
       "id": 2,
@@ -243,7 +245,7 @@
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "value_and_name",
+        "textMode": "value",
         "wideLayout": true
       },
       "pluginVersion": "12.2.0",
@@ -255,7 +257,9 @@
           "refId": "A"
         }
       ],
-      "title": "HA connections (edge)",
+      "timeFrom": "5m",
+      "title": "HA connections to edge",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -263,7 +267,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Average smoothed RTT for QUIC connections between this node and Cloudflare edge (in ms). Spikes here mean network latency or congestion towards Cloudflare, not towards your origin.",
+      "description": "Context: QUIC network latency between cloudflared and the Cloudflare edge.\n\nFocus: Smoothed edge round-trip time (RTT) over QUIC (ms).\n\nImplementation: `avg(quic_client_smoothed_rtt{job=\"cloudflared\"})`, displayed as the latest value. Thresholds: <60 ms (green), 60–150 ms (orange), ≥150 ms (red). Panel relative time override: 5m.",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -271,19 +275,19 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "orange",
+                "color": "dark-orange",
                 "value": 60
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 150
               }
             ]
@@ -294,8 +298,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 18,
         "y": 0
       },
       "id": 3,
@@ -313,7 +317,7 @@
           "values": false
         },
         "showPercentChange": false,
-        "textMode": "value_and_name",
+        "textMode": "value",
         "wideLayout": true
       },
       "pluginVersion": "12.2.0",
@@ -325,7 +329,9 @@
           "refId": "A"
         }
       ],
+      "timeFrom": "5m",
       "title": "Edge RTT (QUIC)",
+      "transparent": true,
       "type": "stat"
     },
     {
@@ -333,11 +339,11 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Total number of requests proxied through this tunnel, computed as rate(cloudflared_tunnel_total_requests[...]). Reflects overall load through Cloudflared (HTTP, TCP, UDP).",
+      "description": "Context: Tunnel traffic volume handled by cloudflared.\n\nFocus: Proxied request throughput (requests/s).\n\nImplementation: `sum(rate(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[$__rate_interval]))`, rendered as a time series (rate window driven by Grafana’s `$__rate_interval`).",
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisBorderShow": false,
@@ -356,8 +362,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -379,15 +385,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-green",
                 "value": 0
               },
               {
-                "color": "orange",
+                "color": "dark-orange",
                 "value": 100
               },
               {
-                "color": "red",
+                "color": "dark-red",
                 "value": 500
               }
             ]
@@ -406,9 +412,10 @@
       "options": {
         "legend": {
           "calcs": [
-            "lastNotNull",
-            "mean",
-            "max"
+            "last",
+            "min",
+            "max",
+            "mean"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -430,6 +437,7 @@
         }
       ],
       "title": "Requests proxied per second",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -437,7 +445,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Errors per second and error percentage over total requests. Spikes above a few % suggest origin failures, timeouts or Cloudflared issues.",
+      "description": "Context: Request failure signal for traffic traversing the tunnel.\n\nFocus: Error volume (errors/s) and error percentage (%) over total requests.\n\nImplementation: Query A `sum(rate(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[5m]))` (errors/s) and Query B `100 * sum(rate(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[5m])) / sum(rate(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[5m]))` (error %), plotted together with dual y-axes.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -460,8 +468,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -511,6 +519,28 @@
               {
                 "id": "custom.axisPlacement",
                 "value": "right"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Errors/s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-yellow",
+                  "mode": "fixed"
+                }
               }
             ]
           }
@@ -548,14 +578,15 @@
         },
         {
           "editorMode": "code",
-          "expr": "100 *\nsum(rate(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[5m])) /\nsum(rate(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[5m]))\n",
+          "expr": "100 *\nsum(rate(cloudflared_tunnel_request_errors{job=\"cloudflared\"}[5m])) /\nsum(rate(cloudflared_tunnel_total_requests{job=\"cloudflared\"}[5m]))",
           "interval": "",
           "legendFormat": "Error %",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Error rate (requests & %)",
+      "title": "Request error rate (req/s & %)",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -563,7 +594,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Number of concurrent TCP and UDP sessions through the tunnel. Useful to detect long-lived connections (TCP) or bursts of UDP traffic.",
+      "description": "Context: L4 (WARP routing) session activity handled by cloudflared.\n\nFocus: Number of active TCP and UDP sessions currently maintained by cloudflared.\n\nImplementation: `sum(cloudflared_tcp_active_sessions{job=\"cloudflared\"})` (TCP) and `sum(cloudflared_udp_active_sessions{job=\"cloudflared\"})` (UDP), rendered as time series.\n\nNote: This can remain at 0 for pure HTTP(S) ingress tunnels; it becomes relevant when WARP/L4 routing is in use.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -586,8 +617,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -616,7 +647,38 @@
           },
           "unit": "none"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TCP sessions"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UDP sessions"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -656,7 +718,8 @@
           "refId": "B"
         }
       ],
-      "title": "Active TCP / UDP sessions",
+      "title": "WARP routing – active TCP/UDP sessions",
+      "transparent": true,
       "type": "timeseries"
     },
     {
@@ -664,7 +727,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Docker logs for service=\"cloudflared\", filtered to lines containing ERR. Used together with the error-rate chart above to debug failing requests through the tunnel.",
+      "description": "Context: Error-level cloudflared log events for quick triage and correlation with spikes in error rate/latency.\n\nFocus: Recent cloudflared log lines matching the configured error marker.\n\nImplementation: Loki query `{service=\"cloudflared\"} |= \" ERR \"`, rendered as a log stream. Panel relative time override: 30m.\n\nSecurity: Logs may contain operational metadata (routes, hostnames, client IPs) depending on configuration; restrict access and redact before sharing.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -696,12 +759,14 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service=\"cloudflared\"} |= \" ERR \"\n",
+          "expr": "{service=\"cloudflared\"} |= \" ERR \"",
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Cloudflared logs (errors only)",
+      "timeFrom": "30m",
+      "title": "Cloudflared – logs (errors only)",
+      "transparent": true,
       "type": "logs"
     }
   ],
@@ -709,20 +774,21 @@
   "refresh": "30s",
   "schemaVersion": 42,
   "tags": [
+    "homelab",
+    "apps",
     "cloudflared",
-    "proxy",
     "tunnel"
   ],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Cloudflared – Tunnel Overview",
   "uid": "cloudflared",
-  "version": 1
+  "version": 8
 }

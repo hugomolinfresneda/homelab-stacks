@@ -171,6 +171,18 @@ AdGuard is instrumented for metrics and DNS probing:
 
 Dashboard provisioning and JSON definitions are managed under the `monitoring` stack.
 
+**Grafana dashboard:** `AdGuard – Service Overview` (folder `20_apps`)
+
+- **Health (last 5m):** `adguard_running` (UP/DOWN), `adguard_protection_enabled` (Enabled/Disabled), and DNS processing time (ms).
+- **Traffic & blocking:** DNS queries (all types), blocked queries, and blocked ratio (%).
+- **Query mix:** record type breakdown (A/AAAA/CNAME/HTTPS/…).
+- **Top domains (instant snapshot):** most queried and most blocked domains (tables; long domains are truncated to keep the layout readable).
+
+Panel descriptions follow the CFIS convention: **Context / Focus / Implementation / Security**.
+
+Security: domain lists can reveal device/user behaviour and internal services; redact before sharing.
+
+
 ### Uptime Kuma
 
 * **DNS monitor** → Server `<HOST_LAN_IP>`, Port `53`, Record `A` (and optionally `AAAA`).
