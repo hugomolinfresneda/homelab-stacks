@@ -443,7 +443,7 @@ If you also deploy the `monitoring` stack from this repository, these exporters 
 
 - Prometheus loads `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`, which adds basic
   alerts for the public `status.php` probe, the MariaDB exporter and the Redis exporter.
-- Grafana exposes the dashboard **20_Apps / Nextcloud – Service overview** from
+- Grafana exposes the dashboard **20_Apps / Nextcloud – Service Overview** from
   `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/nextcloud-service-overview.json`.
 
 The only expectations are:
@@ -474,5 +474,4 @@ cd /opt/homelab-stacks
 
 With the default promtail configuration in the monitoring stack, anything written by the
 `nc-app` container to `stderr` is picked up under `job="dockerlogs", stack="nextcloud"`
-and used by the *Nextcloud – Application errors (filtered)* and
-*Nextcloud – Known noisy diagnostics* panels.
+and used by the *Nextcloud – Application errors* panel.

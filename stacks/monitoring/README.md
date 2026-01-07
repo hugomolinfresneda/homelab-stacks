@@ -792,21 +792,52 @@ All three rules are labelled for consistent routing and dashboarding:
 
 ---
 
-### 17.4 Grafana & dashboards (overview)
+### 17.4 Grafana – AdGuard – Service Overview
 
-From the monitoring stack’s perspective, Grafana is expected to surface AdGuard metrics via:
+The monitoring stack ships a dedicated Grafana dashboard for AdGuard Home under the exported dashboards tree:
 
-- `job="adguard-exporter"` — volumetry (queries, blocked ratio, processing time),
-- `job="blackbox-dns"` — probe status and latency (`probe_success`, `probe_duration_seconds`).
+```text
+stacks/monitoring/grafana/dashboards/exported/mon/20_apps/adguard-service-overview.json
+````
 
-Typical panels for a `DNS / AdGuard` dashboard:
+In Grafana it appears under **20_Apps / AdGuard – Service Overview**.
 
-- **DNS QPS** and **blocked percentage** over time.
-- **Average processing time** (and/or P95 if derived via recording rules).
-- **Top clients / top blocked domains** (using exporter metrics).
-- **Probe status** from `blackbox-dns` (stat panel mapping `probe_success` 0/1 to FAIL/OK).
+This dashboard is exporter-centric by design: it focuses on AdGuard’s own service and filtering signals (`job="adguard-exporter"`). End-to-end DNS probing is still available via the `blackbox-dns` job (see sections 18.1–18.2), but it is not the primary signal in this overview.
 
-The JSON definition of the dashboard lives under the Grafana dashboards tree (see above) and keeps the public repo free of secrets and environment-specific details.
+**Top row – health & current state (panel override: *Last 5 minutes*)**
+
+* **AdGuard – Status** — binary `UP/DOWN` state derived from `adguard_running` (latest value).
+* **AdGuard – Protection** — binary `Enabled/Disabled` state derived from `adguard_protection_enabled` (latest value).
+* **AdGuard – DNS processing time** — near-real-time processing time from `adguard_avg_processing_time` (latest value).
+
+**Traffic & blocking (dashboard time range)**
+
+* **AdGuard – DNS queries (all types)** — total DNS query volume (`adguard_num_dns_queries`).
+* **AdGuard – Ads blocked** — blocked queries (`adguard_num_blocked_filtering`).
+* **AdGuard – Ads blocked (%)** — blocking ratio computed as:
+  `100 * adguard_num_blocked_filtering / adguard_num_dns_queries`.
+
+**Query mix (dashboard time range)**
+
+* **AdGuard – DNS query types** — query type distribution (`adguard_query_types`) split by type.
+
+**Top domains (instant snapshot tables)**
+
+* **AdGuard – Top queried domains** — instant ranking table from `adguard_top_queried_domains`.
+* **AdGuard – Top blocked domains** — instant ranking table from `adguard_top_blocked_domains`.
+
+These tables are configured for readability: long domain names are truncated (no wrapping) and the time column is hidden to avoid repeated rows and layout overflow.
+
+**Panel description standard**
+
+Panel descriptions follow the standard used across the monitoring dashboards:
+
+* `Context`
+* `Focus`
+* `Implementation`
+* `Security` (only where it applies)
+
+Security: top domains can reveal user/device behaviour and internal service names; treat them as operationally sensitive and redact before sharing publicly.
 
 ---
 
@@ -912,19 +943,16 @@ stacks/monitoring/grafana/dashboards/exported/mon/20_apps/cloudflared-tunnel-ove
 
 The **Cloudflared – Tunnel Overview** dashboard surfaces:
 
-- **Tunnel status** — stat based on `up{job="cloudflared"}`.
-- **Success rate (last 24h)** — SLO-style stat computed from the 24-hour
-  ratio of successful vs failed requests.
-- **HA connections (edge)** — number of active connections to Cloudflare's
-  edge.
-- **Edge RTT (QUIC)** — round-trip time to the edge, from the tunnel metrics.
-- **Requests per second** — rate of `cloudflared_tunnel_total_requests`.
-- **Error rate (requests & %)** — absolute error rate and percentage of
-  failed requests over time.
-- **Active TCP / UDP sessions** — session-level view from the tunnel
-  metrics.
-- **Cloudflared logs (errors only)** — Loki panel showing only error-level
-  lines from the `cloudflared` container.
+- **Tunnel status (scrape status)** — stat based on `max_over_time(up{job="cloudflared"}[5m])` (panel override: *Last 5 minutes*).
+- **Success rate (last 24h)** — SLO-style stat computed from 24-hour request counters (panel override: *Last 24 hours*).
+- **HA connections (edge)** — number of active connections to Cloudflare’s edge (panel override: *Last 5 minutes*).
+- **Edge RTT (QUIC)** — QUIC round-trip time to the edge (panel override: *Last 5 minutes*).
+- **Requests proxied per second** — request throughput derived from `cloudflared_tunnel_total_requests`.
+- **Error rate (requests & %)** — absolute error rate and error percentage derived from `cloudflared_tunnel_request_errors` and `cloudflared_tunnel_total_requests`.
+- **WARP routing – Active TCP/UDP sessions** — session-level L4 view (may stay at 0 for pure HTTP(S) ingress).
+- **Cloudflared logs (errors only)** — Loki panel showing error-level lines from the `cloudflared` container (panel override: *Last 30 minutes*).
+
+Panel descriptions follow the standard `Context / Focus / Implementation / Security` format used across the monitoring dashboards.
 
 The log panel uses the same label model as the rest of the stack; Promtail
 ingests Docker logs for containers labelled with `com.logging="true"` and
@@ -934,10 +962,8 @@ maps `service="cloudflared"`, so a typical LogQL filter is:
 {service="cloudflared"} |= " ERR "
 ```
 
-This completes the observability loop for the tunnel: you can see whether
-it is up, how well it has behaved in the last 24 hours, how much traffic
-it is carrying, when/where errors occur and what the underlying logs say
-for the same time window.
+Security: This dashboard reflects Internet ingress; treat hostnames, tunnel identifiers and log content as operationally sensitive and redact before sharing.
+
 
 ---
 
@@ -1073,7 +1099,7 @@ This stack also exposes a small observability bundle for the Nextcloud stack def
 - One Grafana dashboard:
 
   - `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/nextcloud-service-overview.json`
-    (appears in Grafana under **20_Apps / Nextcloud – Service overview**).
+    (appears in Grafana under **20_Apps / Nextcloud – Service Overview**).
 
 The only assumption is that the Nextcloud stack is running on the same Docker host and that:
 
@@ -1105,7 +1131,7 @@ The dashboard is meant to answer three questions in one screen:
 2. Are MariaDB and Redis behaving normally for this instance?
 3. Are there unexpected application errors in the logs?
 
-Layout summary (the dashboard lives in **20_Apps / Nextcloud – Service overview**):
+Layout summary (the dashboard lives in **20_Apps / Nextcloud – Service Overview**):
 
 **Top row – availability & SLO**
 
@@ -1121,11 +1147,9 @@ Layout summary (the dashboard lives in **20_Apps / Nextcloud – Service overvie
 
 **Third row – application logs**
 
-- *Nextcloud – Application errors (filtered)* – Loki query that shows application‑level errors
-  from the `nc-app` container, excluding known noisy diagnostics.
-- *Nextcloud – Known noisy diagnostics* – Loki query that keeps recurring diagnostic
-  messages (for example *dirty table reads* or *The loading of lazy AppConfig values have been requested*)
-  in a dedicated panel so that they do not pollute the main error stream.
+- *Nextcloud – Application errors* – Loki query that surfaces application-level failures from the `nc-app` container logs. The panel is intentionally focused on error/exception-like messages; use the “View logs in Loki (Nextcloud)” link for deeper triage and surrounding context.
+
+Security: This dashboard includes public service endpoints and may surface sensitive log content; restrict access and redact before sharing.
 
 No additional promtail configuration is required: logs are collected via the generic
 `dockerlogs` pipeline; the only expectation is that Nextcloud is configured to log to
@@ -1228,7 +1252,7 @@ clients.
 - One Grafana dashboard:
 
   - `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/couchdb-service-overview.json`
-    (appears in Grafana under **20_Apps / CouchDB – Service overview**).
+    (appears in Grafana under **20_Apps / CouchDB – Service Overview**).
 
 The only assumptions are that:
 
@@ -1273,9 +1297,9 @@ All rules follow the standard labelling conventions:
 so they can be routed and filtered alongside the rest of the monitoring
 stack.
 
-### 2) Grafana – CouchDB – Service overview
+### 2) Grafana – CouchDB – Service Overview
 
-The **CouchDB – Service overview** dashboard is meant to answer, on a
+The **CouchDB – Service Overview** dashboard is meant to answer, on a
 single screen:
 
 1. Is CouchDB reachable both from Prometheus and from the public HTTP
@@ -1283,14 +1307,15 @@ single screen:
 2. How much traffic is the node handling and how clean are the responses?
 3. Are there signs of internal resource pressure inside the Erlang VM?
 
-Layout summary (the dashboard lives in **20_Apps / CouchDB – Service overview**):
+Layout summary (the dashboard lives in **20_Apps / CouchDB – Service Overview**):
 
 **Top row – health & external reachability**
 
 - Exporter scrape status via `up{job="couchdb"}` with a time override to
   *Last 5 minutes*.
 - Public HTTPS endpoint health via the Blackbox probe to `/_up`.
-- HTTP 5xx error share over the last 5 minutes.
+- HTTP 5xx error share (%, last 5 minutes).
+- HTTP 5xx error rate (req/s) to quantify failures under load.
 
 **Second row – traffic & status codes**
 
@@ -1308,6 +1333,11 @@ clear landing page for CouchDB-related incidents before you need to jump
 into logs or lower-level debugging.
 
 ---
+
+Notes:
+
+- Panel descriptions follow the CFIS convention: `Context / Focus / Implementation / Security`.
+- The top-row health panels use a *Last 5 minutes* relative time override to reflect current state.
 
 ## 24) Loki logs quick search (logs overview)
 
@@ -1329,6 +1359,9 @@ The only assumptions are that:
   `container`, `env`, `repo`, etc.).
 - Loki is configured as a Grafana datasource and uses the same retention,
   RBAC and access controls as the rest of the monitoring stack.
+- Loki is configured with a defined retention period and an ingest window that
+  rejects samples older than 14 days (`reject_old_samples_max_age=336h`), to
+  prevent badly-timestamped backfills from polluting the log store.
 - Service dashboards (Nextcloud, AdGuard, Cloudflared, CouchDB) and the
   Docker containers overview use labels compatible with those Loki log
   streams (`stack` and `compose_service` in particular).

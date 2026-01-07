@@ -258,6 +258,21 @@ stacks/monitoring/prometheus/couchdb.yml.example
 For details on alerting rules and dashboards that consume these
 metrics, refer to the `stacks/monitoring/README.md` document.
 
+### Grafana dashboard
+
+The monitoring stack ships a dedicated Grafana dashboard for CouchDB:
+
+- `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/couchdb-service-overview.json`
+
+Dashboard scope:
+
+- **Health (last 5m):** exporter scrape status and public endpoint status (Blackbox probe).
+- **Traffic & errors:** request throughput and HTTP status distribution (req/s), plus 5xx share (%, last 5m) and 5xx rate (req/s).
+- **Capacity:** internal counters such as open databases and open OS files to surface resource pressure.
+
+Security: CouchDB is published via the tunnel; treat hostnames and endpoint metadata as operationally sensitive when sharing screenshots or exports.
+
+
 
 ---
 
