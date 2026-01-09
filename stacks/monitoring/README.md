@@ -162,7 +162,7 @@ out of the box on a typical single‑node homelab host.
 - **Rootless-friendly binds** for Promtail in your runtime override:
   - `${DOCKER_SOCK}` → usually `/run/user/1000/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
-  - `${SELINUX_SUFFIX}` → leave empty unless you need `:Z` on SELinux hosts
+  - `${SELINUX_SUFFIX}` → leave empty unless you need `,Z (or ,z)` on SELinux hosts
 
 ---
 
@@ -293,6 +293,19 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
   stacks/monitoring/grafana/dashboards/exported/mon/30_status-incidences/uptime-kuma-service-backup-status.json
   ```
 
+  Demo-side path:
+
+  ```
+  stacks/monitoring/grafana/dashboards/exported/demo/demo-blackbox-targets-probes.json
+  ```
+
+  The demo tree contains three minimal, portable dashboards designed for interviews:
+
+  - **Demo – Blackbox Targets & Probes** (targets lifecycle + probe latency)
+  - **Demo – Core Stack Health** (Prometheus/Loki/Promtail/Alertmanager health snapshot)
+  - **Demo – Logs Quick View** (Loki/Promtail “is it alive?” + simple error-like triage)
+
+
   This dashboard provides:
 
   - Global UP/DOWN count for all Uptime Kuma monitors.
@@ -377,13 +390,13 @@ Parse Docker JSON:
 Rate by container (Explore → Metrics):
 
 ```logql
-sum by (container) (rate({job="dockerlogs"}[$__interval]))
+sum by (container) (rate({job="dockerlogs"}[1m]))
 ```
 
 Top 5 chatty services (Explore → Metrics):
 
 ```logql
-topk(5, sum by (compose_service) (rate({job="dockerlogs"}[$__rate_interval])))
+topk(5, sum by (compose_service) (rate({job="dockerlogs"}[1m])))
 ```
 
 Find a marker inside promtail logs:
@@ -494,70 +507,106 @@ docker run --rm --network mon-net curlimages/curl:8.10.1 -G -sS   --data-urlenco
 
 ---
 
-## 16) Demo mode (isolated **demo-** stack)
+## 16) Demo mode (isolated demo stack)
 
-Run a full, self-contained demo without touching your runtime secrets. The demo uses **container/volume/network prefixes `demo-*`** and stops the base stack first to avoid port conflicts.
-
-**What’s included**
-
-- **Prometheus (demo)** scraping public targets:
-  - `https://example.org`
-  - `https://httpstat.us/200`
-  - `https://example.com`
-  - ICMP pings `1.1.1.1` and `8.8.8.8`
-- **Loki + Promtail** with a **logspammer** (1 line/sec) for instant logs.
-- **Alertmanager (demo)** “blackhole” (UI visible, no external notifiers).
-- Optional **Grafana bind** to `127.0.0.1:3003` (controlled by the demo compose files).
-
-**Naming conventions (demo)**
-
-- Containers: `demo-*`
-- Network: `demo-net`
-- Volumes: `demo-grafana-data`, `demo-loki-data`, `demo-promtail-positions`
-
-**Demo env file**
-
-The demo composes use the same `DOCKER_SOCK`, `DOCKER_CONTAINERS_DIR`, `SELINUX_SUFFIX` variables as the runtime.
-Create `.env.demo` at the repo root if you need rootless paths:
-
-```dotenv
-# .env.demo (example rootless)
-DOCKER_SOCK=/run/user/1000/docker.sock
-DOCKER_CONTAINERS_DIR=/home/<user>/.local/share/docker/containers
-SELINUX_SUFFIX=
-```
-
-**Makefile.demo targets**
+**Note**: all demo operation is centralized in `stacks/monitoring/Makefile.demo`. Run commands from the repo root:
 
 ```bash
-# Validate combined compose for demo (syntax & interpolation)
-make -f Makefile.demo demo-config
-
-# Stop base stack (mon-*) and bring up demo (demo-*)
-make -f Makefile.demo demo-up
-
-# List demo services
-make -f Makefile.demo demo-ps
-
-# Reload Prometheus in demo (SIGHUP)
-make -f Makefile.demo demo-reload-prom
-
-# Tear down demo and clean volumes/network
-make -f Makefile.demo demo-down
+make -f stacks/monitoring/Makefile.demo <target>
 ```
 
-**Demo targets helper (requires `yq` v4)**
+This demo is designed to be **self-contained** and **portable**: it provisions Prometheus + Blackbox + Loki/Promtail + Alertmanager + Grafana with pre-wired datasources (`uid: prometheus`, `uid: loki`) and a small set of demo dashboards.
+
+### Naming model (avoid collisions)
+
+The demo does **not** hardcode `demo-*` names anymore.
+
+Instead, `DEMO_PROJECT` (defaults to `mon-demo`) is used as `COMPOSE_PROJECT_NAME`, and every resource is derived from it:
+
+- Containers: `${DEMO_PROJECT}-grafana`, `${DEMO_PROJECT}-prometheus`, ...
+- Network: `${DEMO_PROJECT}-net`
+- Volumes: `${DEMO_PROJECT}-grafana-data`, `${DEMO_PROJECT}-loki-data`, `${DEMO_PROJECT}-promtail-positions`
+
+This lets an interviewer run the demo even if they already have some random `demo-grafana` lying around (because of course they do).
+
+### Quick start
+
+1) Create the demo env file (no secrets):
 
 ```bash
-make -f Makefile.demo ls-targets-demo JOB=blackbox-http
-make -f Makefile.demo add-target-demo JOB=blackbox-http TARGET=http://127.0.0.1:65535
-make -f Makefile.demo rm-target-demo  JOB=blackbox-http TARGET=http://127.0.0.1:65535
+cp stacks/monitoring/.env.demo.example stacks/monitoring/.env.demo
 ```
 
-**Notes & pitfalls**
+2) Optional: pick a project name (recommended on shared machines):
 
-- If you previously ran the demo and see `... name already in use ...`, run `make -f Makefile.demo demo-down` to clean leftovers.
-- For **rootless Docker**, ensure `.env.demo` points to your user’s `docker.sock` and `containers` path; otherwise Promtail cannot read Docker logs.
+```bash
+export DEMO_PROJECT=demo
+```
+
+3) Validate the composed stack (syntax + interpolation):
+
+```bash
+make -f stacks/monitoring/Makefile.demo demo-config DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
+```
+
+4) Bring the demo up:
+
+```bash
+make -f stacks/monitoring/Makefile.demo demo-up DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
+```
+
+5) List services:
+
+```bash
+make -f stacks/monitoring/Makefile.demo demo-ps DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
+```
+
+6) Tear down (and clean project-scoped volumes):
+
+```bash
+make -f stacks/monitoring/Makefile.demo demo-down DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
+```
+
+### What is included
+
+- **Prometheus (demo)** scraping:
+  - `prometheus`, `alertmanager`, `node`, `loki`, `promtail`
+  - `blackbox` exporter
+  - blackbox probe jobs: `blackbox-http`, `blackbox-icmp`
+- **Alertmanager (demo)**
+- **Loki + Promtail (demo)** for Docker logs (`job="dockerlogs"`)
+  - Promtail is scoped to the demo stack via `PROMTAIL_COMPOSE_PROJECT` to avoid ingesting unrelated host containers (and to prevent “timestamp too old” rejections from old logs).
+- **Grafana (demo)** with datasources + dashboards provisioned
+- **Optional logspammer** (for predictable, non-depressing log volume)
+
+### Demo dashboards (Grafana)
+
+Provisioned JSON files (repo path):
+
+- `stacks/monitoring/grafana/dashboards/exported/demo/demo-blackbox-targets-probes.json`
+- `stacks/monitoring/grafana/dashboards/exported/demo/demo-core-stack-health.json`
+- `stacks/monitoring/grafana/dashboards/exported/demo/demo-logs-quick-view.json`
+
+### Blackbox target workflow (the point of the demo)
+
+```bash
+# list job targets
+make -f stacks/monitoring/Makefile.demo ls-targets-demo  JOB=blackbox-http
+
+# add a target
+make -f stacks/monitoring/Makefile.demo add-target-demo JOB=blackbox-http TARGET=https://example.org
+
+# apply changes (reload Prometheus demo)
+make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
+
+# remove a target
+make -f stacks/monitoring/Makefile.demo rm-target-demo  JOB=blackbox-http TARGET=https://example.org
+```
+
+### Notes & pitfalls
+
+- **Promtail Docker access**: if Promtail cannot connect to the Docker daemon, set `DOCKER_SOCK` and `DOCKER_CONTAINERS_DIR` in `stacks/monitoring/.env.demo` to match your engine (rootful vs rootless). On SELinux enforcing hosts, set `SELINUX_SUFFIX=,z (or ,Z)`.
+- **“timestamp too old” (Loki 400)**: typically caused by Promtail tailing old container logs from outside the demo scope or by reusing a stale positions file. Confirm `PROMTAIL_COMPOSE_PROJECT` is set correctly and, if needed, run `demo-down` to wipe `${DEMO_PROJECT}-promtail-positions` and restart cleanly.
 - Demo does **not** require any secrets.
 
 ---
@@ -569,7 +618,7 @@ Manage the HTTP/ICMP probe target lists that Prometheus scrapes via **Blackbox E
 The helper uses containerized **yq** and **promtool**, so you only need Docker on the host.
 Changes are **idempotent** (deduplicate + sort) and validated with `promtool`.
 
-### 16.1 Direct script usage
+### 17.1 Direct script usage
 
 ```bash
 # Main stack (mon-)
@@ -599,12 +648,12 @@ To apply the new targets, reload Prometheus:
 
 ```bash
 make reload-prom         # main stack
-make demo-reload-prom    # demo stack
+make -f stacks/monitoring/Makefile.demo demo-reload-prom    # demo stack
 ```
 
 > SELinux: if enforcing, the script automatically uses `:Z` on bind mounts.
 
-### 16.2 Makefile wrappers (easier)
+### 17.2 Makefile wrappers (easier)
 
 These delegate to the script above and pick the right file automatically:
 
@@ -615,11 +664,11 @@ make bb-add  TARGET=<url>  [JOB=blackbox-http]
 make bb-rm   TARGET=<url>  [JOB=blackbox-http]
 make reload-prom
 
-# Demo stack (demo-)
-make bb-ls-demo            [JOB=blackbox-http]
-make bb-add-demo TARGET=<url>  [JOB=blackbox-http]
-make bb-rm-demo  TARGET=<url>  [JOB=blackbox-http]
-make demo-reload-prom
+# Demo stack (project-scoped)
+make -f stacks/monitoring/Makefile.demo bb-ls-demo            [JOB=blackbox-http]
+make -f stacks/monitoring/Makefile.demo bb-add-demo TARGET=<url>  [JOB=blackbox-http]
+make -f stacks/monitoring/Makefile.demo bb-rm-demo  TARGET=<url>  [JOB=blackbox-http]
+make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
 ```
 
 **Examples**
@@ -629,9 +678,9 @@ make bb-ls
 make bb-add TARGET=https://cloudflare.com
 make reload-prom
 
-make bb-ls-demo
-make bb-add-demo TARGET=https://example.com
-make demo-reload-prom
+make -f stacks/monitoring/Makefile.demo bb-ls-demo
+make -f stacks/monitoring/Makefile.demo bb-add-demo TARGET=https://example.com
+make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
 ```
 
 **Notes**
