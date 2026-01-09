@@ -28,7 +28,7 @@ compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
 STACK_HELPER := $(STACKS_REPO)/stacks/$(STACK)/tools/nc
 USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
 
-.PHONY: help lint validate         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon
+.PHONY: help lint validate         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon         check-prom-demo check-am-demo check-demo
 
 # ------------------------------------------------------------
 # Human-friendly help
@@ -440,3 +440,11 @@ nc-reset-db:    ; @$(MAKE) reset-db    stack=nextcloud
 nc-up-mon:      ; @PROFILES=monitoring $(MAKE) up   stack=nextcloud
 nc-down-mon:    ; @PROFILES=monitoring $(MAKE) down stack=nextcloud
 nc-ps-mon:      ; @PROFILES=monitoring $(MAKE) ps   stack=nextcloud
+
+
+# CI compatibility: demo config checks are implemented in stacks/monitoring/Makefile.demo
+check-prom-demo check-am-demo:
+	@$(MAKE) -f stacks/monitoring/Makefile.demo demo-check
+
+# Convenience meta-target
+check-demo: check-prom-demo
