@@ -1,4 +1,4 @@
-çSHELL := /usr/bin/env bash
+SHELL := /usr/bin/env bash
 # homelab-stacks/Makefile
 # -------------------------------------------------------------------
 # Root Makefile for homelab-stacks
@@ -28,12 +28,7 @@ compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
 STACK_HELPER := $(STACKS_REPO)/stacks/$(STACK)/tools/nc
 USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
 
-.PHONY: help lint validate up down ps pull logs install post status reset-db echo-vars \
-        backup backup-verify restore \
-        up-mon down-mon ps-mon \
-        restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show \
-        check-prom check-prom-demo reload-prom demo-reload-prom bb-ls bb-ls-demo bb-add bb-add-demo bb-rm bb-rm-demo print-mon \
-        nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon
+.PHONY: help lint validate         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon         check-prom-demo check-am-demo check-demo
 
 # ------------------------------------------------------------
 # Human-friendly help
@@ -62,15 +57,10 @@ help:
 	@echo ""
 	@echo "Monitoring (Prometheus/Grafana) helpers:"
 	@echo "  make check-prom                   - promtool check config (mon)"
-	@echo "  make check-prom-demo              - promtool check config (demo)"
 	@echo "  make reload-prom                  - send HUP to mon-prometheus"
-	@echo "  make demo-reload-prom             - send HUP to demo-prometheus"
 	@echo "  make bb-ls [JOB=blackbox-http]    - List targets in mon"
-	@echo "  make bb-ls-demo [JOB=...]         - List targets in demo"
 	@echo "  make bb-add JOB=... TARGET=...    - Add target in mon"
-	@echo "  make bb-add-demo JOB=... TARGET=... - Add target in demo"
 	@echo "  make bb-rm  JOB=... TARGET=...    - Remove target in mon"
-	@echo "  make bb-rm-demo JOB=... TARGET=... - Remove target in demo"
 	@echo ""
 	@echo "Restic (infra dual-repo) helpers:"
 	@echo "  make backup stack=restic          - Run Restic backup via systemd (uses $(RESTIC_ENV_FILE))"
@@ -101,14 +91,6 @@ validate:
 		echo " - $$f"; \
 		docker compose -f "$$f" config -q; \
 	done; \
-	if [ -f stacks/monitoring/compose.demo.yaml ]; then \
-		echo " - stacks/monitoring/demo bundle (compose.demo.yaml + overlays)"; \
-		docker compose \
-		  -f stacks/monitoring/compose.demo.yaml \
-		  -f stacks/monitoring/compose.demo.logs.yaml \
-		  -f stacks/monitoring/compose.demo.names.yaml \
-		  config -q; \
-	fi; \
 	echo "All compose files validated successfully."
 
 # ------------------------------------------------------------
@@ -381,81 +363,48 @@ echo-vars: require-stack
 # ------------------------------------------------------------
 MON_STACK_DIR := $(STACKS_REPO)/stacks/monitoring
 PROM_FILE_MON_REL  := prometheus/prometheus.yml
-PROM_FILE_DEMO_REL := prometheus/prometheus.demo.yml
 MON_PROM_CONTAINER := mon-prometheus
-DEMO_PROM_CONTAINER:= demo-prometheus
 
 promtool = docker run --rm -v "$(MON_STACK_DIR)":/workdir -w /workdir --entrypoint /bin/promtool prom/prometheus:latest
 
-# ---- promtool checks (mon & demo) ----
-# ---- promtool checks (mon & demo) ----
+# ---- promtool checks (mon) ----
+# ---- promtool checks (mon) ----
 check-prom:
 	@cd "$(MON_STACK_DIR)" && \
 	  f="prometheus/prometheus.yml"; [ -f "$$f" ] || f="prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	  $(promtool) check config "$$f"
 
-check-prom-demo:
-	@cd "$(MON_STACK_DIR)" && \
-	  f="prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="prometheus/prometheus.demo.yaml"; \
-	  [ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	  $(promtool) check config "$$f"
-# ---- reload via HUP (mon & demo) ----
+# ---- reload via HUP (mon) ----
 reload-prom:
 	@docker kill -s HUP $(MON_PROM_CONTAINER) >/dev/null 2>&1 || \
 	  { echo "warn: could not send HUP to $(MON_PROM_CONTAINER) (is it running?)"; exit 1; }
 	@echo "Reload sent to $(MON_PROM_CONTAINER)"
 
-demo-reload-prom:
-	@docker kill -s HUP $(DEMO_PROM_CONTAINER) >/dev/null 2>&1 || \
-	  { echo "warn: could not send HUP to $(DEMO_PROM_CONTAINER) (is demo running?)"; exit 1; }
-	@echo "Reload sent to $(DEMO_PROM_CONTAINER)"
-
 # ---- blackbox targets (wrappers over stacks/monitoring/scripts/blackbox-targets.sh) ----
 # Variables: JOB (defaults to blackbox-http), TARGET (required for add/rm)
 JOB ?= blackbox-http
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
+TARGET ?=
 
-bb-add:
-	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" add "$(JOB)" "$(TARGET)"
-
-bb-add-demo:
-	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" add "$(JOB)" "$(TARGET)"
-
-bb-rm:
-	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" rm "$(JOB)" "$(TARGET)"
-
-bb-rm-demo:
-	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yaml"; \
-	[ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	"$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" rm "$(JOB)" "$(TARGET)"
-
-print-mon:
-	@printf 'STACKS_REPO=%s\nMON_STACK_DIR=%s\n' '$(STACKS_REPO)' '$(MON_STACK_DIR)'
-# ---- blackbox targets (wrappers over stacks/monitoring/scripts/blackbox-targets.sh) ----
-# Variables: JOB (defaults to blackbox-http), TARGET (required for add/rm)
-JOB ?= blackbox-http
 bb-ls:
 	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
 
-bb-ls-demo:
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.demo.yaml"; \
-	  [ -f "$$f" ] || { echo "error: no prometheus.demo.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
+bb-add:
+	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
+	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" add "$(JOB)" "$(TARGET)"
+
+bb-rm:
+	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
+	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" rm "$(JOB)" "$(TARGET)"
+
+print-mon:
+	@printf 'STACKS_REPO=%s\nMON_STACK_DIR=%s\n' '$(STACKS_REPO)' '$(MON_STACK_DIR)'
 
 # -------------------------------------------------------------------
 # Nextcloud namespaced aliases (discoverable & grouped)
@@ -491,3 +440,11 @@ nc-reset-db:    ; @$(MAKE) reset-db    stack=nextcloud
 nc-up-mon:      ; @PROFILES=monitoring $(MAKE) up   stack=nextcloud
 nc-down-mon:    ; @PROFILES=monitoring $(MAKE) down stack=nextcloud
 nc-ps-mon:      ; @PROFILES=monitoring $(MAKE) ps   stack=nextcloud
+
+
+# CI compatibility: demo config checks are implemented in stacks/monitoring/Makefile.demo
+check-prom-demo check-am-demo:
+	@$(MAKE) -f stacks/monitoring/Makefile.demo demo-check
+
+# Convenience meta-target
+check-demo: check-prom-demo

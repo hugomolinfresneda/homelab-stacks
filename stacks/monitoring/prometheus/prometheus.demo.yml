@@ -48,6 +48,7 @@ scrape_configs:
     static_configs:
       - targets:
           - 1.1.1.1
+          - 52.250.42.159
           - 8.8.8.8
     relabel_configs:
       - source_labels: [__address__]

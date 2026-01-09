@@ -1,30 +1,31 @@
 services:
   prometheus:
-    container_name: demo-prometheus
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-prometheus
   alertmanager:
-    container_name: demo-alertmanager
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-alertmanager
   blackbox:
-    container_name: demo-blackbox
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-blackbox
   node-exporter:
-    container_name: demo-node-exporter
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-node-exporter
   grafana:
-    container_name: demo-grafana
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-grafana
   loki:
-    container_name: demo-loki
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-loki
   promtail:
-    container_name: demo-promtail
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-promtail
   logspammer:
-    container_name: demo-logspammer
+    container_name: ${COMPOSE_PROJECT_NAME:-mon-demo}-logspammer
 
 networks:
   demo-net:
-    name: demo-net
-    external: true
+    name: ${COMPOSE_PROJECT_NAME:-mon-demo}-net
+    # Recomendado: NO external. Que Compose lo cree.
+    # external: true
 
 volumes:
   demo-grafana-data:
-    name: demo-grafana-data
+    name: ${COMPOSE_PROJECT_NAME:-mon-demo}-grafana-data
   demo-loki-data:
-    name: demo-loki-data
+    name: ${COMPOSE_PROJECT_NAME:-mon-demo}-loki-data
   demo-promtail-positions:
-    name: demo-promtail-positions
+    name: ${COMPOSE_PROJECT_NAME:-mon-demo}-promtail-positions
