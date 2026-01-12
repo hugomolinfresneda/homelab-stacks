@@ -19,7 +19,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
+  "id": 3,
   "links": [],
   "panels": [
     {
@@ -397,7 +397,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 0,
         "y": 4
@@ -406,7 +406,10 @@
       "options": {
         "legend": {
           "calcs": [
-            "last"
+            "last",
+            "min",
+            "max",
+            "mean"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -499,6 +502,10 @@
                     "type": "value"
                   }
                 ]
+              },
+              {
+                "id": "custom.width",
+                "value": 93
               }
             ]
           },
@@ -526,6 +533,10 @@
               {
                 "id": "decimals",
                 "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 144
               }
             ]
           },
@@ -540,11 +551,23 @@
                 "value": "dateTimeAsIsoNoDateIfToday"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Target"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 501
+              }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 12,
         "y": 4
@@ -569,7 +592,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "max_over_time(probe_success{job=\"$job\"}[5m])",
+          "expr": "min_over_time(probe_success{job=~\"$job\", instance=~\"$target\"}[5m])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -584,7 +607,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "avg_over_time(probe_duration_seconds{job=\"$job\"}[5m])",
+          "expr": "avg_over_time(probe_duration_seconds{job=~\"$job\", instance=~\"$target\"}[5m])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -599,7 +622,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "max_over_time(probe_http_status_code{job=\"blackbox-http\", instance=~\"$target\"}[5m])",
+          "expr": "max_over_time(probe_http_status_code{job=~\"$job\", instance=~\"$target\"}[5m])",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -629,7 +652,18 @@
               "job 3": true
             },
             "includeByName": {},
-            "indexByName": {},
+            "indexByName": {
+              "Time 1": 4,
+              "Time 2": 6,
+              "Time 3": 8,
+              "Value #A": 1,
+              "Value #B": 3,
+              "Value #C": 2,
+              "instance": 0,
+              "job 1": 5,
+              "job 2": 7,
+              "job 3": 9
+            },
             "renameByName": {
               "Time 1": "",
               "Value #A": "UP (5m)",
@@ -706,10 +740,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 10,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 13
       },
       "id": 7,
       "options": {
@@ -748,10 +782,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 9,
+        "h": 10,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 13
       },
       "id": 8,
       "options": {
@@ -760,7 +794,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "### Demo operation (Blackbox targets)\n\n````bash\n# list job targets\nmake -f stacks/monitoring/Makefile.demo ls-targets-demo JOB=blackbox-http\n\n# add target\nmake -f stacks/monitoring/Makefile.demo add-target-demo JOB=blackbox-http TARGET=https://example.org\n\n# apply changes (reload Prometheus demo)\nmake -f stacks/monitoring/Makefile.demo demo-reload-prom\n\n# remove target\nmake -f stacks/monitoring/Makefile.demo rm-target-demo JOB=blackbox-http TARGET=https://example.org",
+        "content": "### Demo operation (Blackbox targets)\n\n> Note: if you started the demo stack with a custom DEMO_PROJECT, replace `DEMO_PROJECT=mon-demo` accordingly in the commands below.\n\n````bash\n# list job targets\nmake -f stacks/monitoring/Makefile.demo ls-targets-demo JOB=blackbox-http DEMO_PROJECT=mon-demo\n\n# add target\nmake -f stacks/monitoring/Makefile.demo add-target-demo JOB=blackbox-http TARGET=https://example.org DEMO_PROJECT=mon-demo\n\n# apply changes (reload Prometheus demo)\nmake -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=mon-demo\n\n# remove target\nmake -f stacks/monitoring/Makefile.demo rm-target-demo JOB=blackbox-http TARGET=https://example.org DEMO_PROJECT=mon-demo",
         "mode": "markdown"
       },
       "pluginVersion": "12.2.0",
@@ -833,5 +867,5 @@
   "timezone": "browser",
   "title": "Demo - Blackbox Targets & Probes",
   "uid": "demo-blackbox",
-  "version": 1
+  "version": 2
 }
