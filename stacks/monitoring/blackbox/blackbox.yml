@@ -6,6 +6,21 @@ modules:
       method: GET
       preferred_ip_protocol: ip4
 
+  http_external:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: true
+      follow_redirects: true
+      # External targets: treat "UP" as "the endpoint responds" (even if a WAF returns 403/429).
+      valid_status_codes: [200, 301, 302, 303, 307, 308, 401, 403, 429]
+      headers:
+        User-Agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        Accept-Language: "es-ES,es;q=0.9,en;q=0.8"
+
   http_tls:
     prober: http
     timeout: 10s
