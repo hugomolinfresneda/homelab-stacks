@@ -1,39 +1,53 @@
 groups:
-- name: couchdb.endpoint
-  rules:
-  - alert: CouchDBEndpointDown
-    expr: probe_success{job="blackbox-http", instance="https://couchdb.atardecer-naranja.es/_up"} == 0
-    labels:
-      severity: warning
-      service: couchdb
-      component: endpoint
-      scope: lab
-    annotations:
-      summary: CouchDB endpoint is down (external)
-      description: Blackbox probe to CouchDB /_up is failing.
-    for: 5m
-- name: couchdb.exporter
-  rules:
-  - alert: CouchDBExporterDown
-    expr: up{job="couchdb"} == 0
-    labels:
-      severity: warning
-      service: couchdb
-      component: exporter
-      scope: lab
-    annotations:
-      summary: CouchDB exporter is down
-      description: Prometheus cannot scrape CouchDB exporter (job=couchdb).
-    for: 5m
-  - alert: CouchDBHigh5xxErrorRate
-    expr: "(\n  sum by (instance) (\n    rate(couchdb_httpd_status_codes{code=~\"5..\"}[5m])\n  )\n)\n/\nclamp_min(\n  sum\
-      \ by (instance) (\n    rate(couchdb_httpd_status_codes[5m])\n  ),\n  0.001\n)\n> 0.05\n"
-    labels:
-      severity: warning
-      service: couchdb
-      component: service
-      scope: lab
-    annotations:
-      summary: CouchDB 5xx error rate is high
-      description: More than 5% of HTTP responses are 5xx for 10 minutes.
-    for: 10m
+  - name: couchdb.endpoint
+    rules:
+      - alert: CouchDBEndpointDown
+        expr: >-
+          probe_success{job="blackbox-http",
+          instance="https://couchdb.atardecer-naranja.es/_up"} == 0
+        labels:
+          severity: warning
+          service: couchdb
+          component: endpoint
+          scope: lab
+        annotations:
+          summary: CouchDB endpoint is down (external)
+          description: Blackbox probe to CouchDB /_up is failing.
+        for: 5m
+  - name: couchdb.exporter
+    rules:
+      - alert: CouchDBExporterDown
+        expr: 'up{job="couchdb"} == 0'
+        labels:
+          severity: warning
+          service: couchdb
+          component: exporter
+          scope: lab
+        annotations:
+          summary: CouchDB exporter is down
+          description: Prometheus cannot scrape CouchDB exporter (job=couchdb).
+        for: 5m
+      - alert: CouchDBHigh5xxErrorRate
+        expr: |
+          (
+            sum by (instance) (
+              rate(couchdb_httpd_status_codes{code=~"5.."}[5m])
+            )
+          )
+          /
+          clamp_min(
+            sum by (instance) (
+              rate(couchdb_httpd_status_codes[5m])
+            ),
+            0.001
+          )
+          > 0.05
+        labels:
+          severity: warning
+          service: couchdb
+          component: service
+          scope: lab
+        annotations:
+          summary: CouchDB 5xx error rate is high
+          description: More than 5% of HTTP responses are 5xx for 10 minutes.
+        for: 10m

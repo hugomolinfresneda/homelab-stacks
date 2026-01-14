@@ -1,98 +1,116 @@
 groups:
-- name: backups.health
-  rules:
-  - alert: ResticBackupNeverSucceeded
-    expr: absent(restic_last_success_timestamp)
-    labels:
-      severity: critical
-      service: restic
-      component: backup
-      scope: infra
-    annotations:
-      summary: Restic backup metrics are missing
-      description: Prometheus cannot find restic_last_success_timestamp. Either the textfile metrics are missing, or node-exporter
-        is not scraping them.
-    for: 30m
-  - alert: NextcloudBackupNeverSucceeded
-    expr: absent(nextcloud_backup_last_success_timestamp)
-    labels:
-      severity: critical
-      service: nextcloud
-      component: backup
-      scope: infra
-    annotations:
-      summary: Nextcloud backup metrics are missing
-      description: Prometheus cannot find nextcloud_backup_last_success_timestamp. Either the textfile metrics are missing,
-        or node-exporter is not scraping them.
-    for: 30m
-  - alert: ResticBackupStaleHard
-    expr: (time() - restic_last_success_timestamp) > 48 * 60 * 60
-    labels:
-      severity: critical
-      service: restic
-      component: backup
-      scope: infra
-    annotations:
-      summary: Restic backup is stale (>48h)
-      description: The last successful Restic backup is older than 48 hours (RPO breached).
-      runbook_url: "https://github.com/hugomolinfresneda/homelab-stacks/blob/main/stacks/monitoring/runbooks/ResticBackupStaleHard.md"
-  - alert: NextcloudBackupStaleHard
-    expr: (time() - nextcloud_backup_last_success_timestamp) > 48 * 60 * 60
-    labels:
-      severity: critical
-      service: nextcloud
-      component: backup
-      scope: infra
-    annotations:
-      summary: Nextcloud backup is stale (>48h)
-      description: The last successful Nextcloud backup is older than 48 hours (RPO breached).
-  - alert: ResticBackupFailedLastRun
-    expr: restic_last_status > 0
-    labels:
-      severity: warning
-      service: restic
-      component: backup
-      scope: infra
-    annotations:
-      summary: Restic backup failed on last run
-      description: The last Restic backup run exited with a non-zero status. If this persists, it may breach the RPO.
-  - alert: NextcloudBackupFailedLastRun
-    expr: nextcloud_backup_last_status > 0
-    labels:
-      severity: warning
-      service: nextcloud
-      component: backup
-      scope: infra
-    annotations:
-      summary: Nextcloud backup failed on last run
-      description: The last Nextcloud backup run exited with a non-zero status. If this persists, it may breach the RPO.
-  - alert: ResticBackupDurationHigh
-    expr: restic_last_duration_seconds > 60 * 60
-    labels:
-      severity: warning
-      service: restic
-      component: backup
-      scope: infra
-    annotations:
-      summary: Restic backup is taking unusually long
-      description: The last Restic backup duration exceeded 1 hour. Check IO performance and repository health.
-  - alert: NextcloudBackupDurationHigh
-    expr: nextcloud_backup_last_duration_seconds > 45 * 60
-    labels:
-      severity: warning
-      service: nextcloud
-      component: backup
-      scope: infra
-    annotations:
-      summary: Nextcloud backup is taking unusually long
-      description: The last Nextcloud backup duration exceeded 45 minutes. Check IO and backup target capacity.
-  - alert: ResticBackupGrowthSpike
-    expr: restic_last_added_bytes > 50 * 1024 * 1024 * 1024
-    labels:
-      severity: warning
-      service: restic
-      component: backup
-      scope: infra
-    annotations:
-      summary: Restic backup size growth spike
-      description: The last Restic backup added more than 50 GiB. This may quickly exhaust the backup disk.
+  - name: backups.health
+    rules:
+      - alert: ResticBackupNeverSucceeded
+        expr: absent(restic_last_success_timestamp)
+        labels:
+          severity: critical
+          service: restic
+          component: backup
+          scope: infra
+        annotations:
+          summary: Restic backup metrics are missing
+          description: >-
+            Prometheus cannot find restic_last_success_timestamp. Either the
+            textfile metrics are missing, or node-exporter is not scraping them.
+        for: 30m
+      - alert: NextcloudBackupNeverSucceeded
+        expr: absent(nextcloud_backup_last_success_timestamp)
+        labels:
+          severity: critical
+          service: nextcloud
+          component: backup
+          scope: infra
+        annotations:
+          summary: Nextcloud backup metrics are missing
+          description: >-
+            Prometheus cannot find nextcloud_backup_last_success_timestamp.
+            Either the textfile metrics are missing, or node-exporter is not
+            scraping them.
+        for: 30m
+      - alert: ResticBackupStaleHard
+        expr: (time() - restic_last_success_timestamp) > 48 * 60 * 60
+        labels:
+          severity: critical
+          service: restic
+          component: backup
+          scope: infra
+        annotations:
+          summary: Restic backup is stale (>48h)
+          description: >-
+            The last successful Restic backup is older than 48 hours (RPO
+            breached).
+          runbook_url: >-
+            https://github.com/hugomolinfresneda/homelab-stacks/blob/main/stacks/monitoring/runbooks/ResticBackupStaleHard.md
+      - alert: NextcloudBackupStaleHard
+        expr: (time() - nextcloud_backup_last_success_timestamp) > 48 * 60 * 60
+        labels:
+          severity: critical
+          service: nextcloud
+          component: backup
+          scope: infra
+        annotations:
+          summary: Nextcloud backup is stale (>48h)
+          description: >-
+            The last successful Nextcloud backup is older than 48 hours (RPO
+            breached).
+      - alert: ResticBackupFailedLastRun
+        expr: restic_last_status > 0
+        labels:
+          severity: warning
+          service: restic
+          component: backup
+          scope: infra
+        annotations:
+          summary: Restic backup failed on last run
+          description: >-
+            The last Restic backup run exited with a non-zero status. If this
+            persists, it may breach the RPO.
+      - alert: NextcloudBackupFailedLastRun
+        expr: nextcloud_backup_last_status > 0
+        labels:
+          severity: warning
+          service: nextcloud
+          component: backup
+          scope: infra
+        annotations:
+          summary: Nextcloud backup failed on last run
+          description: >-
+            The last Nextcloud backup run exited with a non-zero status. If this
+            persists, it may breach the RPO.
+      - alert: ResticBackupDurationHigh
+        expr: restic_last_duration_seconds > 60 * 60
+        labels:
+          severity: warning
+          service: restic
+          component: backup
+          scope: infra
+        annotations:
+          summary: Restic backup is taking unusually long
+          description: >-
+            The last Restic backup duration exceeded 1 hour. Check IO
+            performance and repository health.
+      - alert: NextcloudBackupDurationHigh
+        expr: nextcloud_backup_last_duration_seconds > 45 * 60
+        labels:
+          severity: warning
+          service: nextcloud
+          component: backup
+          scope: infra
+        annotations:
+          summary: Nextcloud backup is taking unusually long
+          description: >-
+            The last Nextcloud backup duration exceeded 45 minutes. Check IO and
+            backup target capacity.
+      - alert: ResticBackupGrowthSpike
+        expr: restic_last_added_bytes > 50 * 1024 * 1024 * 1024
+        labels:
+          severity: warning
+          service: restic
+          component: backup
+          scope: infra
+        annotations:
+          summary: Restic backup size growth spike
+          description: >-
+            The last Restic backup added more than 50 GiB. This may quickly
+            exhaust the backup disk.

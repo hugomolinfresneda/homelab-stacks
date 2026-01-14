@@ -102,7 +102,7 @@ receivers:
         # NOTE: Telegram 'chat_id' does not support *_file in Alertmanager (only bot_token_file exists).
         # This value is not a secret, but it is environment-specific. Replace it with your own chat/group ID
         # before running this configuration in a different environment.
-        chat_id: 0123456789 # <PUT_YOUR_CHAT_ID_HERE>
+        chat_id: 0123456789  # <PUT_YOUR_CHAT_ID_HERE>
 
   # Critical notifications (always).
   - name: oncall
@@ -114,7 +114,7 @@ receivers:
         # NOTE: Telegram 'chat_id' does not support *_file in Alertmanager (only bot_token_file exists).
         # This value is not a secret, but it is environment-specific. Replace it with your own chat/group ID
         # before running this configuration in a different environment.
-        chat_id: 0123456789 # <PUT_YOUR_CHAT_ID_HERE>
+        chat_id: 0123456789  # <PUT_YOUR_CHAT_ID_HERE>
 
 # -----------------------------------------------------------------------------
 # Time intervals (mute windows)

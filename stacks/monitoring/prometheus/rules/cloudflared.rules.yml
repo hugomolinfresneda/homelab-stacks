@@ -1,25 +1,29 @@
 groups:
-- name: cloudflared.health
-  rules:
-  - alert: CloudflaredExporterDown
-    expr: up{job="cloudflared"} == 0
-    labels:
-      severity: warning
-      service: cloudflared
-      component: exporter
-      scope: service
-    annotations:
-      summary: Cloudflared metrics endpoint is down
-      description: Prometheus cannot scrape cloudflared metrics (job=cloudflared). Tunnel health signals may be blind.
-    for: 2m
-  - alert: CloudflaredTunnelDown
-    expr: cloudflared_tunnel_ha_connections{job="cloudflared"} == 0
-    labels:
-      severity: warning
-      service: cloudflared
-      component: tunnel
-      scope: service
-    annotations:
-      summary: Cloudflared tunnel appears down
-      description: cloudflared_tunnel_ha_connections is 0. External access via the tunnel may be unavailable.
-    for: 2m
+  - name: cloudflared.health
+    rules:
+      - alert: CloudflaredExporterDown
+        expr: 'up{job="cloudflared"} == 0'
+        labels:
+          severity: warning
+          service: cloudflared
+          component: exporter
+          scope: service
+        annotations:
+          summary: Cloudflared metrics endpoint is down
+          description: >-
+            Prometheus cannot scrape cloudflared metrics (job=cloudflared).
+            Tunnel health signals may be blind.
+        for: 2m
+      - alert: CloudflaredTunnelDown
+        expr: 'cloudflared_tunnel_ha_connections{job="cloudflared"} == 0'
+        labels:
+          severity: warning
+          service: cloudflared
+          component: tunnel
+          scope: service
+        annotations:
+          summary: Cloudflared tunnel appears down
+          description: >-
+            cloudflared_tunnel_ha_connections is 0. External access via the
+            tunnel may be unavailable.
+        for: 2m

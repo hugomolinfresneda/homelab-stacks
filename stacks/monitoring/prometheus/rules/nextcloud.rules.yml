@@ -1,50 +1,61 @@
 groups:
-- name: nextcloud.endpoint
-  rules:
-  - alert: NextcloudEndpointDown
-    expr: probe_success{job="blackbox-http", instance="https://cloud.atardecer-naranja.es/status.php"} == 0
-    labels:
-      severity: warning
-      service: nextcloud
-      component: endpoint
-      scope: service
-    annotations:
-      summary: Nextcloud endpoint is down (external)
-      description: Blackbox probe to Nextcloud status.php is failing. Users may not be able to access Nextcloud.
-    for: 5m
-  - alert: NextcloudEndpointSlow
-    expr: avg_over_time(probe_duration_seconds{job="blackbox-http", instance="https://cloud.atardecer-naranja.es/status.php"}[5m])
-      > 2
-    labels:
-      severity: warning
-      service: nextcloud
-      component: endpoint
-      scope: service
-    annotations:
-      summary: Nextcloud endpoint is slow (external)
-      description: Average probe duration to Nextcloud status.php is above 2s for 10 minutes.
-    for: 10m
-- name: nextcloud.dependencies
-  rules:
-  - alert: NextcloudMariaDBDown
-    expr: mysql_up{job="nextcloud-exporters"} == 0
-    labels:
-      severity: warning
-      service: nextcloud
-      component: db
-      scope: service
-    annotations:
-      summary: Nextcloud MariaDB appears down
-      description: mysql_up==0 for nextcloud-exporters. Nextcloud may be degraded or fail requests relying on the database.
-    for: 2m
-  - alert: NextcloudRedisDown
-    expr: redis_up{job="nextcloud-exporters"} == 0
-    labels:
-      severity: warning
-      service: nextcloud
-      component: redis
-      scope: service
-    annotations:
-      summary: Nextcloud Redis appears down
-      description: redis_up==0 for nextcloud-exporters. Nextcloud may still work but performance/features can degrade.
-    for: 2m
+  - name: nextcloud.endpoint
+    rules:
+      - alert: NextcloudEndpointDown
+        expr: >-
+          probe_success{job="blackbox-http",
+          instance="https://cloud.atardecer-naranja.es/status.php"} == 0
+        labels:
+          severity: warning
+          service: nextcloud
+          component: endpoint
+          scope: service
+        annotations:
+          summary: Nextcloud endpoint is down (external)
+          description: >-
+            Blackbox probe to Nextcloud status.php is failing. Users may not be
+            able to access Nextcloud.
+        for: 5m
+      - alert: NextcloudEndpointSlow
+        expr: >-
+          avg_over_time(probe_duration_seconds{job="blackbox-http",
+          instance="https://cloud.atardecer-naranja.es/status.php"}[5m]) > 2
+        labels:
+          severity: warning
+          service: nextcloud
+          component: endpoint
+          scope: service
+        annotations:
+          summary: Nextcloud endpoint is slow (external)
+          description: >-
+            Average probe duration to Nextcloud status.php is above 2s for 10
+            minutes.
+        for: 10m
+  - name: nextcloud.dependencies
+    rules:
+      - alert: NextcloudMariaDBDown
+        expr: 'mysql_up{job="nextcloud-exporters"} == 0'
+        labels:
+          severity: warning
+          service: nextcloud
+          component: db
+          scope: service
+        annotations:
+          summary: Nextcloud MariaDB appears down
+          description: >-
+            mysql_up==0 for nextcloud-exporters. Nextcloud may be degraded or
+            fail requests relying on the database.
+        for: 2m
+      - alert: NextcloudRedisDown
+        expr: 'redis_up{job="nextcloud-exporters"} == 0'
+        labels:
+          severity: warning
+          service: nextcloud
+          component: redis
+          scope: service
+        annotations:
+          summary: Nextcloud Redis appears down
+          description: >-
+            redis_up==0 for nextcloud-exporters. Nextcloud may still work but
+            performance/features can degrade.
+        for: 2m

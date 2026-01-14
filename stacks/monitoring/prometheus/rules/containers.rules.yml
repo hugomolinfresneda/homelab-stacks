@@ -1,40 +1,50 @@
 groups:
-- name: infra.containers
-  rules:
-  - alert: InfraContainerRestartLoop
-    expr: label_replace(changes(container_start_time_seconds{name=~"mon-(prometheus|alertmanager|blackbox|cadvisor|node-exporter|loki|promtail).*"}[15m]),
-      "service", "$1", "name", "mon-(.*)") >= 2
-    labels:
-      severity: critical
-      component: container
-      scope: infra
-    annotations:
-      summary: Infra container is restarting repeatedly
-      description: A monitoring/infra container restarted at least 2 times in the last 15 minutes. service={{ $labels.service
-        }}, container={{ $labels.name }}.
-    for: 0m
-- name: service.containers
-  rules:
-  - alert: NextcloudContainerRestartLoop
-    expr: changes(container_start_time_seconds{name=~"nc-(app|web|db|redis|redis-exporter|mysqld-exporter|cron).*"}[15m])
-      >= 2
-    labels:
-      severity: warning
-      service: nextcloud
-      component: container
-      scope: service
-    annotations:
-      summary: Nextcloud container is restarting repeatedly
-      description: A Nextcloud container restarted at least 2 times in the last 15 minutes. container={{ $labels.name }}.
-    for: 0m
-  - alert: CloudflaredContainerRestartLoop
-    expr: changes(container_start_time_seconds{name=~".*cloudflared.*"}[15m]) >= 2
-    labels:
-      severity: warning
-      service: cloudflared
-      component: container
-      scope: service
-    annotations:
-      summary: Cloudflared container is restarting repeatedly
-      description: Cloudflared restarted at least 2 times in the last 15 minutes. container={{ $labels.name }}.
-    for: 0m
+  - name: infra.containers
+    rules:
+      - alert: InfraContainerRestartLoop
+        expr: >-
+          label_replace(changes(container_start_time_seconds{name=~"mon-(prometheus|alertmanager|blackbox|cadvisor|node-exporter|loki|promtail).*"}[15m]),
+          "service", "$1", "name", "mon-(.*)") >= 2
+        labels:
+          severity: critical
+          component: container
+          scope: infra
+        annotations:
+          summary: Infra container is restarting repeatedly
+          description: >-
+            A monitoring/infra container restarted at least 2 times in the last
+            15 minutes. service={{ $labels.service }}, container={{ $labels.name
+            }}.
+        for: 0m
+  - name: service.containers
+    rules:
+      - alert: NextcloudContainerRestartLoop
+        expr: >-
+          changes(container_start_time_seconds{name=~"nc-(app|web|db|redis|redis-exporter|mysqld-exporter|cron).*"}[15m])
+          >= 2
+        labels:
+          severity: warning
+          service: nextcloud
+          component: container
+          scope: service
+        annotations:
+          summary: Nextcloud container is restarting repeatedly
+          description: >-
+            A Nextcloud container restarted at least 2 times in the last 15
+            minutes. container={{ $labels.name }}.
+        for: 0m
+      - alert: CloudflaredContainerRestartLoop
+        expr: >-
+          changes(container_start_time_seconds{name=~".*cloudflared.*"}[15m]) >=
+          2
+        labels:
+          severity: warning
+          service: cloudflared
+          component: container
+          scope: service
+        annotations:
+          summary: Cloudflared container is restarting repeatedly
+          description: >-
+            Cloudflared restarted at least 2 times in the last 15 minutes.
+            container={{ $labels.name }}.
+        for: 0m
