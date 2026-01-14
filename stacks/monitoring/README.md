@@ -5,7 +5,7 @@ This stack provides **metrics + logs + probes** with Docker, split between the *
 **Includes:**
 
 - **Prometheus** — metrics TSDB + scraping
-- **Alertmanager** — alert routing (stub config to extend)
+- **Alertmanager** — alert routing to Telegram (critical vs warning), quiet hours, inhibition, and incident links (runbook/dashboard/alert/silence)
 - **Grafana** — dashboards (pre-provisioned datasources; dashboards provisioned from JSON files)
 - **Loki** — log store (boltdb-shipper + filesystem chunks)
 - **Promtail** — log shipper (Docker service discovery + stable labels)
@@ -69,52 +69,112 @@ docker network: mon-net                         │                           �
 
 ```
 stacks/monitoring/
-├─ compose.yaml
-├─ README.md
-├─ alertmanager/
-│  └─ alertmanager.yml
-├─ blackbox/
-│  └─ blackbox.yml
-├─ grafana/
-│  ├─ provisioning/
-│  │  └─ datasources/
-│  │     └─ datasources.yml
-│  └─ dashboards/
-│     └─ exported/
-│        └─ mon/
-│           └─ 30_status-incidences/
-│              └─ uptime-kuma-service-backup-status.json
-├─ loki/
-│  └─ config.yaml
-├─ prometheus/
-│  ├─ prometheus.yml
-│  ├─ prometheus.demo.yml
-│  ├─ adguard-exporter.yml.example
-│  ├─ nextcloud-exporters.yml.example
-│  ├─ couchdb.yml.example
-│  └─ rules/
-│     ├─ adguard.rules.yml
-│     ├─ backups.rules.yml
-│     ├─ cloudflared.rules.yml
-│     ├─ couchdb.rules.yml
-│     └─ nextcloud.rules.yml
-├─ promtail/
-│  └─ config.yaml
-└─ tools/
-   └─ mon     # helper: status, loki-check
+├── alertmanager
+│   ├── alertmanager.yml
+│   └── templates
+│       └── telegram.tmpl
+├── blackbox
+│   └── blackbox.yml
+├── compose.demo.logs.yaml
+├── compose.demo.names.yaml
+├── compose.demo.yaml
+├── compose.yaml
+├── docs
+│   └── alerting
+│       ├── alertmanager-telegram.md
+│       ├── overview.md
+│       ├── prometheus-rules.md
+│       └── runbooks.md
+├── grafana
+│   ├── dashboards
+│   │   └── exported
+│   │       ├── demo
+│   │       │   ├── demo-blackbox-targets-probes.json
+│   │       │   ├── demo-core-stack-health.json
+│   │       │   └── demo-logs-quick-view.json
+│   │       └── mon
+│   │           ├── 10_infra
+│   │           │   ├── containers-docker-overview.json
+│   │           │   └── host-system-overview.json
+│   │           ├── 20_apps
+│   │           │   ├── adguard-service-overview.json
+│   │           │   ├── cloudflared-tunnel-overview.json
+│   │           │   ├── couchdb-service-overview.json
+│   │           │   └── nextcloud-service-overview.json
+│   │           ├── 30_logs
+│   │           │   └── logs-quick-search.json
+│   │           ├── 30_status-incidences
+│   │           │   └── uptime-kuma-service-backup-status.json
+│   │           └── 40_backups
+│   │               └── backups-overview.json
+│   ├── provisioning.demo
+│   │   ├── dashboards
+│   │   │   └── dashboards.yml
+│   │   └── datasources
+│   │       └── datasources.yml
+│   └── provisioning.mon
+│       ├── dashboards
+│       │   ├── dashboards.yml
+│       │   └── exported-mon
+│       └── datasources
+│           └── datasources.yml
+├── loki
+│   └── config.yaml
+├── Makefile.demo
+├── prometheus
+│   ├── adguard-exporter.yml.example
+│   ├── couchdb.yml.example
+│   ├── nextcloud-exporters.yml.example
+│   ├── prometheus.demo.yml
+│   ├── prometheus.yml
+│   └── rules
+│       ├── adguard.rules.yml
+│       ├── backups.rules.yml
+│       ├── cloudflared.rules.yml
+│       ├── containers.rules.yml
+│       ├── couchdb.rules.yml
+│       ├── endpoints.rules.yml
+│       ├── infra.rules.yml
+│       └── nextcloud.rules.yml
+├── promtail
+│   ├── config.demo.yaml
+│   └── config.yaml
+├── README.md
+├── runbooks
+│   ├── BackupDiskNotMounted.md
+│   ├── BlackboxExporterDown.md
+│   └── ResticBackupStaleHard.md
+├── scripts
+│   └── blackbox-targets.sh
+└── tools
+    └── mon
 ```
 
 **Private runtime** (e.g., `/opt/homelab-runtime`):
 
 ```
-stacks/monitoring/
-├─ compose.override.yml
-└─ secrets/
-   └─ kuma_password
+stacks/monitoring/            # runtime overlay (environment-specific)
+├── alertmanager
+│   └── alertmanager.yml      # overrides (e.g., real chat_id / env-specific routing)
+├── blackbox                  # runtime-only additions (targets, overrides if needed)
+├── compose.override.yml      # mounts, secrets, external URLs, environment wiring
+├── grafana
+│   ├── dashboards
+│   │   └── exported
+│   │       └── mon           # optional runtime dashboard overrides (if any)
+│   └── provisioning.mon
+│       ├── dashboards        # provisioning overrides
+│       └── datasources       # datasource overrides (URLs, auth, etc.)
+├── loki                       # runtime overrides (paths, retention, storage)
+├── prometheus                 # runtime overlay (config/secrets/overrides)
+│   └── rules                  # (intentionally omitted from README; local patching only)
+├── promtail                   # runtime overrides (labels, endpoints, positions)
+└── secrets
+    └── kuma_password          # example secret (runtime-only)
 ```
+> **Note:** The runtime overlay may include a Prometheus rules override directory used only to add environment-specific annotations (e.g., `dashboard_url`). It is not required for a default deployment.
 
 ---
-
 
 ## 3) Runtime assumptions: Docker & host
 
@@ -201,6 +261,24 @@ out of the box on a typical single‑node homelab host.
 
   The Promtail volumes give it access to Docker logs in both rootless and rootful setups.
   The Prometheus volume injects the Uptime Kuma metrics password as a plain read-only file, avoiding Docker Swarm secrets for maximum portability on single-node homelab deployments.
+
+---
+
+## X) Alerting & runbooks
+
+This stack implements an opinionated alerting model designed for a single-node homelab:
+
+- **Critical** alerts are infrastructure failures and must notify 24/7.
+- **Warning** alerts are service/lab signals and are muted during quiet hours.
+- Alert rules are structured to favor a single primary symptom per service, with secondary diagnostics inhibited.
+
+For the full design, routing and operational details, see:
+
+- `docs/alerting/overview.md`
+- `docs/alerting/prometheus-rules.md`
+- `docs/alerting/alertmanager-telegram.md`
+- `docs/alerting/runbooks.md`
+
 
 ---
 
@@ -847,7 +925,7 @@ The monitoring stack ships a dedicated Grafana dashboard for AdGuard Home under 
 
 ```text
 stacks/monitoring/grafana/dashboards/exported/mon/20_apps/adguard-service-overview.json
-````
+```
 
 In Grafana it appears under **20_Apps / AdGuard – Service Overview**.
 
@@ -939,47 +1017,22 @@ These are used directly or via PromQL (e.g. request rate, error rate,
 
 ### 18.2 Alert rules
 
-Alert rules for the tunnel are defined in:
+Cloudflared alerts are intentionally **warning-level** by policy. The tunnel is a user-facing entry point, but it is still treated as a service-layer signal (no 24/7 paging). During quiet hours, warning notifications may be muted by Alertmanager.
+
+Alert rules live in:
 
 - `stacks/monitoring/prometheus/rules/cloudflared.rules.yml`
 
-Current rules:
+Current signal set:
 
-```yaml
-groups:
-  - name: cloudflared.availability
-    rules:
-      - alert: CloudflaredDown
-        expr: up{job="cloudflared"} == 0
-        for: 2m
-        labels:
-          severity: critical
-          stack: proxy
-          service: cloudflared
-          env: home
+- `CloudflaredExporterDown` (`warning`)
+  Triggers when Prometheus cannot scrape Cloudflared metrics (`up{job="cloudflared"} == 0`).
 
-      - alert: CloudflaredHighErrorRate
-        expr: 100 * sum(rate(cloudflared_tunnel_request_errors{job="cloudflared"}[5m])) /
-              sum(rate(cloudflared_tunnel_total_requests{job="cloudflared"}[5m])) > 5
-        for: 10m
-        labels:
-          severity: warning
-          stack: proxy
-          service: cloudflared
-          env: home
-```
+- `CloudflaredTunnelDown` (`warning`)
+  Triggers when the tunnel reports zero HA connections (`cloudflared_tunnel_ha_connections == 0`).
+  This is the primary tunnel health signal used for alerting.
 
-Semantics:
-
-- **CloudflaredDown** — fires when Prometheus cannot scrape the tunnel for
-  more than 2 minutes (container down, network issue, or credentials
-  problem).
-- **CloudflaredHighErrorRate** — fires when more than 5% of requests
-  proxied through the tunnel are failing for at least 10 minutes, indicating
-  a persistent problem with the tunnel or one of the upstream origins.
-
-Both rules use the standard label set so they can be routed and filtered in
-the same way as the rest of the stack.
+These alerts follow the global label standard (`severity`, `service`, `component`, `scope`) and are routed by Alertmanager based on `severity`.
 
 ### 18.3 Grafana dashboard (Cloudflared – Tunnel Overview)
 
@@ -1157,20 +1210,21 @@ The only assumption is that the Nextcloud stack is running on the same Docker ho
 - The public HTTPS endpoint you actually use in production is the one configured in the
   Blackbox HTTP probe to `status.php` in the monitoring stack.
 
-### 1) Prometheus rules
+### 1) Alert rules and incident links
 
-The `nextcloud.rules.yml` file adds basic "is it alive?" alerts for Nextcloud:
+Alert rules for Nextcloud are defined in:
 
-- Blackbox probe to `status.php` failing for several minutes.
-- `mysql_up` for the Nextcloud mysqld_exporter staying at `0` (exporter cannot reach MariaDB).
-- `redis_up` for the Nextcloud redis_exporter staying at `0` (exporter cannot reach Redis).
+- `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`
 
-All rules follow the same pattern: if the condition stays bad for 5 minutes the alert fires
-at *warning* level. This gives you early signal that the service or one of its dependencies
-is down, or that the monitoring side is misconfigured (wrong network, credentials, etc.).
+They follow the global label standard (`severity`, `service`, `component`, `scope`) and the Alertmanager routing/inhibition model documented under `docs/alerting/`.
 
-Exact rule names and labels are not important for day‑to‑day usage; they only drive
-Alertmanager.
+Operationally, the key signals are:
+
+- Public endpoint availability (`NextcloudEndpointDown`)
+- Public endpoint latency/SLO degradation (`NextcloudEndpointSlow`)
+- Dependency exporter health (MariaDB / Redis) as secondary diagnostics
+
+Runbook and dashboard links (if present) are exposed in Telegram notifications.
 
 ### 2) Grafana – Nextcloud – Service overview
 
@@ -1226,22 +1280,19 @@ already exporting textfile metrics via node_exporter, as documented in their res
 READMEs. The dashboard is a pure consumer of those metrics; it does not introduce any
 new runtime requirements.
 
-### 1) Prometheus rules
+### 1) Alert rules and incident links
 
-`backups.rules.yml` adds basic "is it running and fresh?" alerts on top of the textfile
-metrics:
+Backup alert rules are defined in:
 
-- Restic backup considered *stale* when the last successful run timestamp is too old.
-- Nextcloud backup considered *stale* under the same condition.
-- Optional rules for suspiciously small Restic runs or other sanity checks.
+- `stacks/monitoring/prometheus/rules/backups.rules.yml`
+- `stacks/monitoring/prometheus/rules/infra.rules.yml` (host-level backup disk signals)
 
-All rules follow the existing labelling conventions:
+The policy is:
+- Hard RPO breaches are **critical**.
+- “Failed last run” and “duration/growth anomalies” are typically **warning**.
+- Missing backup metrics are treated as **critical** (instrumentation failure is operationally equivalent to “no backups”).
 
-- `stack="backups"`
-- `service="restic"` or `service="nextcloud-backup"`
-- `severity="warning"` / `severity="critical"`
-
-so they can be routed alongside the rest of the monitoring stack.
+For the full catalog and thresholds, see `docs/alerting/prometheus-rules.md`.
 
 ### 2) Grafana – Backups – Overview
 
@@ -1313,38 +1364,19 @@ The only assumptions are that:
 - The public HTTPS endpoint exposed through the reverse proxy / tunnel is
   the one configured in the Blackbox HTTP probe to `/_up`.
 
-### 1) Prometheus rules
+### 1) Alert rules and incident links
 
-`couchdb.rules.yml` adds basic availability and quality-of-service alerts
-on top of the exporter and blackbox metrics:
+Alert rules for CouchDB are defined in:
 
-- **CouchDBEndpointDown**
+- `stacks/monitoring/prometheus/rules/couchdb.rules.yml`
 
-  Fires when the Blackbox HTTP probe against the public `/_up` endpoint
-  (`https://couchdb.atardecer-naranja.es/_up`) has been failing for more
-  than 5 minutes. This captures issues in the HTTP path (DNS, reverse
-  proxy, Cloudflare tunnel) as well as CouchDB itself.
+The rule set focuses on:
+- Public endpoint health (Blackbox probe)
+- Exporter scrape availability
+- Elevated 5xx error share under load
 
-- **CouchDBDown**
-
-  Raised when `up{job="couchdb"}` stays at `0` for more than 5 minutes.
-  This usually points to a broken exporter, container or `mon-net` wiring
-  rather than an application-level error.
-
-- **CouchDBHigh5xxErrorRate**
-
-  Warns when the share of HTTP 5xx responses reported by the exporter is
-  above a small threshold for several minutes, indicating server-side
-  failures under otherwise healthy load.
-
-All rules follow the standard labelling conventions:
-
-- `stack="couchdb"`
-- `service="couchdb"`
-- `severity="warning"` / `severity="critical"`
-
-so they can be routed and filtered alongside the rest of the monitoring
-stack.
+All alerts are warning-level by policy for this service tier.
+Refer to `docs/alerting/overview.md` for routing and quiet hours.
 
 ### 2) Grafana – CouchDB – Service Overview
 
