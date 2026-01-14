@@ -1,30 +1,25 @@
 groups:
-  - name: cloudflared.availability
-    rules:
-      - alert: CloudflaredDown
-        expr: up{job="cloudflared"} == 0
-        for: 2m
-        labels:
-          severity: critical
-          stack: proxy
-          service: cloudflared
-          env: home
-        annotations:
-          summary: "Cloudflared tunnel is down"
-          description: >
-            Prometheus has not been able to scrape job="cloudflared"
-            for more than 2 minutes (instance {{ $labels.instance }}).
-            Check the Cloudflare tunnel container and credentials.
-      - alert: CloudflaredHighErrorRate
-        expr: 100 * sum(rate(cloudflared_tunnel_request_errors{job="cloudflared"}[5m])) / sum(rate(cloudflared_tunnel_total_requests{job="cloudflared"}[5m])) > 5
-        for: 10m
-        labels:
-          severity: warning
-          stack: proxy
-          service: cloudflared
-          env: home
-        annotations:
-          summary: "High error rate through Cloudflared"
-          description: >
-            Error percentage through the tunnel has been above 5% for 10 minutes.
-            Check origin services and Cloudflared logs in Loki (service="cloudflared").
+- name: cloudflared.health
+  rules:
+  - alert: CloudflaredExporterDown
+    expr: up{job="cloudflared"} == 0
+    labels:
+      severity: warning
+      service: cloudflared
+      component: exporter
+      scope: service
+    annotations:
+      summary: Cloudflared metrics endpoint is down
+      description: Prometheus cannot scrape cloudflared metrics (job=cloudflared). Tunnel health signals may be blind.
+    for: 2m
+  - alert: CloudflaredTunnelDown
+    expr: cloudflared_tunnel_ha_connections{job="cloudflared"} == 0
+    labels:
+      severity: warning
+      service: cloudflared
+      component: tunnel
+      scope: service
+    annotations:
+      summary: Cloudflared tunnel appears down
+      description: cloudflared_tunnel_ha_connections is 0. External access via the tunnel may be unavailable.
+    for: 2m
