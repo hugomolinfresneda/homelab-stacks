@@ -1,4 +1,3 @@
-# homelab-stacks/stacks/monitoring/alertmanager/alertmanager.demo.yml
 # -------------------------------------------------------------------
 # Alertmanager (demo): "blackhole" receiver
 # - UI visible for triage; no external notifications are sent

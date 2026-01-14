@@ -1,35 +1,38 @@
 groups:
-  - name: adguard.home
+  - name: adguard.health
     rules:
       - alert: AdGuardExporterDown
-        expr: up{job="adguard-exporter"} == 0
+        expr: 'up{job="adguard-exporter"} == 0'
+        labels:
+          severity: warning
+          service: adguard
+          component: exporter
+          scope: lab
+        annotations:
+          summary: AdGuard exporter is down
+          description: Prometheus cannot scrape adguard-exporter (job=adguard-exporter).
         for: 5m
-        labels:
-          severity: warning
-          service: adguard-home
-          stack: dns
-        annotations:
-          summary: "AdGuard metrics exporter is not reachable"
-          description: "Prometheus has not been able to scrape job=\"adguard-exporter\" for more than 5 minutes. Verify container status and Docker networking."
-
       - alert: AdGuardProtectionDisabled
-        expr: protection_enabled{job="adguard-exporter"} == 0
-        for: 10m
+        expr: 'protection_enabled{job="adguard-exporter"} == 0'
         labels:
           severity: warning
-          service: adguard-home
-          stack: dns
+          service: adguard
+          component: service
+          scope: lab
         annotations:
-          summary: "AdGuard DNS protection is disabled"
-          description: "AdGuard DNS protection flag has been set to disabled for at least 10 minutes. Review configuration and re-enable filtering if intentional."
-
+          summary: AdGuard protection is disabled
+          description: AdGuard filtering/protection is disabled.
+        for: 10m
       - alert: AdGuardHighLatency
-        expr: adguard_avg_processing_time{job="adguard-exporter"} > 0.15
-        for: 10m
+        expr: 'adguard_avg_processing_time{job="adguard-exporter"} > 0.10'
         labels:
           severity: warning
-          service: adguard-home
-          stack: dns
+          service: adguard
+          component: service
+          scope: lab
         annotations:
-          summary: "AdGuard DNS average processing time is high"
-          description: "Average AdGuard DNS processing time is above 150ms for 10 minutes. Investigate upstream DNS, network latency or AdGuard resource usage."
+          summary: AdGuard average processing time is high
+          description: >-
+            adguard_avg_processing_time is above 100ms for 10 minutes. Check
+            upstream DNS and host resources.
+        for: 10m

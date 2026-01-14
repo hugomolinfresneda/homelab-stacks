@@ -1,67 +1,61 @@
 groups:
-  - name: nextcloud.availability
+  - name: nextcloud.endpoint
     rules:
-      - alert: NextcloudDown
-        expr: probe_success{job="blackbox-http", instance="https://cloud.atardecer-naranja.es/status.php"} == 0
-        for: 5m
-        labels:
-          severity: critical
-          stack: nextcloud
-          service: nextcloud
-          env: home
-        annotations:
-          summary: "Nextcloud is down (status.php unreachable)"
-          description: >
-            The HTTP probe to the Nextcloud status endpoint
-            https://cloud.atardecer-naranja.es/status.php has been failing
-            for more than 5 minutes. Check nc-web/nginx, the PHP-FPM app
-            container and the database backend.
-
-      - alert: NextcloudSlow
-        expr: avg_over_time(
-                probe_duration_seconds{job="blackbox-http", instance="https://cloud.atardecer-naranja.es/status.php"}[5m]
-              ) > 2
-        for: 10m
+      - alert: NextcloudEndpointDown
+        expr: >-
+          probe_success{job="blackbox-http",
+          instance="https://cloud.atardecer-naranja.es/status.php"} == 0
         labels:
           severity: warning
-          stack: nextcloud
           service: nextcloud
-          env: home
+          component: endpoint
+          scope: service
         annotations:
-          summary: "Nextcloud is slow (high status.php latency)"
-          description: >
-            The average probe duration to Nextcloud status.php over the last
-            5 minutes is above 2 seconds. Users may experience a slow web UI.
-            Check PHP-FPM workers, database load and disk I/O.
-
+          summary: Nextcloud endpoint is down (external)
+          description: >-
+            Blackbox probe to Nextcloud status.php is failing. Users may not be
+            able to access Nextcloud.
+        for: 5m
+      - alert: NextcloudEndpointSlow
+        expr: >-
+          avg_over_time(probe_duration_seconds{job="blackbox-http",
+          instance="https://cloud.atardecer-naranja.es/status.php"}[5m]) > 2
+        labels:
+          severity: warning
+          service: nextcloud
+          component: endpoint
+          scope: service
+        annotations:
+          summary: Nextcloud endpoint is slow (external)
+          description: >-
+            Average probe duration to Nextcloud status.php is above 2s for 10
+            minutes.
+        for: 10m
   - name: nextcloud.dependencies
     rules:
-      - alert: NextcloudDBDown
-        expr: mysql_up{job="nextcloud-exporters"} == 0
-        for: 2m
+      - alert: NextcloudMariaDBDown
+        expr: 'mysql_up{job="nextcloud-exporters"} == 0'
         labels:
-          severity: critical
-          stack: nextcloud
-          service: nextcloud-db
-          env: home
+          severity: warning
+          service: nextcloud
+          component: db
+          scope: service
         annotations:
-          summary: "Nextcloud database is down"
-          description: >
-            mysqld_exporter reports mysql_up == 0 for the Nextcloud database
-            for more than 2 minutes. Check the nc-db container, credentials
-            and its volume.
-
+          summary: Nextcloud MariaDB appears down
+          description: >-
+            mysql_up==0 for nextcloud-exporters. Nextcloud may be degraded or
+            fail requests relying on the database.
+        for: 2m
       - alert: NextcloudRedisDown
-        expr: redis_up{job="nextcloud-exporters"} == 0
-        for: 2m
+        expr: 'redis_up{job="nextcloud-exporters"} == 0'
         labels:
-          severity: critical
-          stack: nextcloud
-          service: nextcloud-redis
-          env: home
+          severity: warning
+          service: nextcloud
+          component: redis
+          scope: service
         annotations:
-          summary: "Nextcloud Redis cache is down"
-          description: >
-            redis_exporter reports redis_up == 0 for the Nextcloud Redis
-            instance for more than 2 minutes. Check the nc-redis container
-            and its network.
+          summary: Nextcloud Redis appears down
+          description: >-
+            redis_up==0 for nextcloud-exporters. Nextcloud may still work but
+            performance/features can degrade.
+        for: 2m

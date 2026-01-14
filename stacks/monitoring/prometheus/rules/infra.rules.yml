@@ -1,0 +1,95 @@
+groups:
+  - name: infra.exporters
+    rules:
+      - alert: NodeExporterDown
+        expr: 'up{job="node"} == 0'
+        labels:
+          severity: critical
+          service: node
+          component: exporter
+          scope: infra
+        annotations:
+          summary: Node Exporter is down
+          description: >-
+            Prometheus cannot scrape node-exporter (job=node). Host-level alerts
+            and filesystem metrics may be unreliable.
+        for: 5m
+      - alert: BlackboxExporterDown
+        expr: 'up{job="blackbox"} == 0'
+        labels:
+          severity: critical
+          service: blackbox
+          component: exporter
+          scope: infra
+        annotations:
+          summary: Blackbox Exporter is down
+          description: >-
+            Prometheus cannot scrape blackbox-exporter (job=blackbox). External
+            endpoint checks will be blind.
+          runbook_url: >-
+            https://github.com/hugomolinfresneda/homelab-stacks/blob/main/stacks/monitoring/runbooks/BlackboxExporterDown.md
+        for: 5m
+      - alert: CadvisorDown
+        expr: 'up{job="cadvisor"} == 0'
+        labels:
+          severity: critical
+          service: cadvisor
+          component: exporter
+          scope: infra
+        annotations:
+          summary: cAdvisor is down
+          description: >-
+            Prometheus cannot scrape cAdvisor (job=cadvisor). Container
+            restart-loop alerts and container metrics may be blind.
+        for: 5m
+  - name: infra.disk
+    rules:
+      - alert: HostRootDiskSpaceLow
+        expr: >-
+          (node_filesystem_avail_bytes{job="node",mountpoint="/",fstype="ext4"}
+          / node_filesystem_size_bytes{job="node",mountpoint="/",fstype="ext4"})
+          < 0.10
+        labels:
+          severity: critical
+          service: node
+          component: host
+          scope: infra
+        annotations:
+          summary: Root filesystem is low on space
+          description: >-
+            The VM root filesystem (/) has less than 10% free space. This can
+            break writes, containers, and the monitoring stack.
+        for: 15m
+      - alert: BackupDiskNotMounted
+        expr: >-
+          absent(node_filesystem_size_bytes{job="node",mountpoint="/mnt/backups",fstype="ext4"})
+        labels:
+          severity: critical
+          service: backup
+          component: host
+          scope: infra
+        annotations:
+          summary: Backup disk is not mounted
+          description: >-
+            The expected backup mountpoint (/mnt/backups) is missing. Backups
+            may fail or write to the wrong filesystem.
+          runbook_url: >-
+            https://github.com/hugomolinfresneda/homelab-stacks/blob/main/stacks/monitoring/runbooks/BackupDiskNotMounted.md
+        for: 5m
+      - alert: BackupDiskSpaceLow
+        expr: >-
+          (node_filesystem_avail_bytes{job="node",mountpoint="/mnt/backups",fstype="ext4"}
+          /
+          node_filesystem_size_bytes{job="node",mountpoint="/mnt/backups",fstype="ext4"})
+          < 0.10
+        labels:
+          severity: critical
+          service: backup
+          component: host
+          scope: infra
+        annotations:
+          summary: Backup disk is low on space
+          description: >-
+            The backup filesystem (/mnt/backups) has less than 10% free space.
+            Backups may start failing soon.
+        for: 15m

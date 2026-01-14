@@ -1,0 +1,131 @@
+{{ define "telegram.default" -}}
+{{/* ============================================================================
+Alertmanager → Telegram (HTML parse mode)
+
+Principles:
+- Compact header, avoid <code> (Telegram renders it with code styling).
+- Severity badge (emoji + uppercase label).
+- Links as anchors (Runbook/Dashboard/Alert/Silence).
+- Alert link: specific filter (includes instance).
+- Silence link: maintenance filter (service+severity+scope; excludes alertname/instance).
+- Build filters without spaces to avoid '+' encoding quirks in the UI.
+- "Impacted": prefer target (blackbox) and append optional extras (ctr/mp/dev) when present.
+
+Operational requirements:
+- Alertmanager must be configured with --web.external-url so .ExternalURL resolves to the public URL.
+============================================================================ */}}
+
+{{/* --- Derived fields (status / severity) -------------------------------- */}}
+{{- $status := .Status -}}
+{{- $statusUpper := $status | toUpper -}}
+{{- $statusDot := "🟢" -}}
+{{- if eq $status "firing" -}}{{- $statusDot = "🟡" -}}{{- end -}}
+
+{{- $sev := .CommonLabels.severity -}}
+{{- $sevBadge := "" -}}
+{{- if eq $sev "critical" -}}
+  {{- $sevBadge = "🔴 CRITICAL" -}}
+{{- else if eq $sev "warning" -}}
+  {{- $sevBadge = "🟠 WARNING" -}}
+{{- else if eq $sev "info" -}}
+  {{- $sevBadge = "🔵 INFO" -}}
+{{- else if $sev -}}
+  {{- $sevBadge = $sev | toUpper -}}
+{{- end -}}
+
+<b>{{ $statusDot }} [{{ $statusUpper }}]</b> <b>{{ .CommonLabels.alertname }}</b>{{- if $sevBadge }} — <b>{{ $sevBadge }}</b>{{- end }}{{ "\n" -}}
+
+{{/* --- Context (service · scope · component) ----------------------------- */}}
+{{- $ctx := "" -}}
+{{- if .CommonLabels.service }}{{- $ctx = printf "%s%s" $ctx .CommonLabels.service -}}{{- end -}}
+{{- if .CommonLabels.scope -}}
+  {{- if $ctx }}{{- $ctx = printf "%s · " $ctx -}}{{- end -}}
+  {{- $ctx = printf "%s%s" $ctx .CommonLabels.scope -}}
+{{- end -}}
+{{- if .CommonLabels.component -}}
+  {{- if $ctx }}{{- $ctx = printf "%s · " $ctx -}}{{- end -}}
+  {{- $ctx = printf "%s%s" $ctx .CommonLabels.component -}}
+{{- end -}}
+{{- if $ctx -}}
+🏷️ {{ $ctx }}{{ "\n" -}}
+{{- end -}}
+
+{{/* --- Primary text ----------------------------------------------------- */}}
+{{- if .CommonAnnotations.summary -}}
+{{ "\n" -}}📝 {{ .CommonAnnotations.summary }}{{- "" -}}
+{{- end -}}
+{{- if .CommonAnnotations.description -}}
+{{ "\n" -}}📌 {{ .CommonAnnotations.description }}{{- "" -}}
+{{- end -}}
+
+{{/* --- Links (runbook/dashboard via annotations; alert/silence via ExternalURL) */}}
+{{- $runbook := "" -}}
+{{- $dash := "" -}}
+{{- if .CommonAnnotations.runbook_url }}{{- $runbook = .CommonAnnotations.runbook_url -}}{{- end -}}
+{{- if .CommonAnnotations.dashboard_url }}{{- $dash = .CommonAnnotations.dashboard_url -}}{{- end -}}
+{{- range .Alerts -}}
+  {{- if and (eq $runbook "") .Annotations.runbook_url }}{{- $runbook = .Annotations.runbook_url -}}{{- end -}}
+  {{- if and (eq $dash "") .Annotations.dashboard_url }}{{- $dash = .Annotations.dashboard_url -}}{{- end -}}
+{{- end -}}
+
+{{- if $runbook -}}
+{{ "\n" -}}🔧 <a href="{{ $runbook }}">Runbook</a>{{- "" -}}
+{{- end -}}
+{{- if $dash -}}
+{{ "\n" -}}📊 <a href="{{ $dash }}">Dashboard</a>{{- "" -}}
+{{- end -}}
+
+{{- $base := .ExternalURL -}}
+{{- if $base -}}
+  {{/* Alert filter: specific (includes instance) */}}
+  {{- $fa := printf "{alertname=\"%s\"" .CommonLabels.alertname -}}
+  {{- if .CommonLabels.component }}{{- $fa = printf "%s,component=\"%s\"" $fa .CommonLabels.component -}}{{- end -}}
+  {{- if .CommonLabels.instance }}{{- $fa = printf "%s,instance=\"%s\"" $fa .CommonLabels.instance -}}{{- end -}}
+  {{- if .CommonLabels.scope }}{{- $fa = printf "%s,scope=\"%s\"" $fa .CommonLabels.scope -}}{{- end -}}
+  {{- if .CommonLabels.service }}{{- $fa = printf "%s,service=\"%s\"" $fa .CommonLabels.service -}}{{- end -}}
+  {{- if .CommonLabels.severity }}{{- $fa = printf "%s,severity=\"%s\"" $fa .CommonLabels.severity -}}{{- end -}}
+  {{- $fa = printf "%s}" $fa -}}
+
+  {{/* Silence filter: maintenance (excludes alertname/instance) */}}
+  {{- $fs := "{" -}}
+  {{- $sep := "" -}}
+  {{- if .CommonLabels.service -}}
+    {{- $fs = printf "%s%sservice=\"%s\"" $fs $sep .CommonLabels.service -}}
+    {{- $sep = "," -}}
+  {{- end -}}
+  {{- if .CommonLabels.severity -}}
+    {{- $fs = printf "%s%sseverity=\"%s\"" $fs $sep .CommonLabels.severity -}}
+    {{- $sep = "," -}}
+  {{- end -}}
+  {{- if .CommonLabels.scope -}}
+    {{- $fs = printf "%s%sscope=\"%s\"" $fs $sep .CommonLabels.scope -}}
+    {{- $sep = "," -}}
+  {{- end -}}
+  {{- $fs = printf "%s}" $fs -}}
+
+{{ "\n\n" -}}🔎 <a href="{{ $base }}/#/alerts?filter={{ $fa | urlquery }}">Alert</a>{{- "" -}}
+{{ "\n" -}}🔕 <a href="{{ $base }}/#/silences/new?filter={{ $fs | urlquery }}">Silence</a>{{- "" -}}
+{{- end -}}
+
+{{/* --- Group status ----------------------------------------------------- */}}
+{{ "\n" -}}📎 Firing: <b>{{ len .Alerts.Firing }}</b> · Resolved: <b>{{ len .Alerts.Resolved }}</b>{{- "" -}}
+
+{{- if gt (len .Alerts.Firing) 0 -}}
+  {{- $first := index .Alerts.Firing 0 -}}
+{{ "\n" -}}⏱ Since: <b>{{ $first.StartsAt.Local.Format "2006-01-02 15:04:05" }}</b>{{- "" -}}
+
+{{/* --- Impacted (max 6) ------------------------------------------------- */}}
+{{ "\n" -}}<b>Impacted</b>{{- "" -}}
+  {{- $max := 6 -}}
+  {{- range $i, $a := .Alerts.Firing -}}
+    {{- if lt $i $max -}}
+      {{- $target := $a.Labels.target -}}
+      {{- $inst := or $a.Labels.instance "-" -}}
+{{ "\n" -}}• {{- if $target -}}{{ $target }}{{- if and $a.Labels.instance (ne $a.Labels.instance $target) }} · via={{ $a.Labels.instance }}{{- end -}}{{- else -}}{{ $inst }}{{- end -}}{{- if $a.Labels.job }} ({{ $a.Labels.job }}){{- end -}}{{- if $a.Labels.container }} · ctr={{ $a.Labels.container }}{{- else if $a.Labels.container_name }} · ctr={{ $a.Labels.container_name }}{{- end -}}{{- if $a.Labels.mountpoint }} · mp={{ $a.Labels.mountpoint }}{{- end -}}{{- if $a.Labels.device }} · dev={{ $a.Labels.device }}{{- end -}}{{- if $a.Labels.name }} · {{ $a.Labels.name }}{{- end -}}{{- "" -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if gt (len .Alerts.Firing) $max -}}
+{{ "\n" -}}… (more than {{ $max }} instances){{- "" -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}

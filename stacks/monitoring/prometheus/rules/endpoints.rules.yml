@@ -1,0 +1,31 @@
+groups:
+  - name: endpoints.blackbox
+    rules:
+      - alert: DozzleEndpointDown
+        expr: >-
+          probe_success{job="blackbox-http",
+          instance="https://dozzle.atardecer-naranja.es/"} == 0
+        labels:
+          severity: warning
+          service: dozzle
+          component: endpoint
+          scope: lab
+        annotations:
+          summary: Dozzle endpoint is down (external)
+          description: Blackbox probe to Dozzle is failing.
+        for: 5m
+      - alert: UptimeKumaEndpointDown
+        expr: >-
+          probe_success{job="blackbox-http",
+          instance="https://uptime-kuma.atardecer-naranja.es/"} == 0
+        labels:
+          severity: warning
+          service: uptime-kuma
+          component: endpoint
+          scope: service
+        annotations:
+          summary: Uptime Kuma endpoint is down (external)
+          description: >-
+            Blackbox probe to Uptime Kuma is failing. Internal monitors
+            (including Prometheus heartbeat) may be impacted.
+        for: 5m
