@@ -40,11 +40,23 @@ services:
   alertmanager:
     image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
     container_name: mon-alertmanager
-    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      # Public URL used by templates (.ExternalURL) to build Alert/Silence links.
+      # Runtime-only: set --web.external-url in runtime (compose.override.yml).
     expose:
       - "9093"
     volumes:
       - /opt/homelab-stacks/stacks/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - /opt/homelab-stacks/stacks/monitoring/alertmanager/templates:/etc/alertmanager/templates:ro
+      - mon-alertmanager-data:/alertmanager
+      # Runtime-only:
+      # - Mount Telegram bot token as a file so Alertmanager can read it via bot_token_file.
+      # - Example:
+      #   - /srv/secrets/alertmanager/TG_BOT_TOKEN:/run/secrets/telegram_bot_token:ro
+      #
+      # NOTE: Alertmanager supports bot_token_file but not chat_id_file.
+      # chat_id must be configured explicitly in alertmanager.yml (placeholder in public repo).
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/ready"]
       interval: 15s
@@ -53,6 +65,8 @@ services:
     networks:
       - mon-net
     restart: unless-stopped
+    environment:
+      TZ: Europe/Madrid
     labels:
       com.repo: homelab-stacks
       com.stack: monitoring
@@ -220,6 +234,8 @@ volumes:
     name: mon-loki-data
   mon-promtail-positions:
     name: mon-promtail-positions
+  mon-alertmanager-data:
+    name: mon-alertmanager-data
 
 networks:
   mon-net:
