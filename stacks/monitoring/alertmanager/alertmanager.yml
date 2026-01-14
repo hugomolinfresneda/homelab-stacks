@@ -1,42 +1,136 @@
+# =============================================================================
+# Alertmanager configuration (homelab monitoring)
+#
+# Goals:
+# - Route by labels (severity/service/scope/component).
+# - CRITICAL: always notify (oncall).
+# - WARNING: notify (notify) but muted at night (Europe/Madrid).
+# - Default: blackhole (explicit drop).
+# - Inhibit: reduce noise (critical suppresses warning; endpoint-down suppresses
+#   other warnings for the same service).
+#
+# Notes:
+# - Start Alertmanager with --web.external-url so .ExternalURL works in templates
+#   (needed for Alert/Silence links).
+# =============================================================================
+
 global:
   resolve_timeout: 5m
-  smtp_smarthost: "smtp.invalid:25"   # placeholder for amtool validation
-  smtp_from: "alertmanager@localhost"
-  smtp_require_tls: false
+  telegram_api_url: https://api.telegram.org
 
+# -----------------------------------------------------------------------------
+# Routing
+# -----------------------------------------------------------------------------
 route:
-  receiver: default
-  group_by: ['alertname', 'severity', 'instance']
+  receiver: blackhole
+
+  # Group alerts so Telegram messages are readable and deduplicated.
+  group_by:
+    - alertname
+    - severity
+    - scope
+    - service
   group_wait: 30s
   group_interval: 5m
-  repeat_interval: 3h
+  repeat_interval: 12h
+
   routes:
-    - matchers: ['severity="critical"']
-      receiver: oncall
-    - matchers: ['severity="warning"']
-      receiver: notify
+    # 0) Watchdog (optional): always notify so you know the pipeline is alive.
+    - receiver: notify
+      matchers:
+        - alertname="Watchdog"
+      group_wait: 0s
+      group_interval: 5m
+      repeat_interval: 12h
 
+    # 1) CRITICAL: always notify oncall.
+    - receiver: oncall
+      matchers:
+        - severity="critical"
+      continue: false
+
+    # 2) WARNING: notify, but mute at night.
+    - receiver: notify
+      matchers:
+        - severity="warning"
+      mute_time_intervals:
+        - night
+      continue: false
+
+    # 3) Everything else (info/unknown): drop by default.
+    - receiver: blackhole
+      continue: false
+
+# -----------------------------------------------------------------------------
+# Inhibition (reduce noise)
+# -----------------------------------------------------------------------------
 inhibit_rules:
-  - source_matchers: ['severity="critical"']
-    target_matchers: ['severity="warning"']
-    equal: ['alertname', 'instance']
+  # Any critical alert suppresses warnings for the same service+instance.
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal:
+      - service
+      - instance
 
+  # When an endpoint is down, suppress other warnings for that service.
+  # (One symptom alert per service; the rest are diagnostics.)
+  - source_matchers:
+      - severity="warning"
+      - alertname=~".*EndpointDown"
+    target_matchers:
+      - severity="warning"
+      - alertname!~".*EndpointDown"
+    equal:
+      - service
+
+# -----------------------------------------------------------------------------
+# Receivers
+# -----------------------------------------------------------------------------
 receivers:
-  - name: default
-    webhook_configs:
-      - url: "http://alert-receiver.local/alerts"
-        send_resolved: true
+  # Explicit drop.
+  - name: blackhole
 
-  - name: oncall
-    webhook_configs:
-      - url: "http://oncall-webhook.local/alerts"
-        send_resolved: true
-
+  # Non-critical notifications (warnings; day-time only).
   - name: notify
-    email_configs:
-      - to: "ops@example.invalid"
-        send_resolved: true
-    # slack_configs:
-    #   - api_url: "https://hooks.slack.com/services/T000/B000/XXXX"
-    #     channel: "#alerts"
-    #     send_resolved: true
+    telegram_configs:
+      - send_resolved: true
+        parse_mode: HTML
+        message: '{{ template "telegram.default" . }}'
+        bot_token_file: /run/secrets/telegram_bot_token
+        # NOTE: Telegram 'chat_id' does not support *_file in Alertmanager (only bot_token_file exists).
+        # This value is not a secret, but it is environment-specific. Replace it with your own chat/group ID
+        # before running this configuration in a different environment.
+        chat_id: 0123456789 # <PUT_YOUR_CHAT_ID_HERE>
+
+  # Critical notifications (always).
+  - name: oncall
+    telegram_configs:
+      - send_resolved: true
+        parse_mode: HTML
+        message: '{{ template "telegram.default" . }}'
+        bot_token_file: /run/secrets/telegram_bot_token
+        # NOTE: Telegram 'chat_id' does not support *_file in Alertmanager (only bot_token_file exists).
+        # This value is not a secret, but it is environment-specific. Replace it with your own chat/group ID
+        # before running this configuration in a different environment.
+        chat_id: 0123456789 # <PUT_YOUR_CHAT_ID_HERE>
+
+# -----------------------------------------------------------------------------
+# Time intervals (mute windows)
+# -----------------------------------------------------------------------------
+time_intervals:
+  - name: night
+    time_intervals:
+      - times:
+          - start_time: "23:00"
+            end_time: "24:00"
+          - start_time: "00:00"
+            end_time: "08:00"
+        location: "Europe/Madrid"
+
+# -----------------------------------------------------------------------------
+# Templates
+# -----------------------------------------------------------------------------
+templates:
+  - /etc/alertmanager/templates/*.tmpl
