@@ -177,50 +177,47 @@ stacks/monitoring/            # runtime overlay (environment-specific)
 
 ## 3) Runtime assumptions: Docker & host
 
-This stack is designed to run on a Linux host with a **rootful Docker daemon**.
-The public `compose.yaml` assumes a conventional layout:
+This stack is designed to run on a Linux host, but the public `compose.yaml`
+is now **portable** and does **not** mount host paths by default. Host‑coupled
+mounts (Docker socket, Docker logs, `/`, `/sys`, etc.) must be provided in a
+private runtime override.
 
-- The Docker API is exposed via the Unix socket at `/var/run/docker.sock`.
-- Docker data lives under `/var/lib/docker`.
-- The host root filesystem `/` can be mounted read‑only inside some monitoring containers.
+In practice, these runtime mounts are required for full fidelity:
 
-In particular:
+- **cAdvisor** (needs host cgroups + Docker runtime):
+  - `/` → `/rootfs:ro`
+  - `/var/run` → `/var/run:ro`
+  - `/var/lib/docker` → `/var/lib/docker:ro`
+  - `/sys` → `/sys:ro`
+- **node-exporter** (host filesystem + optional textfile collector):
+  - `/` → `/host:ro`
+  - `${NODE_EXPORTER_TEXTFILE_DIR}` → `/textfile-collector:ro`
+- **Promtail** (Docker discovery + JSON logs):
+  - `${DOCKER_SOCK}` → `/var/run/docker.sock:ro`
+  - `${DOCKER_CONTAINERS_DIR}` → `/var/lib/docker/containers:ro`
 
-- **cAdvisor**
-  - Runs with `privileged: true` and mounts:
-    - `/` → `/rootfs:ro`
-    - `/var/run` → `/var/run:ro`
-    - `/var/lib/docker` → `/var/lib/docker:ro`
-    - `/sys` → `/sys:ro`
-  - This is required for cgroups and per‑container metrics (CPU, memory, network)
-    with Docker / Compose labels. Without these mounts, cAdvisor only sees a
-    single aggregate cgroup and the containers overview dashboard becomes useless.
-
-- **node-exporter**
-  - Uses `--path.rootfs=/host` and expects the host root filesystem to be
-    bound as `/host:ro`. This makes filesystem and memory metrics reflect the
-    real host instead of the container.
-
-- **Promtail**
-  - Connects to the Docker API at `/var/run/docker.sock`.
-  - Reads Docker JSON log files from `/var/lib/docker/containers`.
-  - Only containers explicitly labelled with `com.logging="true"` are scraped.
-
-If you run Docker in **rootless mode** or with a non‑standard directory layout, you
-should adapt these mounts in your private runtime overrides (for example in a
-separate `homelab-runtime` repository) or by using the demo stack and its
-`.env.demo` file as a template. The public `compose.yaml` remains opinionated
-towards the rootful Docker defaults so that dashboards and alert rules work
-out of the box on a typical single‑node homelab host.
+If you run Docker in **rootless mode** or with a non‑standard directory layout,
+adapt these mounts in your private runtime overrides (for example in a separate
+`homelab-runtime` repository) or by using the demo stack and its `.env.demo`
+file as a template.
 
 
 ## 4) Prerequisites
 
 - Docker Engine + **Docker Compose v2**
 - External docker networks created: `mon-net`, `proxy`
-- **Rootless-friendly binds** for Promtail in your runtime override:
+- **Required .env variables** (compose will fail fast if missing):
+  - `STACKS_DIR`, `PROM_*_TARGETS`, `ROOT_MOUNTPOINT`, `ROOT_FSTYPE`, `BACKUP_MOUNTPOINT`, `BACKUP_FSTYPE`
+  - Empty or missing values stop `docker compose` with a clear error (`:?`).
+- **Targets format** (Prometheus env expansion):
+  - `PROM_*_TARGETS` values are YAML flow list items (comma-separated)
+  - Example: `PROM_NEXTCLOUD_EXPORTER_TARGETS=nc-mysqld-exporter:9104,nc-redis-exporter:9121`
+- **Filesystem labels** (alert rules):
+  - `ROOT_MOUNTPOINT`/`ROOT_FSTYPE` and `BACKUP_MOUNTPOINT`/`BACKUP_FSTYPE` must match node-exporter metrics
+- **Runtime override binds** (rootful or rootless):
   - `${DOCKER_SOCK}` → usually `/run/user/1000/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
+  - `${NODE_EXPORTER_TEXTFILE_DIR}` → usually `/var/lib/node_exporter/textfile_collector`
   - `${SELINUX_SUFFIX}` → leave empty unless you need `,Z (or ,z)` on SELinux hosts
 
 ---
@@ -229,6 +226,8 @@ out of the box on a typical single‑node homelab host.
 
 - **Base (public):** `/opt/homelab-stacks/stacks/monitoring/compose.yaml`
   Pinned digests, healthchecks, no host ports, networks `mon-net` (+ `proxy` for Grafana).
+  The base compose expects `STACKS_DIR` to point at the repo root (used for bind mounts).
+  Prometheus runs with `--config.expand-env` to inject `PROM_*_TARGETS` and mountpoint vars.
 
   **Named volumes** (portable, human-friendly names):
 
@@ -252,6 +251,19 @@ out of the box on a typical single‑node homelab host.
       volumes:
         - ${DOCKER_SOCK}:/var/run/docker.sock:ro${SELINUX_SUFFIX}
         - ${DOCKER_CONTAINERS_DIR}:/var/lib/docker/containers:ro${SELINUX_SUFFIX}
+
+    node-exporter:
+      volumes:
+        - /:/host:ro,rslave
+        - ${NODE_EXPORTER_TEXTFILE_DIR}:/textfile-collector:ro${SELINUX_SUFFIX}
+
+    cadvisor:
+      privileged: true
+      volumes:
+        - /:/rootfs:ro
+        - /var/run:/var/run:ro
+        - /sys:/sys:ro
+        - /var/lib/docker:/var/lib/docker:ro
 
     prometheus:
       volumes:
@@ -302,8 +314,7 @@ Prometheus job (present in the public repo):
   scrape_interval: 30s
   metrics_path: /metrics
   static_configs:
-    - targets:
-        - 'uptime-kuma:3001'
+    - targets: [${PROM_UPTIME_KUMA_TARGETS}]
       labels:
         stack: monitoring
         service: uptime-kuma
@@ -335,7 +346,7 @@ make down stack=monitoring     # stop
 **Manual compose (portable)**
 
 ```bash
-docker compose   -f /opt/homelab-stacks/stacks/monitoring/compose.yaml   -f /opt/homelab-runtime/stacks/monitoring/compose.override.yml   up -d
+docker compose   -f ${STACKS_DIR}/stacks/monitoring/compose.yaml   -f /opt/homelab-runtime/stacks/monitoring/compose.override.yml   up -d
 ```
 
 ---
@@ -492,8 +503,8 @@ Docker container logs into Loki with a small, explicit label set that matches th
 **Discovery**
 
 - Uses `docker_sd` against `unix:///var/run/docker.sock`. The Docker socket is mounted
-  into the `mon-promtail` container by the monitoring stack, so Promtail can discover
-  running containers even in a rootless Docker setup.
+  into the `mon-promtail` container by your runtime override, so Promtail can discover
+  running containers in both rootful and rootless setups.
 
 **Selection**
 
@@ -781,8 +792,7 @@ Two jobs are responsible for AdGuard visibility:
 - job_name: 'adguard-exporter'
   scrape_interval: 15s
   static_configs:
-    - targets:
-        - 'adguard-exporter:9617'
+    - targets: [${PROM_ADGUARD_EXPORTER_TARGETS}]
 
 # AdGuard DNS resolution (blackbox → AdGuard)
 - job_name: 'blackbox-dns'
@@ -790,8 +800,7 @@ Two jobs are responsible for AdGuard visibility:
   params:
     module: [dns_udp]
   static_configs:
-    - targets:
-        - 'adguard-home:53'
+    - targets: [${PROM_ADGUARD_DNS_TARGETS}]
   relabel_configs:
     - source_labels: [__address__]
       target_label: __param_target   # target = DNS server under test
@@ -985,8 +994,7 @@ dedicated job in `stacks/monitoring/prometheus/prometheus.yml`:
   scrape_interval: 30s
   metrics_path: /metrics
   static_configs:
-    - targets:
-        - 'cloudflared:8081'
+    - targets: [${PROM_CLOUDFLARED_TARGETS}]
       labels:
         stack: proxy
         service: cloudflared
@@ -995,7 +1003,7 @@ dedicated job in `stacks/monitoring/prometheus/prometheus.yml`:
 
 Notes:
 
-- The target name `cloudflared:8081` resolves on the shared `mon-net` Docker
+- The target name (for example `cloudflared:8081`) resolves on the shared `mon-net` Docker
   network; the container joins `mon-net` in its own stack compose.
 - The label set follows the homelab conventions and is used by alerting and
   dashboards:

@@ -4,22 +4,22 @@ global:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ['alertmanager:9093']
+        - targets: [${PROM_ALERTMANAGER_TARGETS}]
 rule_files:
   - /etc/prometheus/rules/*.yml
 scrape_configs:
   # Self-scrape
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['prometheus:9090']
+      - targets: [${PROM_SELF_TARGETS}]
   # Alertmanager metrics
   - job_name: 'alertmanager'
     static_configs:
-      - targets: ['alertmanager:9093']
+      - targets: [${PROM_ALERTMANAGER_TARGETS}]
   # Blackbox exporter itself (its own /metrics)
   - job_name: 'blackbox'
     static_configs:
-      - targets: ['blackbox:9115']
+      - targets: [${PROM_BLACKBOX_TARGETS}]
   # Probes HTTP/HTTPS via Blackbox
   - job_name: 'blackbox-http'
     metrics_path: /probe
@@ -61,22 +61,30 @@ scrape_configs:
   # Node exporter (host metrics)
   - job_name: 'node'
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: [${PROM_NODE_EXPORTER_TARGETS}]
+    metric_relabel_configs:
+      - source_labels: [mountpoint, fstype]
+        regex: ${ROOT_MOUNTPOINT};${ROOT_FSTYPE}
+        target_label: mountpoint_role
+        replacement: root
+      - source_labels: [mountpoint, fstype]
+        regex: ${BACKUP_MOUNTPOINT};${BACKUP_FSTYPE}
+        target_label: mountpoint_role
+        replacement: backup
   # Loki
   - job_name: 'loki'
     static_configs:
-      - targets: ['loki:3100']
+      - targets: [${PROM_LOKI_TARGETS}]
   # Promtail
   - job_name: 'promtail'
     static_configs:
-      - targets: ['promtail:9080']  # promtail /metrics
+      - targets: [${PROM_PROMTAIL_TARGETS}]  # promtail /metrics
   # Uptime Kuma
   - job_name: 'uptime-kuma'
     scrape_interval: 30s
     metrics_path: /metrics
     static_configs:
-      - targets:
-          - 'uptime-kuma:3001'
+      - targets: [${PROM_UPTIME_KUMA_TARGETS}]
         labels:
           stack: monitoring
           service: uptime-kuma
@@ -88,28 +96,24 @@ scrape_configs:
   - job_name: 'cadvisor'
     scrape_interval: 30s
     static_configs:
-      - targets: ['cadvisor:8080']
+      - targets: [${PROM_CADVISOR_TARGETS}]
   # Nextcloud - MySQL & redis
   - job_name: 'nextcloud-exporters'
     scrape_interval: 15s
     static_configs:
-      - targets:
-          - 'nc-mysqld-exporter:9104'
-          - 'nc-redis-exporter:9121'
+      - targets: [${PROM_NEXTCLOUD_EXPORTER_TARGETS}]
   # AdGuard exporter
   - job_name: 'adguard-exporter'
     scrape_interval: 15s
     static_configs:
-      - targets:
-          - 'adguard-exporter:9617'
+      - targets: [${PROM_ADGUARD_EXPORTER_TARGETS}]
   # AdGuard resolve job
   - job_name: 'blackbox-dns'
     metrics_path: /probe
     params:
       module: [dns_udp]
     static_configs:
-      - targets:
-          - 'adguard-home:53'
+      - targets: [${PROM_ADGUARD_DNS_TARGETS}]
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target   # target=DNS server
@@ -122,8 +126,7 @@ scrape_configs:
     scrape_interval: 30s
     metrics_path: /metrics
     static_configs:
-      - targets:
-          - 'cloudflared:8081'
+      - targets: [${PROM_CLOUDFLARED_TARGETS}]
         labels:
           stack: proxy
           service: cloudflared
@@ -134,8 +137,7 @@ scrape_configs:
     metrics_path: /metrics
 
     static_configs:
-      - targets:
-          - 'couchdb-exporter:9984'
+      - targets: [${PROM_COUCHDB_EXPORTER_TARGETS}]
         labels:
           stack: 'couchdb'
           service: 'couchdb'

@@ -5,13 +5,13 @@
 **Service:** `backup`
 **Component:** `host`
 **Scope:** `infra`
-**Signal:** `absent(node_filesystem_size_bytes{mountpoint="/mnt/backups", fstype="ext4"})`
+**Signal:** `absent(node_filesystem_size_bytes{job="node", mountpoint_role="backup"})`
 
 ---
 
 ## Purpose
 
-Detect when the backup filesystem mountpoint (`/mnt/backups`) is **not mounted** or is **not visible** via node-exporter filesystem metrics. This is a hard failure mode: backups may fail, or worse, write to the wrong disk.
+Detect when the configured backup filesystem mountpoint (default `/mnt/backups`) is **not mounted** or is **not visible** via node-exporter filesystem metrics. This is a hard failure mode: backups may fail, or worse, write to the wrong disk.
 
 ## Impact
 
@@ -22,7 +22,7 @@ Detect when the backup filesystem mountpoint (`/mnt/backups`) is **not mounted**
 ## Preconditions
 
 - Host uses `ext4` for the backups filesystem.
-- Expected mountpoint: `/mnt/backups`.
+- Expected mountpoint: `/mnt/backups` (or your configured `BACKUP_MOUNTPOINT`).
 - Prometheus scrapes node-exporter for `node_filesystem_*` metrics.
 
 ---
@@ -44,12 +44,12 @@ If node-exporter is down, handle **`NodeExporterDown`** first (this alert become
 ### 2) Confirm the mount is missing (real-world check)
 
 ```bash
-findmnt /mnt/backups || true
+findmnt /mnt/backups || true  # replace with BACKUP_MOUNTPOINT if different
 mount | grep -E ' /mnt/backups ' || true
 df -hT /mnt/backups || true
 ```
 
-Expected: `/mnt/backups` appears as a mounted filesystem (`ext4`).
+Expected: your configured backup mountpoint appears as a mounted filesystem.
 
 ### 3) Confirm the metric is absent (signal check)
 
@@ -103,7 +103,7 @@ sudo journalctl -b --no-pager | grep -iE 'mnt/backups|mount|ext4|fsck|sdb' | tai
 If `findmnt` shows mounted but the metric is still absent:
 
 - Confirm node-exporter has not been started with filesystem exclude flags.
-- Confirm mountpoint path matches exactly (`/mnt/backups`, not `/mnt/backup` or a bind mount elsewhere).
+- Confirm mountpoint path matches exactly (`/mnt/backups` by default, or your configured `BACKUP_MOUNTPOINT`).
 
 Quick grep for node-exporter flags (adapt as needed):
 
