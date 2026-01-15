@@ -20,6 +20,8 @@ It runs a minimal container (`cloudflare/cloudflared`) that maintains outbound c
 ```
 /opt/homelab-stacks/stacks/cloudflared/
 ├── compose.yaml
+├── .env.example
+├── cloudflared/config.yml.example
 └── README.md
 
 /opt/homelab-runtime/stacks/cloudflared/
@@ -46,18 +48,18 @@ It runs a minimal container (`cloudflare/cloudflared`) that maintains outbound c
 
 ## Runtime configuration
 
-Example `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml`:
+Example `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml` (see `stacks/cloudflared/cloudflared/config.yml.example`):
 
 ```yaml
-tunnel: 41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46
-credentials-file: /etc/cloudflared/41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.json
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
 
 ingress:
-  - hostname: dozzle.atardecer-naranja.es
+  - hostname: dozzle.<YOUR_DOMAIN>
     service: http://dozzle:8080
-  - hostname: uptime-kuma.atardecer-naranja.es
+  - hostname: uptime-kuma.<YOUR_DOMAIN>
     service: http://uptime-kuma:3001
-  - hostname: cloud.atardecer-naranja.es
+  - hostname: cloud.<YOUR_DOMAIN>
     service: http://nc-web:8080
   - service: http_status:404
 ```
@@ -65,17 +67,17 @@ ingress:
 The JSON credential lives outside the repo:
 
 ```
-/srv/secrets/cloudflared/41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.json
+/srv/secrets/cloudflared/<TUNNEL_UUID>.json
 ```
 
 Set permissions once:
 
 ```bash
 sudo mkdir -p /srv/secrets/cloudflared
-sudo mv ~/.cloudflared/41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.json /srv/secrets/cloudflared/
+sudo mv ~/.cloudflared/<TUNNEL_UUID>.json /srv/secrets/cloudflared/
 sudo chmod 700 /srv/secrets/cloudflared
-sudo chmod 644 /srv/secrets/cloudflared/41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.json
-sudo chown 65532:65532 /srv/secrets/cloudflared/41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.json
+sudo chmod 644 /srv/secrets/cloudflared/<TUNNEL_UUID>.json
+sudo chown <CLOUDFLARED_UID>:<CLOUDFLARED_GID> /srv/secrets/cloudflared/<TUNNEL_UUID>.json
 ```
 
 ---
@@ -120,10 +122,10 @@ Each `hostname:` in your `config.yml` must have a **DNS CNAME** record in Cloudf
 
 | Type  | Name          | Target                                                  | Proxy Status |
 | ----- | ------------- | ------------------------------------------------------- | ------------ |
-| CNAME | `dozzle`      | `41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.cfargotunnel.com` | ☁️ Proxied   |
-| CNAME | `uptime-kuma` | `41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.cfargotunnel.com` | ☁️ Proxied   |
-| CNAME | `cloud`       | `41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.cfargotunnel.com` | ☁️ Proxied   |
-| CNAME | `couchdb`     | `41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.cfargotunnel.com` | ☁️ Proxied   |
+| CNAME | `dozzle`      | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
+| CNAME | `uptime-kuma` | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
+| CNAME | `cloud`       | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
+| CNAME | `couchdb`     | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
 
 3. Save changes.
    No TTL or proxy tweaks needed — Cloudflare handles routing automatically.
@@ -131,13 +133,13 @@ Each `hostname:` in your `config.yml` must have a **DNS CNAME** record in Cloudf
 To verify:
 
 ```bash
-dig +short dozzle.atardecer-naranja.es
+dig +short dozzle.<YOUR_DOMAIN>
 ```
 
 Should return:
 
 ```
-41f9cc7c-019d-4c8e-a0ae-efa8fbc92e46.cfargotunnel.com.
+<TUNNEL_UUID>.cfargotunnel.com.
 ```
 
 ---
@@ -147,7 +149,7 @@ Should return:
 1. Add the rule in your `config.yml`:
 
    ```yaml
-   - hostname: newapp.atardecer-naranja.es
+   - hostname: newapp.<YOUR_DOMAIN>
      service: http://newapp:port
    ```
 2. Create the CNAME in Cloudflare’s **DNS → Records**,
@@ -155,7 +157,8 @@ Should return:
 3. Restart the tunnel:
 
    ```bash
-   make restart stack=cloudflared
+   make down stack=cloudflared
+   make up   stack=cloudflared
    ```
 
 ---

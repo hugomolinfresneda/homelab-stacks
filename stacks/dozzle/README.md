@@ -55,11 +55,11 @@ cp /opt/homelab-stacks/stacks/dozzle/.env.example \
 Typical contents:
 
 ```dotenv
-TZ=Europe/Madrid
-DOCKER_SOCK=/run/user/1000/docker.sock   # rootless
-# DOCKER_SOCK=/var/run/docker.sock       # rootful
-# BIND_LOCALHOST=127.0.0.1
-# HTTP_PORT=8081
+TZ=<REGION/CITY>
+DOCKER_SOCK=<DOCKER_SOCK>   # rootless
+# DOCKER_SOCK=<ROOTFUL_DOCKER_SOCK>       # rootful
+# BIND_LOCALHOST=<BIND_LOCALHOST>
+# HTTP_PORT=<HTTP_PORT>
 ```
 
 ---
@@ -84,7 +84,7 @@ docker compose ps
 services:
   dozzle:
     volumes:
-      - ${DOCKER_SOCK:-/run/user/1000/docker.sock}:/var/run/docker.sock:ro
+      - ${DOCKER_SOCK:-<ROOTLESS_DOCKER_SOCK>}:/var/run/docker.sock:ro
     # Optional: bind locally for debugging
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8081}:8080"
@@ -108,7 +108,8 @@ ingress:
 Restart the tunnel container:
 
 ```bash
-docker compose -f /opt/homelab-runtime/systemd/cloudflared/compose.yml restart cloudflared
+make down stack=cloudflared
+make up   stack=cloudflared
 ```
 
 ### Option B — Reverse proxy (Nginx)
@@ -146,7 +147,7 @@ Ensure TLS (Let’s Encrypt) and proper access control (Basic Auth or Cloudflare
 * Never expose Dozzle publicly without authentication.
 * Mount the Docker socket **read-only**.
 * Keep it isolated within the shared `proxy` network.
-* When running rootless Docker, use `/run/user/$UID/docker.sock`.
+* When running rootless Docker, use `<ROOTLESS_DOCKER_SOCK>`.
 
 ---
 
@@ -175,4 +176,3 @@ Dozzle is also monitored as part of the logging stack:
 
 ```logql
 {service="dozzle"}
-

@@ -217,7 +217,7 @@ sudo crontab -e
 Add a nightly run at 02:15 (UTC) with a seven-day retention as a simple example:
 
 ```cron
-15 2 * * * ENV_FILE=/home/hugo/.config/nextcloud/nc-backup.env BACKUP_DIR=/home/hugo/Backups/nextcloud   bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
+15 2 * * * ENV_FILE=$HOME/.config/nextcloud/nc-backup.env BACKUP_DIR=$HOME/Backups/nextcloud   bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
 ```
 
 > Rotation and offsite sync are not handled by the script. Use your preferred tooling (for example, `restic`, `rclone`, ZFS/Btrfs snapshots, object storage versions).
@@ -232,8 +232,8 @@ Description=Nextcloud backup (DB + volume)
 
 [Service]
 Type=oneshot
-Environment=ENV_FILE=/home/hugo/.config/nextcloud/nc-backup.env
-Environment=BACKUP_DIR=/home/hugo/Backups/nextcloud
+Environment=ENV_FILE=$HOME/.config/nextcloud/nc-backup.env
+Environment=BACKUP_DIR=$HOME/Backups/nextcloud
 ExecStart=/usr/bin/bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh
 ```
 

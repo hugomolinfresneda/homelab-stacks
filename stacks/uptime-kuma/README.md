@@ -62,9 +62,9 @@ cp /opt/homelab-stacks/stacks/uptime-kuma/.env.example    /opt/homelab-runtime/s
 Example:
 
 ```dotenv
-TZ=Europe/Madrid
-# BIND_LOCALHOST=127.0.0.1
-# HTTP_PORT=3001
+TZ=<REGION/CITY>
+# BIND_LOCALHOST=<BIND_LOCALHOST>
+# HTTP_PORT=<HTTP_PORT>
 ```
 
 ---
@@ -125,7 +125,7 @@ The runtime override is responsible for:
 
 ### Option A — Cloudflare Tunnel
 
-Add the rule in `/opt/homelab-runtime/systemd/cloudflared/config.yml`:
+Add the rule in `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml`:
 
 ```yaml
 ingress:
@@ -137,7 +137,8 @@ ingress:
 Restart:
 
 ```bash
-STACK=cloudflared make restart
+make down stack=cloudflared
+make up   stack=cloudflared
 ```
 
 ### Option B — Reverse proxy (Nginx)

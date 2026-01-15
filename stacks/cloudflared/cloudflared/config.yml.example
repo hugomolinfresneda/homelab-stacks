@@ -1,0 +1,13 @@
+# homelab-stacks/stacks/cloudflared/cloudflared/config.yml.example
+# -------------------------------------------------------------------
+# Cloudflared tunnel config template (no real values)
+# Copy to homelab-runtime/stacks/cloudflared/cloudflared/config.yml
+# -------------------------------------------------------------------
+
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>
+    service: http://<SERVICE_NAME>:<SERVICE_PORT>
+  - service: http_status:404
