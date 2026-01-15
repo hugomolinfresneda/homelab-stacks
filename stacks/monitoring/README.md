@@ -114,8 +114,7 @@ stacks/monitoring/
 │   │       └── datasources.yml
 │   └── provisioning.mon
 │       ├── dashboards
-│       │   ├── dashboards.yml
-│       │   └── exported-mon
+│       │   └── dashboards.yml
 │       └── datasources
 │           └── datasources.yml
 ├── loki
@@ -358,7 +357,7 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 ## 9) Grafana provisioning & dashboards
 
-- **Datasources** are pre-provisioned (`grafana/provisioning/datasources/datasources.yml`):
+- **Datasources** are pre-provisioned (`grafana/provisioning.mon/datasources/datasources.yml`):
 
   - `Prometheus` → `http://prometheus:9090` (uid: `prometheus`, **default**)
   - `Loki` → `http://loki:3100` (uid: `loki`)
