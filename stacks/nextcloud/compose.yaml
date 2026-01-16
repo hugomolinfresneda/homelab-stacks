@@ -10,10 +10,6 @@ services:
     container_name: nc-db
     restart: unless-stopped
     stop_grace_period: 60s
-    deploy:
-      resources:
-        limits: {cpus: "2.0", memory: "2g"}
-        reservations: {cpus: "0.50", memory: "512m"}
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "5"}
@@ -41,10 +37,6 @@ services:
     container_name: nc-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
-    deploy:
-      resources:
-        limits: {cpus: "0.50", memory: "256m"}
-        reservations: {cpus: "0.10", memory: "64m"}
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
@@ -66,10 +58,6 @@ services:
     container_name: nc-app
     restart: unless-stopped
     stop_grace_period: 30s
-    deploy:
-      resources:
-        limits: {cpus: "2.0", memory: "2g"}
-        reservations: {cpus: "0.50", memory: "512m"}
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
@@ -104,15 +92,11 @@ services:
     image: nginx@sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d
     container_name: nc-web
     restart: unless-stopped
-    deploy:
-      resources:
-        limits: {cpus: "1.0", memory: "512m"}
-        reservations: {cpus: "0.10", memory: "64m"}
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
     depends_on:
-      app: {condition: service_started}
+      app: {condition: service_healthy}
     volumes:
       - nextcloud:/var/www/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
@@ -135,20 +119,16 @@ services:
   cron:
     image: nextcloud@sha256:2a2078e24cb19b22bf0052aae7a5cce74b51ebe41676f72f5783b5953619c4a1
     container_name: nc-cron
-    user: "33:33"
+    user: "${PUID:-33}:${PGID:-33}"
     restart: unless-stopped
     stop_grace_period: 20s
-    deploy:
-      resources:
-        limits: {cpus: "0.50", memory: "512m"}
-        reservations: {cpus: "0.10", memory: "128m"}
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
     entrypoint: ["/bin/sh", "-c"]
     command: ["trap exit TERM; while :; do php -f /var/www/html/cron.php; sleep 300; done"]
     depends_on:
-      app: {condition: service_started}
+      app: {condition: service_healthy}
     volumes:
       - nextcloud:/var/www/html
       # php.ini comes from runtime override
@@ -165,10 +145,6 @@ services:
     container_name: nc-mysqld-exporter
     profiles: ["monitoring"]
     restart: unless-stopped
-    deploy:
-      resources:
-        limits: {cpus: "0.25", memory: "128m"}
-        reservations: {cpus: "0.05", memory: "64m"}
     logging:
       driver: json-file
       options: {max-size: "5m", max-file: "3"}
