@@ -1,5 +1,7 @@
 [cors]
-origins = https://couchdb.atardecer-naranja.es
+; Comma-separated list of allowed origins (no trailing slash).
+; Replace manually or render from .env with envsubst.
+origins = ${COUCHDB_CORS_ORIGINS}
 credentials = true
 methods = GET, PUT, POST, HEAD, DELETE
 headers = accept, authorization, content-type, origin, referer, user-agent
