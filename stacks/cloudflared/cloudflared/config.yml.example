@@ -5,7 +5,7 @@
 # -------------------------------------------------------------------
 
 tunnel: <TUNNEL_UUID>
-credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+credentials-file: <CLOUDFLARED_CRED_FILE>
 
 ingress:
   - hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>

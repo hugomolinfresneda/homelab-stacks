@@ -28,7 +28,7 @@ It runs a minimal container (`cloudflare/cloudflared`) that maintains outbound c
 ├── compose.override.yml
 ├── .env
 └── cloudflared/config.yml
-/srv/secrets/cloudflared/<UUID>.json
+<CLOUDFLARED_CRED_FILE>  # JSON credential file (runtime only)
 ```
 
 ---
@@ -52,32 +52,33 @@ Example `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml` (see `s
 
 ```yaml
 tunnel: <TUNNEL_UUID>
-credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+credentials-file: <CLOUDFLARED_CRED_FILE>
 
 ingress:
-  - hostname: dozzle.<YOUR_DOMAIN>
-    service: http://dozzle:8080
-  - hostname: uptime-kuma.<YOUR_DOMAIN>
-    service: http://uptime-kuma:3001
-  - hostname: cloud.<YOUR_DOMAIN>
-    service: http://nc-web:8080
+  - hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>
+    service: http://<SERVICE_NAME>:<SERVICE_PORT>
   - service: http_status:404
 ```
 
-The JSON credential lives outside the repo:
+Runtime `.env` (see `.env.example`) defines the credential path and optional
+UID/GID:
 
 ```
-/srv/secrets/cloudflared/<TUNNEL_UUID>.json
+CLOUDFLARED_CRED_FILE=<PATH_TO_CREDENTIAL_JSON>
+CLOUDFLARED_UID=65532
+CLOUDFLARED_GID=65532
 ```
 
-Set permissions once:
+The credential file lives in runtime storage and should be mounted 1:1 into the
+container at the same path as `CLOUDFLARED_CRED_FILE`.
+
+Set permissions once (with your runtime `.env` loaded):
 
 ```bash
-sudo mkdir -p /srv/secrets/cloudflared
-sudo mv ~/.cloudflared/<TUNNEL_UUID>.json /srv/secrets/cloudflared/
-sudo chmod 700 /srv/secrets/cloudflared
-sudo chmod 644 /srv/secrets/cloudflared/<TUNNEL_UUID>.json
-sudo chown <CLOUDFLARED_UID>:<CLOUDFLARED_GID> /srv/secrets/cloudflared/<TUNNEL_UUID>.json
+sudo install -d -m 700 "$(dirname "$CLOUDFLARED_CRED_FILE")"
+sudo mv ~/.cloudflared/<TUNNEL_UUID>.json "$CLOUDFLARED_CRED_FILE"
+sudo chmod 600 "$CLOUDFLARED_CRED_FILE"
+sudo chown "${CLOUDFLARED_UID}:${CLOUDFLARED_GID}" "$CLOUDFLARED_CRED_FILE"
 ```
 
 ---
@@ -122,10 +123,7 @@ Each `hostname:` in your `config.yml` must have a **DNS CNAME** record in Cloudf
 
 | Type  | Name          | Target                                                  | Proxy Status |
 | ----- | ------------- | ------------------------------------------------------- | ------------ |
-| CNAME | `dozzle`      | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
-| CNAME | `uptime-kuma` | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
-| CNAME | `cloud`       | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
-| CNAME | `couchdb`     | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
+| CNAME | `<SERVICE_SUBDOMAIN>` | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
 
 3. Save changes.
    No TTL or proxy tweaks needed — Cloudflare handles routing automatically.
@@ -133,7 +131,7 @@ Each `hostname:` in your `config.yml` must have a **DNS CNAME** record in Cloudf
 To verify:
 
 ```bash
-dig +short dozzle.<YOUR_DOMAIN>
+dig +short <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>
 ```
 
 Should return:
@@ -149,11 +147,11 @@ Should return:
 1. Add the rule in your `config.yml`:
 
    ```yaml
-   - hostname: newapp.<YOUR_DOMAIN>
-     service: http://newapp:port
+   - hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>
+     service: http://<SERVICE_NAME>:<SERVICE_PORT>
    ```
 2. Create the CNAME in Cloudflare’s **DNS → Records**,
-   pointing to your `<UUID>.cfargotunnel.com`.
+   pointing to your `<TUNNEL_UUID>.cfargotunnel.com`.
 3. Restart the tunnel:
 
    ```bash
@@ -167,7 +165,7 @@ Should return:
 
 | Symptom                           | Likely cause                                                  |
 | --------------------------------- | ------------------------------------------------------------- |
-| Crash-loop or `permission denied` | Wrong path or perms on `/srv/secrets/cloudflared/<UUID>.json` |
+| Crash-loop or `permission denied` | Wrong path or perms on `$CLOUDFLARED_CRED_FILE`               |
 | 404 from Cloudflare               | Missing or wrong `ingress` rule                               |
 | Connection refused                | Target container not in `proxy` network                       |
 | Host not resolving                | Missing CNAME record in Cloudflare                            |
@@ -228,8 +226,8 @@ Key points:
   they can be shared across stacks.
 
 In the runtime override (`homelab-runtime/stacks/cloudflared/compose.override.yml`)
-you still mount your real `config.yml` and credentials JSON; the metrics wiring
-remains unchanged.
+you still mount your real `config.yml` and the JSON credential referenced by
+`CLOUDFLARED_CRED_FILE`; the metrics wiring remains unchanged.
 
 ### Prometheus job (monitoring stack)
 
