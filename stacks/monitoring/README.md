@@ -178,21 +178,24 @@ stacks/monitoring/            # runtime overlay (environment-specific)
 ## 3) Runtime assumptions: Docker & host
 
 This stack is designed to run on a Linux host with a **rootful Docker daemon**.
-The public `compose.yaml` assumes a conventional layout:
+The public `compose.yaml` intentionally omits sensitive host binds; add them in a
+runtime override when you want host-level metrics and Docker log scraping.
+
+The example override assumes a conventional layout:
 
 - The Docker API is exposed via the Unix socket at `/var/run/docker.sock`.
 - Docker data lives under `/var/lib/docker`.
-- The host root filesystem `/` can be mounted read‑only inside some monitoring containers.
+- The host root filesystem `/` can be mounted read-only inside monitoring containers.
 
-In particular:
+In particular, add these binds in your runtime override:
 
 - **cAdvisor**
   - Runs with `privileged: true` and mounts:
-    - `/` → `/rootfs:ro`
-    - `/var/run` → `/var/run:ro`
-    - `/var/lib/docker` → `/var/lib/docker:ro`
-    - `/sys` → `/sys:ro`
-  - This is required for cgroups and per‑container metrics (CPU, memory, network)
+    - `/` -> `/rootfs:ro`
+    - `/var/run` -> `/var/run:ro`
+    - `/var/lib/docker` -> `/var/lib/docker:ro`
+    - `/sys` -> `/sys:ro`
+  - This is required for cgroups and per-container metrics (CPU, memory, network)
     with Docker / Compose labels. Without these mounts, cAdvisor only sees a
     single aggregate cgroup and the containers overview dashboard becomes useless.
 
@@ -206,18 +209,18 @@ In particular:
   - Reads Docker JSON log files from `/var/lib/docker/containers`.
   - Only containers explicitly labelled with `com.logging="true"` are scraped.
 
-If you run Docker in **rootless mode** or with a non‑standard directory layout, you
-should adapt these mounts in your private runtime overrides (for example in a
-separate `homelab-runtime` repository) or by using the demo stack and its
-`.env.demo` file as a template. The public `compose.yaml` remains opinionated
-towards the rootful Docker defaults so that dashboards and alert rules work
-out of the box on a typical single‑node homelab host.
+If you run Docker in **rootless mode** or with a non-standard directory layout, you
+should adapt these mounts in your private runtime override (see
+`stacks/monitoring/compose.override.example.yaml`) or by using the demo stack and its
+`.env.demo` file as a template. The example override uses the rootful Docker defaults.
 
 
 ## 4) Prerequisites
 
 - Docker Engine + **Docker Compose v2**
 - External docker networks created: `mon-net`, `proxy`
+- Runtime override for host mounts (copy `stacks/monitoring/compose.override.example.yaml`
+  to `/opt/homelab-runtime/stacks/monitoring/compose.override.yml` and edit)
 - **Rootless-friendly binds** for Promtail in your runtime override:
   - `${DOCKER_SOCK}` → usually `/run/user/1000/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
@@ -229,6 +232,7 @@ out of the box on a typical single‑node homelab host.
 
 - **Base (public):** `/opt/homelab-stacks/stacks/monitoring/compose.yaml`
   Pinned digests, healthchecks, no host ports, networks `mon-net` (+ `proxy` for Grafana).
+  Sensitive host mounts live in the runtime override.
 
   **Named volumes** (portable, human-friendly names):
 
@@ -245,6 +249,7 @@ out of the box on a typical single‑node homelab host.
   ```
 
 - **Runtime override (private):** `/opt/homelab-runtime/stacks/monitoring/compose.override.yml`
+  Copy `stacks/monitoring/compose.override.example.yaml` and edit.
 
   ```yaml
   services:
@@ -253,13 +258,33 @@ out of the box on a typical single‑node homelab host.
         - ${DOCKER_SOCK}:/var/run/docker.sock:ro${SELINUX_SUFFIX}
         - ${DOCKER_CONTAINERS_DIR}:/var/lib/docker/containers:ro${SELINUX_SUFFIX}
 
+    node-exporter:
+      volumes:
+        - /:/host:ro,rslave${SELINUX_SUFFIX}
+        - /var/lib/node_exporter/textfile_collector:/textfile-collector:ro${SELINUX_SUFFIX}
+
+    cadvisor:
+      volumes:
+        - /:/rootfs:ro${SELINUX_SUFFIX}
+        - /var/run:/var/run:ro${SELINUX_SUFFIX}
+        - /sys:/sys:ro${SELINUX_SUFFIX}
+        - /var/lib/docker:/var/lib/docker:ro${SELINUX_SUFFIX}
+
+    alertmanager:
+      volumes:
+        - /srv/secrets/alertmanager/TG_BOT_TOKEN:/run/secrets/telegram_bot_token:ro
+
     prometheus:
       volumes:
         - /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
   ```
 
   The Promtail volumes give it access to Docker logs in both rootless and rootful setups.
+  The node-exporter and cAdvisor volumes enable host and container metrics.
   The Prometheus volume injects the Uptime Kuma metrics password as a plain read-only file, avoiding Docker Swarm secrets for maximum portability on single-node homelab deployments.
+  If you need Alertmanager secrets, mount them here as well. The Telegram bot token is
+  the credential Alertmanager uses to send alerts via your bot (configured as
+  `bot_token_file` in `alertmanager.yml`).
 
 ---
 
@@ -492,7 +517,8 @@ Docker container logs into Loki with a small, explicit label set that matches th
 **Discovery**
 
 - Uses `docker_sd` against `unix:///var/run/docker.sock`. The Docker socket is mounted
-  into the `mon-promtail` container by the monitoring stack, so Promtail can discover
+  into the `mon-promtail` container via the runtime override (see
+  `stacks/monitoring/compose.override.example.yaml`), so Promtail can discover
   running containers even in a rootless Docker setup.
 
 **Selection**
@@ -1085,9 +1111,9 @@ The only assumptions are:
 - The monitoring stack (Prometheus, Loki, etc.) runs on the same Docker host as the containers
   you care about.
 - `mon-node-exporter` is attached to the `mon-net` network and scrapes the host via the
-  `/host` bind-mount (see the monitoring compose).
+  `/host` bind-mount (see the runtime override).
 - `mon-cadvisor` is attached to `mon-net`, runs `privileged: true` with the host mounts
-  described above, and Docker containers are started via Compose so that standard
+  from the runtime override, and Docker containers are started via Compose so that standard
   `com.docker.compose.*` labels are present (used to derive `stack`, `service` and
   `container` in the dashboard).
 
