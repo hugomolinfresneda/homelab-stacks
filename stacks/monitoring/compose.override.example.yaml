@@ -1,0 +1,28 @@
+# homelab-stacks/stacks/monitoring/compose.override.example.yaml
+# -------------------------------------------------------------------
+# Example runtime override for sensitive host mounts.
+# Copy to /opt/homelab-runtime/stacks/monitoring/compose.override.yml and edit.
+# -------------------------------------------------------------------
+
+services:
+  promtail:
+    volumes:
+      - ${DOCKER_SOCK}:/var/run/docker.sock:ro${SELINUX_SUFFIX}
+      - ${DOCKER_CONTAINERS_DIR}:/var/lib/docker/containers:ro${SELINUX_SUFFIX}
+
+  alertmanager:
+    volumes:
+      # Example secret mount (bot_token_file in alertmanager.yml)
+      - /srv/secrets/alertmanager/TG_BOT_TOKEN:/run/secrets/telegram_bot_token:ro
+
+  node-exporter:
+    volumes:
+      - /:/host:ro,rslave${SELINUX_SUFFIX}
+      - /var/lib/node_exporter/textfile_collector:/textfile-collector:ro${SELINUX_SUFFIX}
+
+  cadvisor:
+    volumes:
+      - /:/rootfs:ro${SELINUX_SUFFIX}
+      - /var/run:/var/run:ro${SELINUX_SUFFIX}
+      - /sys:/sys:ro${SELINUX_SUFFIX}
+      - /var/lib/docker:/var/lib/docker:ro${SELINUX_SUFFIX}
