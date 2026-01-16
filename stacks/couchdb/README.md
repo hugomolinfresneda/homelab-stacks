@@ -20,6 +20,10 @@ It is intended to be published via **Cloudflare Tunnel** (no host ports exposed)
 /opt/homelab-stacks/stacks/couchdb/
 ├── compose.yaml
 ├── .env.example
+├── local.d/
+│   ├── 00-local.ini.example
+│   ├── 10-cors.ini.example
+│   └── 30-auth.ini.example
 └── README.md
 
 /opt/homelab-runtime/stacks/couchdb/
@@ -60,15 +64,20 @@ It is intended to be published via **Cloudflare Tunnel** (no host ports exposed)
 
 ```dotenv
 # Copy to homelab-runtime/stacks/couchdb/.env and CHANGE the password
-COUCHDB_USER=admin
-COUCHDB_PASSWORD=change-me
+COUCHDB_USER=<COUCHDB_ADMIN_USER>
+COUCHDB_PASSWORD=<COUCHDB_ADMIN_PASSWORD>
+
+# Optional: CORS origins for local.d/10-cors.ini (comma-separated).
+# COUCHDB_CORS_ORIGINS=<CORS_ORIGINS>
 
 # Local bind for testing and troubleshooting
-# BIND_LOCALHOST=127.0.0.1
-# HTTP_PORT=5984
+# BIND_LOCALHOST=<BIND_LOCALHOST>
+# HTTP_PORT=<HTTP_PORT>
 ```
 
 ### `local.d/` (runtime config)
+
+Templates live in `homelab-stacks/stacks/couchdb/local.d/*.ini.example` and contain placeholders only.
 
 * **Required:** `00-local.ini` (single-node + bind)
 
@@ -94,7 +103,7 @@ COUCHDB_PASSWORD=change-me
 
   ```ini
   [cors]
-  origins = https://couchdb.<your-domain>
+  origins = ${COUCHDB_CORS_ORIGINS}
   credentials = true
   methods = GET, PUT, POST, HEAD, DELETE
   headers = accept, authorization, content-type, origin, referer, user-agent
@@ -102,6 +111,11 @@ COUCHDB_PASSWORD=change-me
   [chttpd]
   enable_cors = true
   ```
+
+  Template: `local.d/10-cors.ini.example` in `homelab-stacks`.
+  Replace `${COUCHDB_CORS_ORIGINS}` with a comma-separated list of allowed origins
+  (no trailing slash), or render the template with `envsubst` after setting
+  `COUCHDB_CORS_ORIGINS` in `.env`.
 
 ---
 
