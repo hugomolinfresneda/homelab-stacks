@@ -90,6 +90,10 @@ $EDITOR /opt/homelab-runtime/stacks/nextcloud/.env
 COMPOSE_PROJECT_NAME=nextcloud
 TZ=Europe/Madrid
 
+# UID/GID for Nextcloud containers (cron user)
+PUID=33
+PGID=33
+
 # Public fqdn and trusted domains (space-separated)
 NC_DOMAIN=cloud.example.com
 NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} nc-web localhost
@@ -125,6 +129,8 @@ HTTP_PORT=8082
   - Pinned image digests for `nextcloud`, `nginx`, `mariadb`, `redis`
   - Mounts `nginx.conf` from the **public** repo into `nc-web`
   - Uses named volumes for data: `nextcloud_db`, `nextcloud_redis`, `nextcloud_nextcloud` (Docker auto-prefixes by project)
+  - `deploy.resources` is omitted because classic Compose ignores it; set limits in a Swarm stack
+    or enforce host-level constraints if you need hard caps.
 
 - **Runtime override**: `/opt/homelab-runtime/stacks/nextcloud/compose.override.yml`
   ```yaml
@@ -236,6 +242,9 @@ docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
 - `nextcloud_db` — MariaDB data
 - `nextcloud_redis` — Redis AOF
 - `nextcloud_nextcloud` — Nextcloud code tree, incl. `/var/www/html/config` and `/var/www/html/data`
+
+**Permissions note**: `nc-cron` runs as `PUID/PGID` (default `33:33`, `www-data`).
+If you bind or migrate volumes to the host, align ownership to avoid write errors.
 
 **Ad-hoc DB dump** (example):
 ```bash
