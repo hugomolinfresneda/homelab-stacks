@@ -29,7 +29,7 @@ This stack follows the **two-repository architecture** of the homelab:
   ```
 
 - Target environment: **Debian rootless Docker**
-  Adjust `DOCKER_SOCK` or volume paths if you use rootful mode.
+  Adjust volume paths if you use rootful mode.
 
 Uptime Kuma attaches to both `proxy` (for HTTP ingress through your reverse proxy or tunnel) and `mon-net` so that the monitoring stack (Prometheus) can reach its `/metrics` endpoint.
 
@@ -63,9 +63,14 @@ Example:
 
 ```dotenv
 TZ=<REGION/CITY>
-# BIND_LOCALHOST=<BIND_LOCALHOST>
-# HTTP_PORT=<HTTP_PORT>
+RUNTIME_DIR=<RUNTIME_DIR>
+
+# Optional: local UI bind (recommended if you need host access)
+BIND_LOCALHOST=127.0.0.1
+HTTP_PORT=3001
 ```
+
+Set `RUNTIME_DIR` to your runtime root so the bind mount examples resolve correctly.
 
 ---
 
@@ -108,8 +113,8 @@ docker compose   --env-file /opt/homelab-runtime/stacks/uptime-kuma/.env   -f /o
 services:
   uptime-kuma:
     volumes:
-      - /opt/homelab-runtime/stacks/uptime-kuma/data:/app/data
-    # Optional bind for local access
+      - ${RUNTIME_DIR}/stacks/uptime-kuma/data:/app/data
+    # Optional bind for local access (recommended: loopback only)
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-3001}:3001"
 ```
@@ -160,7 +165,7 @@ server {
 Application data is stored under:
 
 ```text
-/opt/homelab-runtime/stacks/uptime-kuma/data/
+${RUNTIME_DIR}/stacks/uptime-kuma/data/
 ```
 
 Include this path in your backup rotation.
@@ -194,10 +199,10 @@ from within the `mon-net` network.
 On the monitoring side, the password is stored in a simple file in the runtime repo:
 
 ```bash
-mkdir -p /opt/homelab-runtime/stacks/monitoring/secrets
-printf '%s
-' 'the-same-password-you-set-in-kuma'   > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
-chmod 0444 /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
+mkdir -p "${RUNTIME_DIR}/stacks/monitoring/secrets"
+printf '%s\n' 'the-same-password-you-set-in-kuma' \
+  > "${RUNTIME_DIR}/stacks/monitoring/secrets/kuma_password"
+chmod 0444 "${RUNTIME_DIR}/stacks/monitoring/secrets/kuma_password"
 ```
 
 The monitoring stack’s runtime override mounts this file into Prometheus:
@@ -206,7 +211,7 @@ The monitoring stack’s runtime override mounts this file into Prometheus:
 services:
   prometheus:
     volumes:
-      - /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
+      - ${RUNTIME_DIR}/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
 ```
 
 ### 3) Prometheus scrape job (defined in the monitoring stack)

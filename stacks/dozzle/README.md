@@ -56,10 +56,10 @@ Typical contents:
 
 ```dotenv
 TZ=<REGION/CITY>
-DOCKER_SOCK=<DOCKER_SOCK>   # rootless
-# DOCKER_SOCK=<ROOTFUL_DOCKER_SOCK>       # rootful
-# BIND_LOCALHOST=<BIND_LOCALHOST>
-# HTTP_PORT=<HTTP_PORT>
+DOCKER_SOCK=<DOCKER_SOCK>   # rootless (e.g., /run/user/<UID>/docker.sock)
+# DOCKER_SOCK=/var/run/docker.sock       # rootful
+# BIND_LOCALHOST=127.0.0.1   # recommended if you need host access
+# HTTP_PORT=8081
 ```
 
 ---
@@ -75,7 +75,11 @@ docker compose \
   -f compose.override.yml \
   up -d
 
-docker compose ps
+docker compose \
+  --env-file ./.env \
+  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
+  -f compose.override.yml \
+  ps
 ```
 
 **Recommended `compose.override.yml`:**
@@ -84,6 +88,7 @@ docker compose ps
 services:
   dozzle:
     volumes:
+      # Rootless example: /run/user/<UID>/docker.sock
       - ${DOCKER_SOCK:-<ROOTLESS_DOCKER_SOCK>}:/var/run/docker.sock:ro
     # Optional: bind locally for debugging
     # ports:
@@ -158,7 +163,16 @@ Ensure TLS (Let’s Encrypt) and proper access control (Basic Auth or Cloudflare
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep dozzle
 
 # Update image and redeploy
-docker compose pull && docker compose up -d
+docker compose \
+  --env-file ./.env \
+  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
+  -f compose.override.yml \
+  pull
+docker compose \
+  --env-file ./.env \
+  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
+  -f compose.override.yml \
+  up -d
 ```
 
 Dozzle does not persist application data — backups are not required.
