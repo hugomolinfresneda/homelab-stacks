@@ -29,5 +29,6 @@ services:
       service: dozzle
 
 networks:
+  # proxy: reverse proxy / ingress
   proxy:
     external: true

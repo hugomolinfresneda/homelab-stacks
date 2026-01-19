@@ -29,7 +29,9 @@ services:
       com.logging: "true"
 
 networks:
+  # proxy: reverse proxy / ingress
   proxy:
     external: true
+  # mon-net: monitoring / Prometheus scrape
   mon-net:
     external: true

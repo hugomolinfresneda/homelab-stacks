@@ -6,6 +6,17 @@
 # - Promtail binds are driven by .env.demo (rootful/rootless)
 # -------------------------------------------------------------------
 
+x-anchors:
+  labels-demo: &labels_demo
+    com.repo: homelab-stacks
+    com.stack: monitoring
+    com.env: demo
+    com.logging: "true"
+  restart-policy: &restart_policy unless-stopped
+  networks:
+    demo-only: &net_demo_only
+      - demo-net
+
 services:
   loki:
     image: grafana/loki@sha256:0eaee7bf39cc83aaef46914fb58f287d4f4c4be6ec96b86c2ed55719a75e49c8
@@ -20,13 +31,9 @@ services:
       interval: 15s
       timeout: 3s
       retries: 6
-    networks: [demo-net]
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: demo
-      com.logging: "true"
+    networks: *net_demo_only
+    restart: *restart_policy
+    labels: *labels_demo
 
   promtail:
     image: grafana/promtail@sha256:086e4e85d2eb383fb04ea83c0f5074da81df56e415062ca888dba426abd8dfa5
@@ -48,27 +55,20 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
-    networks: [demo-net]
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: demo
-      com.logging: "true"
+    networks: *net_demo_only
+    restart: *restart_policy
+    labels: *labels_demo
 
   # Generates 1 log line/sec to visualize in Loki quickly
   logspammer:
     image: busybox@sha256:355b3a1bf5609da364166913878a8508d4ba30572d02020a97028c75477e24ff
     command: ["sh", "-lc", "i=0; while :; do i=$$((i+1)); echo \"demo-log $$i $(date -Is)\"; sleep 1; done"]
-    networks: [demo-net]
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: demo
-      com.logging: "true"
+    networks: *net_demo_only
+    restart: *restart_policy
+    labels: *labels_demo
 
 networks:
+  # demo-net: demo-only stack network
   demo-net: {}
 
 volumes:

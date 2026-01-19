@@ -8,6 +8,20 @@
 # Runtime overrides live in homelab-runtime/stacks/monitoring/.
 # -------------------------------------------------------------------
 
+x-anchors:
+  labels-stack: &labels_stack
+    com.repo: homelab-stacks
+    com.stack: monitoring
+    com.env: lab
+    com.logging: "true"
+  restart-policy: &restart_policy unless-stopped
+  networks:
+    mon-only: &net_mon_only
+      - mon-net
+    mon-proxy: &net_mon_proxy
+      - mon-net
+      - proxy
+
 services:
   prometheus:
     image: prom/prometheus@sha256:ff7e389acbe064a4823212a500393d40a28a8f362e4b05cbf6742a9a3ef736b2
@@ -26,15 +40,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
-    networks:
-      - mon-net
-      - proxy
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    networks: *net_mon_proxy
+    restart: *restart_policy
+    labels: *labels_stack
 
   alertmanager:
     image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
@@ -54,16 +62,11 @@ services:
       interval: 15s
       timeout: 3s
       retries: 6
-    networks:
-      - mon-net
-    restart: unless-stopped
+    networks: *net_mon_only
+    restart: *restart_policy
     environment:
       TZ: Europe/Madrid
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   blackbox:
     image: prom/blackbox-exporter@sha256:a50c4c0eda297baa1678cd4dc4712a67fdea713b832d43ce7fcc5f9bea05094d
@@ -78,14 +81,9 @@ services:
       interval: 30s
       timeout: 3s
       retries: 6
-    networks:
-      - mon-net
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    networks: *net_mon_only
+    restart: *restart_policy
+    labels: *labels_stack
 
   loki:
     image: grafana/loki@sha256:0eaee7bf39cc83aaef46914fb58f287d4f4c4be6ec96b86c2ed55719a75e49c8
@@ -100,14 +98,9 @@ services:
       interval: 15s
       timeout: 3s
       retries: 6
-    networks:
-      - mon-net
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    networks: *net_mon_only
+    restart: *restart_policy
+    labels: *labels_stack
 
   promtail:
     image: grafana/promtail@sha256:086e4e85d2eb383fb04ea83c0f5074da81df56e415062ca888dba426abd8dfa5
@@ -118,14 +111,9 @@ services:
       - /opt/homelab-stacks/stacks/monitoring/promtail/config.yaml:/etc/promtail/config.yml:ro
       - mon-promtail-positions:/positions
       # Runtime-only: docker socket + container log mounts live in compose.override.yml.
-    networks:
-      - mon-net
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    networks: *net_mon_only
+    restart: *restart_policy
+    labels: *labels_stack
 
   node-exporter:
     image: prom/node-exporter@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
@@ -136,20 +124,15 @@ services:
     # Runtime-only: host filesystem/textfile collector binds live in compose.override.yml.
     expose:
       - "9100"
-    networks:
-      - mon-net
-    restart: unless-stopped
+    networks: *net_mon_only
+    restart: *restart_policy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9100/metrics >/dev/null || exit 1"]
       interval: 30s
       timeout: 3s
       retries: 6
       start_period: 10s
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor@sha256:505e2c61e74e5d5eae522d01e2e971e91b793bc405270315a64da806ba033640
@@ -167,14 +150,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-    networks:
-      - mon-net
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    networks: *net_mon_only
+    restart: *restart_policy
+    labels: *labels_stack
 
   grafana:
     image: grafana/grafana@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
@@ -194,15 +172,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    networks:
-      - mon-net
-      - proxy
-    restart: unless-stopped
-    labels:
-      com.repo: homelab-stacks
-      com.stack: monitoring
-      com.env: lab
-      com.logging: "true"
+    networks: *net_mon_proxy
+    restart: *restart_policy
+    labels: *labels_stack
 
 volumes:
   mon-prom-data:
@@ -217,7 +189,9 @@ volumes:
     name: mon-alertmanager-data
 
 networks:
+  # mon-net: monitoring / Prometheus scrape
   mon-net:
     external: true
+  # proxy: reverse proxy / ingress
   proxy:
     external: true

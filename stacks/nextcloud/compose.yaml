@@ -4,14 +4,36 @@
 # Local overrides live in homelab-runtime/stacks/nextcloud/
 # -------------------------------------------------------------------
 
+x-anchors:
+  labels-stack: &labels_stack
+    com.repo: homelab-stacks
+    com.stack: nextcloud
+    com.env: lab
+    com.logging: "true"
+  restart-policy: &restart_policy unless-stopped
+  logging-default: &logging_default
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+  logging-db: &logging_db
+    driver: json-file
+    options: {max-size: "10m", max-file: "5"}
+  logging-exporter: &logging_exporter
+    driver: json-file
+    options: {max-size: "5m", max-file: "3"}
+  networks:
+    default-proxy: &net_default_proxy
+      - default
+      - proxy
+    default-mon: &net_default_mon
+      - default
+      - mon-net
+
 services:
   db:
     image: mariadb@sha256:4b1e7958f820681b1b93b9cf9ea05a76e0785da12699a1fb1d05e0eb2137e56b
-    restart: unless-stopped
+    restart: *restart_policy
     stop_grace_period: 60s
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "5"}
+    logging: *logging_db
     environment:
       MARIADB_DATABASE: ${NC_DB_NAME}
       MARIADB_USER: ${NC_DB_USER}
@@ -25,19 +47,13 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   redis:
     image: redis@sha256:90e7a336d044f1abc9e9dbc05d65566850896d11453bbd1dd0fb7e5059f0e8fb
-    restart: unless-stopped
+    restart: *restart_policy
     command: ["redis-server", "--appendonly", "yes"]
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
+    logging: *logging_default
     volumes:
       - redis:/data
     healthcheck:
@@ -45,19 +61,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   app:
     image: nextcloud@sha256:2a2078e24cb19b22bf0052aae7a5cce74b51ebe41676f72f5783b5953619c4a1
-    restart: unless-stopped
+    restart: *restart_policy
     stop_grace_period: 30s
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
+    logging: *logging_default
     environment:
       MYSQL_HOST: db
       MYSQL_DATABASE: ${NC_DB_NAME}
@@ -79,18 +89,12 @@ services:
       interval: 30s
       timeout: 5s
       retries: 10
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   web:
     image: nginx@sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
+    restart: *restart_policy
+    logging: *logging_default
     depends_on:
       app: {condition: service_healthy}
     volumes:
@@ -98,28 +102,20 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     expose:
       - "8080"
-    networks:
-      - default
-      - proxy
+    networks: *net_default_proxy
     healthcheck:
       test: ["CMD-SHELL", "test -f /var/www/html/index.php || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   cron:
     image: nextcloud@sha256:2a2078e24cb19b22bf0052aae7a5cce74b51ebe41676f72f5783b5953619c4a1
     user: "${PUID:-33}:${PGID:-33}"
-    restart: unless-stopped
+    restart: *restart_policy
     stop_grace_period: 20s
-    logging:
-      driver: json-file
-      options: {max-size: "10m", max-file: "3"}
+    logging: *logging_default
     entrypoint: ["/bin/sh", "-c"]
     command: ["trap exit TERM; while :; do php -f /var/www/html/cron.php; sleep 300; done"]
     depends_on:
@@ -127,21 +123,15 @@ services:
     volumes:
       - nextcloud:/var/www/html
       # php.ini comes from runtime override
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   # --- Exporters (scraped by Prometheus on the external 'mon-net') -------------
 
   mysqld-exporter:
     image: prom/mysqld-exporter@sha256:2598c0571f383708e19016d119bb45c06128a9ebc962c9f49483278ac5a94c41
     profiles: ["monitoring"]
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options: {max-size: "5m", max-file: "3"}
+    restart: *restart_policy
+    logging: *logging_exporter
     # Use file-based credentials. The bind for /etc/mysqld-exporter/.my.cnf
     # is provided in the runtime override (keep secrets out of public repo).
     # Uses file-based credentials mounted by the runtime override
@@ -155,31 +145,24 @@ services:
       - "9104"
     depends_on:
       db: {condition: service_healthy}
-    networks:
-      - default     # reach db on the stack network
-      - mon-net     # allow Prometheus to scrape
+    # reach db on stack network + allow Prometheus to scrape
+    networks: *net_default_mon
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9104/metrics >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    labels: *labels_stack
 
   redis-exporter:
     image: oliver006/redis_exporter@sha256:cd5fad1591e585db5b58beec7fca427027c61a4349f50109af67cf2f07964d02
     profiles: ["monitoring"]
-    restart: unless-stopped
+    restart: *restart_policy
     deploy:
       resources:
         limits: {cpus: "0.25", memory: "128m"}
         reservations: {cpus: "0.05", memory: "64m"}
-    logging:
-      driver: json-file
-      options: {max-size: "5m", max-file: "3"}
+    logging: *logging_exporter
     environment:
       REDIS_ADDR: "redis://redis:6379"
       # REDIS_PASSWORD: "${NC_REDIS_PASS:-}"  # if you set one
@@ -187,18 +170,15 @@ services:
       - "9121"
     depends_on:
       redis: {condition: service_healthy}
-    networks:
-      - default     # reach redis
-      - mon-net     # allow Prometheus to scrape
-    labels:
-      com.repo: homelab-stacks
-      com.stack: nextcloud
-      com.env: lab
-      com.logging: "true"
+    # reach redis + allow Prometheus to scrape
+    networks: *net_default_mon
+    labels: *labels_stack
 
 networks:
+  # proxy: reverse proxy / ingress
   proxy:
     external: true
+  # mon-net: monitoring / Prometheus scrape
   mon-net:
     external: true
 
