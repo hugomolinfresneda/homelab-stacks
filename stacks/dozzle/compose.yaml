@@ -8,7 +8,6 @@
 services:
   dozzle:
     image: amir20/dozzle@sha256:97131e414f57695249ce0af1b193927c93395e97b59ad0637df0606af59ceb63
-    container_name: dozzle
     expose:
       - "8080"
     environment:

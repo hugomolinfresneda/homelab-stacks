@@ -73,7 +73,7 @@
 
 ### A) App/config broken, data intact (soft failure)
 
-Symptoms: 502 from `nc-web`, app container crash loop, wrong config, but DB and data likely OK.
+Symptoms: 502 from `web`, app container crash loop, wrong config, but DB and data likely OK.
 
 **Steps**
 
@@ -145,7 +145,7 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
    ```
 3. **Prepare runtime**:
    - Ensure `/opt/homelab-runtime/stacks/nextcloud/.env` exists and is correct.
-   - Ensure `compose.override.yml` exposes `nc-web` to your reverse proxy (port/bind).
+   - Ensure `compose.override.yml` exposes `web` to your reverse proxy (port/bind).
    - Create external proxy network if needed:
      ```bash
      docker network create proxy || true
@@ -163,8 +163,8 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
      RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud
    ```
 6. **Re‑attach reverse proxy / tunnel** (if applicable):
-   - Nginx/Traefik: route `cloud.example.com` → `nc-web:8080` (via `proxy` network).
-   - Cloudflare Tunnel: ingress → `http://nc-web:8080` (container must be on `proxy` network).
+   - Nginx/Traefik: route `cloud.example.com` → `web:8080` (via `proxy` network).
+   - Cloudflare Tunnel: ingress → `http://web:8080` (container must be on `proxy` network).
 7. Run **smoke tests** (§6) and close incident.
 
 ---
@@ -183,18 +183,18 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
    ```bash
    /opt/homelab-stacks/stacks/nextcloud/tools/nc status
    # or directly:
-   docker exec -u www-data nc-app php occ status
+   /opt/homelab-stacks/stacks/nextcloud/tools/occ status
    ```
 
 3. **HTTP check inside the docker network** (200/302/403 acceptable during bootstrap):
    ```bash
-   docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://nc-web:8080 | head -n1
+   docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://web:8080 | head -n1
    ```
 
 4. **Status endpoint with Host header**:
    ```bash
    docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
-     -sSI -H "Host: ${NC_DOMAIN}" http://nc-web:8080/status.php | head -n1
+     -sSI -H "Host: ${NC_DOMAIN}" http://web:8080/status.php | head -n1
    ```
 
 5. **Basic UX**: login works, file list loads, uploads OK, previews generate, search indexes update.
@@ -251,12 +251,12 @@ make restore        stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
 
 - **Left in maintenance mode** after a failed run:
   ```bash
-  docker exec -u www-data nc-app php occ maintenance:mode --off || true
+  /opt/homelab-stacks/stacks/nextcloud/tools/occ maintenance:mode --off || true
   ```
 
 - **502 from reverse proxy** right after recovery:
-  - `nc-app` not ready yet; wait 30–60 seconds and check logs.
-  - Tunnel/proxy not on the same network as `nc-web`, or wrong upstream (`nc-web:8080`).
+  - `app` not ready yet; wait 30–60 seconds and check logs.
+  - Tunnel/proxy not on the same network as `web`, or wrong upstream (`web:8080`).
 
 - **“Cannot write into config directory!”**
   - Do **not** bind‑mount `/var/www/html` from host. Use named volume (`nextcloud_nextcloud`).
@@ -293,7 +293,10 @@ make restore        stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
 
 - **Manual DB dump** (bypass script):
   ```bash
-  docker exec nc-db sh -lc 'exec mariadb-dump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
+  docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
+    -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
+    --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+    exec -T db sh -lc 'exec mariadb-dump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
   ```
 
 - **Manual volume tar**:

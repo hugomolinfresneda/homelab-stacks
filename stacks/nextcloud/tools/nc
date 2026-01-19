@@ -48,11 +48,13 @@ PROF_STR="$(build_profile_flags)"
 
 BASE="docker compose --env-file \"$ENV_FILE\"$PROF_STR -f \"$BASE_FILE\""
 OVRD="docker compose --env-file \"$ENV_FILE\"$PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+OVRD_MON="docker compose --env-file \"$ENV_FILE\" --profile monitoring -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
 
 # ---------- Helpers ----------
 log()  { echo "▶ $*"; }
 run()  { if [ "$QUIET" = "1" ]; then eval "$*" >/dev/null 2>&1; else eval "$*"; fi; }
-occ()  { docker exec -w /var/www/html -u www-data nc-app php occ "$@"; }
+dc_exec() { eval "$OVRD exec -T $*"; }
+occ()  { dc_exec -w /var/www/html -u www-data app php occ "$@"; }
 
 has_profile() {
   # usage: has_profile <name>
@@ -60,32 +62,31 @@ has_profile() {
 }
 
 exporters_present() {
-  # Detect known exporter container names from this stack
-  docker ps -a --format '{{.Names}}' | grep -Eq '^nc-(mysqld|redis)-exporter$'
+  eval "$OVRD_MON ps -q mysqld-exporter redis-exporter" | grep -q .
 }
 
 wait_for_code() {
   log "Waiting for Nextcloud application code to be available..."
-  until docker exec nc-app test -f /var/www/html/occ; do sleep 1; done
-  until docker exec nc-app test -f /var/www/html/lib/versioncheck.php; do sleep 1; done
+  until dc_exec app test -f /var/www/html/occ; do sleep 1; done
+  until dc_exec app test -f /var/www/html/lib/versioncheck.php; do sleep 1; done
 }
 
 ensure_config_dir() {
-  docker exec -u root nc-app sh -lc 'install -d -o 33 -g 33 -m 0750 /var/www/html/config'
+  dc_exec -u root app sh -lc 'install -d -o 33 -g 33 -m 0750 /var/www/html/config'
 }
 
 seed_snippets() {
   ensure_config_dir
   for f in 10-redis.config.php 20-proxy.config.php; do
-    if ! docker exec -u root nc-app test -f "/var/www/html/config/$f"; then
-      docker cp "$STACKS_REPO/stacks/nextcloud/config/$f.example" "nc-app:/var/www/html/config/$f"
-      docker exec -u root nc-app chown 33:33 "/var/www/html/config/$f" || true
+    if ! dc_exec -u root app test -f "/var/www/html/config/$f"; then
+      run "$OVRD cp \"$STACKS_REPO/stacks/nextcloud/config/$f.example\" app:/var/www/html/config/$f"
+      dc_exec -u root app chown 33:33 "/var/www/html/config/$f" || true
     fi
   done
 }
 
 is_installed() {
-  docker exec -w /var/www/html -u www-data nc-app sh -lc \
+  dc_exec -w /var/www/html -u www-data app sh -lc \
     'php occ status 2>/dev/null | grep -q "installed: true"' >/dev/null 2>&1
 }
 
@@ -132,7 +133,7 @@ case "${1:-}" in
     else
       log "[install] Waiting for application to complete self-installation..."
       if ! wait_until_installed; then
-        echo "ERROR: Nextcloud not installed within the expected time. Check 'docker logs nc-app'." >&2
+        echo "ERROR: Nextcloud not installed within the expected time. Check 'tools/nc logs'." >&2
         exit 1
       fi
     fi
@@ -147,11 +148,11 @@ case "${1:-}" in
     fi
     seed_snippets
     occ background:cron || true
-    docker exec -w /var/www/html -u www-data nc-app sh -lc '
+    dc_exec -w /var/www/html -u www-data app sh -lc '
       if [ -n "${NEXTCLOUD_TRUSTED_DOMAINS:-${NC_DOMAIN:-}}" ]; then
         php occ config:system:set trusted_domains 1 --value "${NEXTCLOUD_TRUSTED_DOMAINS:-${NC_DOMAIN:-}}"
       fi
-      php occ config:system:set trusted_domains 2 --value "nc-web"
+      php occ config:system:set trusted_domains 2 --value "web"
       php occ config:system:set trusted_domains 3 --value "localhost"
     ' || true
     if [ -n "${NC_DOMAIN:-}" ]; then
@@ -168,9 +169,9 @@ case "${1:-}" in
     else
       echo "  - installed: false"
     fi
-    docker run --rm --network nextcloud_default "$CURL_IMG" -sSI http://nc-web:8080/status.php | head -n1 || true
+    docker run --rm --network nextcloud_default "$CURL_IMG" -sSI http://web:8080/status.php | head -n1 || true
     if [ -n "${NC_DOMAIN:-}" ]; then
-      docker run --rm --network nextcloud_default "$CURL_IMG" -sSI -H "Host: ${NC_DOMAIN}" http://nc-web:8080/status.php | head -n1 || true
+      docker run --rm --network nextcloud_default "$CURL_IMG" -sSI -H "Host: ${NC_DOMAIN}" http://web:8080/status.php | head -n1 || true
     fi
     ;;
 
@@ -180,8 +181,8 @@ case "${1:-}" in
 
   reset-db)
     log "Resetting ONLY the database volume (application data remains)"
-    docker stop nc-db >/dev/null 2>&1 || true
-    docker rm   nc-db >/dev/null 2>&1 || true
+    run "$BASE stop db" >/dev/null 2>&1 || true
+    run "$BASE rm -f db" >/dev/null 2>&1 || true
     docker volume rm nextcloud_db >/dev/null 2>&1 || true
     run "$BASE up -d db redis"
     ;;
@@ -201,7 +202,7 @@ case "${1:-}" in
     run "$CMD_DOWN down --remove-orphans"
 
     # Safety net: ensure exporters and default network are fully removed.
-    docker rm -f nc-mysqld-exporter nc-redis-exporter >/dev/null 2>&1 || true
+    run "$OVRD_MON rm -f mysqld-exporter redis-exporter" >/dev/null 2>&1 || true
     docker network rm nextcloud_default >/dev/null 2>&1 || true
     ;;
 

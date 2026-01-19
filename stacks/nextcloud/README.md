@@ -2,11 +2,11 @@
 
 This stack deploys **Nextcloud** using Docker with a clean separation between the **public stacks repo** and your **private runtime**. It includes:
 
-- `nc-app` (PHP-FPM) — core Nextcloud
-- `nc-web` (Nginx internal) — serves static assets and proxies PHP to `nc-app`
-- `nc-db` (MariaDB) — database
-- `nc-redis` — caching/locking
-- `nc-cron` — runs `cron.php` every 5 min
+- `app` (PHP-FPM) — core Nextcloud
+- `web` (Nginx internal) — serves static assets and proxies PHP to `app`
+- `db` (MariaDB) — database
+- `redis` — caching/locking
+- `cron` — runs `cron.php` every 5 min
 
 Designed for reproducibility (images pinned by **digest**), operational clarity, and minimal host binds (no bind-mount of `/var/www/html`).
 
@@ -17,15 +17,15 @@ Designed for reproducibility (images pinned by **digest**), operational clarity,
 ```
 Client ──(HTTPS)──▶ Reverse Proxy / Tunnel
                         │
-                        └──▶ docker network 'proxy' ───→  nc-web (Nginx :8080)
-                                                          ├─→ nc-app  (php-fpm :9000)
-                                                          ├─→ nc-db   (MariaDB)
-                                                          ├─→ nc-redis
-                                                          └─→ nc-cron
+                        └──▶ docker network 'proxy' ───→  web (Nginx :8080)
+                                                          ├─→ app   (php-fpm :9000)
+                                                          ├─→ db    (MariaDB)
+                                                          ├─→ redis
+                                                          └─→ cron
 ```
 
-- The **reverse proxy / tunnel** (e.g., Nginx front, Cloudflare Tunnel) terminates TLS and proxies to `http://nc-web:8080` on the `proxy` network.
-- `nc-web` uses the included `nginx.conf` (from the **public** repo) and forwards PHP to `nc-app:9000`.
+- The **reverse proxy / tunnel** (e.g., Nginx front, Cloudflare Tunnel) terminates TLS and proxies to `http://web:8080` on the `proxy` network.
+- `web` uses the included `nginx.conf` (from the **public** repo) and forwards PHP to `app:9000`.
 - **No host port** in the base compose. Host binding is defined in **runtime** via `compose.override.yml`.
 
 > **Note**: Create the external docker network used by your reverse proxy if it does not exist:
@@ -96,7 +96,7 @@ PGID=33
 
 # Public fqdn and trusted domains (space-separated)
 NC_DOMAIN=cloud.example.com
-NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} nc-web localhost
+NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} web localhost
 
 # DB credentials (duplicated for Nextcloud's CLI)
 NC_DB_NAME=nextcloud
@@ -119,6 +119,10 @@ BIND_LOCALHOST=127.0.0.1
 HTTP_PORT=8082
 ```
 
+> With `container_name` removed, Compose names containers as
+> `<project>-<service>-1`. Keep `COMPOSE_PROJECT_NAME=nextcloud` (or use the
+> Makefile/helpers) so `docker compose ps` stays readable.
+
 > Keeping **both** `NC_*` and `NEXTCLOUD_*`/`MYSQL_*` is deliberate to avoid warnings and ensure CLI operations have all the data.
 
 ---
@@ -127,7 +131,7 @@ HTTP_PORT=8082
 
 - **Base**: `/opt/homelab-stacks/stacks/nextcloud/compose.yaml`
   - Pinned image digests for `nextcloud`, `nginx`, `mariadb`, `redis`
-  - Mounts `nginx.conf` from the **public** repo into `nc-web`
+  - Mounts `nginx.conf` from the **public** repo into `web`
   - Uses named volumes for data: `nextcloud_db`, `nextcloud_redis`, `nextcloud_nextcloud` (Docker auto-prefixes by project)
   - `deploy.resources` is omitted because classic Compose ignores it; set limits in a Swarm stack
     or enforce host-level constraints if you need hard caps.
@@ -179,7 +183,7 @@ What the helper does for you:
 - Ensures the Nextcloud code is present and OCC is callable
 - Waits for container-driven installation (avoids partial installs)
 - Seeds `config/10-redis.config.php` and `config/20-proxy.config.php` **inside** the container if missing
-- Sets `trusted_domains` (incl. `nc-web` and `localhost`) and switches background jobs to `cron`
+- Sets `trusted_domains` (incl. `web` and `localhost`) and switches background jobs to `cron`
 - Runs basic DB repairs and shows a final status
 - Has a `QUIET=1` mode to reduce noise
 
@@ -208,8 +212,8 @@ make post    stack=nextcloud
 
 ## 7) Reverse proxy / Tunnel
 
-- **Nginx front**: proxy to `http://nc-web:8080`. Ensure large body sizes (`client_max_body_size 2G`) and forward headers (`X-Forwarded-*`). The internal `nginx.conf` already has sane defaults for PHP, caching and well-known routes.
-- **Cloudflare Tunnel**: point your ingress to `http://nc-web:8080` on the **`proxy`** network. A 502 typically means wrong service/port or the service is not on the same network.
+- **Nginx front**: proxy to `http://web:8080`. Ensure large body sizes (`client_max_body_size 2G`) and forward headers (`X-Forwarded-*`). The internal `nginx.conf` already has sane defaults for PHP, caching and well-known routes.
+- **Cloudflare Tunnel**: point your ingress to `http://web:8080` on the **`proxy`** network. A 502 typically means wrong service/port or the service is not on the same network.
 
 ---
 
@@ -225,13 +229,13 @@ docker compose \
   ps
 
 # Intra-network HTTP check (200/302/403 are ok during bootstrap)
-docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://nc-web:8080 | head -n1
+docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://web:8080 | head -n1
 ```
 
 If you see `HTTP/1.1 400 Bad Request` without a `Host`, try with your domain header:
 ```bash
 docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
-  -sSI -H "Host: ${NC_DOMAIN}" http://nc-web:8080/status.php | head -n1
+  -sSI -H "Host: ${NC_DOMAIN}" http://web:8080/status.php | head -n1
 ```
 
 ---
@@ -243,12 +247,16 @@ docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
 - `nextcloud_redis` — Redis AOF
 - `nextcloud_nextcloud` — Nextcloud code tree, incl. `/var/www/html/config` and `/var/www/html/data`
 
-**Permissions note**: `nc-cron` runs as `PUID/PGID` (default `33:33`, `www-data`).
+**Permissions note**: `cron` runs as `PUID/PGID` (default `33:33`, `www-data`).
 If you bind or migrate volumes to the host, align ownership to avoid write errors.
 
 **Ad-hoc DB dump** (example):
 ```bash
-docker exec -i nc-db sh -lc 'exec mysqldump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
+docker compose \
+  -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
+  -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
+  --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+  exec -T db sh -lc 'exec mysqldump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
 ```
 
 **Full stop & copy** (cold backup; example outline):
@@ -277,7 +285,7 @@ docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/m
    ```bash
    make up stack=nextcloud
    ```
-4. Inside `nc-app`, run post-maintenance (idempotent):
+4. Inside `app`, run post-maintenance (idempotent):
    ```bash
    /opt/homelab-stacks/stacks/nextcloud/tools/occ upgrade || true
    /opt/homelab-stacks/stacks/nextcloud/tools/occ db:add-missing-indices || true
@@ -293,9 +301,9 @@ docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/m
 - **“Cannot write into config directory!”**
   - Do **not** bind-mount `/var/www/html` from the host.
   - Let the helper create `config/` **inside** the container and seed snippets.
-- **HTTP 502 from `nc-web`**
-  - `nc-app` not ready yet (check `docker logs nc-web`/`nc-app`).
-  - Wrong upstream — ensure `fastcgi_pass nc-app:9000` is intact in `nginx.conf`.
+- **HTTP 502 from `web`**
+  - `app` not ready yet (check `docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml --env-file /opt/homelab-runtime/stacks/nextcloud/.env logs app web`).
+  - Wrong upstream — ensure `fastcgi_pass app:9000` is intact in `nginx.conf`.
 - **HTTP 400 on `/status.php`**
   - Missing `Host` header. Test with your domain using `-H "Host: ${NC_DOMAIN}"`.
 - **DB errors on fresh installs**
@@ -442,8 +450,8 @@ Add to your monitoring stack:
   scrape_interval: 15s
   static_configs:
     - targets:
-      - 'nc-mysqld-exporter:9104'
-      - 'nc-redis-exporter:9121'
+      - 'mysqld-exporter:9104'
+      - 'redis-exporter:9121'
 ```
 
 ### 6) How this integrates with the monitoring stack
@@ -458,7 +466,7 @@ If you also deploy the `monitoring` stack from this repository, these exporters 
 The only expectations are:
 
 - The Nextcloud stack is attached to the `mon-net` network (see this stack's `compose.yaml`).
-- The `nc-mysqld-exporter` and `nc-redis-exporter` containers are running.
+- The `mysqld-exporter` and `redis-exporter` containers are running.
 - The public Nextcloud URL you actually use is the one configured in the monitoring stack
   for the Blackbox HTTP probe to `status.php`.
 
@@ -466,7 +474,7 @@ With this in place you get:
 
 - SLO‑style HTTP availability metrics for `status.php`.
 - Basic health signals for MariaDB and Redis as used by this instance.
-- A log view in Grafana built on top of the `nc-app` container logs.
+- A log view in Grafana built on top of the `app` service logs.
 
 ### 7) Optional: make Nextcloud logs visible in Loki
 
@@ -482,5 +490,5 @@ cd /opt/homelab-stacks
 ```
 
 With the default promtail configuration in the monitoring stack, anything written by the
-`nc-app` container to `stderr` is picked up under `job="dockerlogs", stack="nextcloud"`
+`app` service to `stderr` is picked up under `job="dockerlogs", stack="nextcloud", compose_service="app"`
 and used by the *Nextcloud – Application errors* panel.

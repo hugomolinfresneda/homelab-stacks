@@ -9,7 +9,6 @@
 services:
   cloudflared:
     image: cloudflare/cloudflared@sha256:4604b477520dc8322af5427da68b44f0bf814938e9d2e4814f2249ee4b03ffdf
-    container_name: cloudflared
     user: "${CLOUDFLARED_UID:-65532}:${CLOUDFLARED_GID:-65532}"
     restart: unless-stopped
     command: >

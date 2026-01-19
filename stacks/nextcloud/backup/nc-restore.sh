@@ -12,10 +12,22 @@ set -Eeuo pipefail
 # --- Inputs (overridable via env) ---------------------------------------------
 BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
 
-NC_APP="${NC_APP:-nc-app}"
-NC_DB="${NC_DB:-nc-db}"
-NC_WEB="${NC_WEB:-nc-web}"
-NC_CRON="${NC_CRON:-nc-cron}"
+normalize_service() {
+  case "$1" in
+    nc-app) echo "app" ;;
+    nc-db) echo "db" ;;
+    nc-web) echo "web" ;;
+    nc-cron) echo "cron" ;;
+    nc-mysqld-exporter) echo "mysqld-exporter" ;;
+    nc-redis-exporter) echo "redis-exporter" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+NC_APP="$(normalize_service "${NC_APP:-app}")"
+NC_DB="$(normalize_service "${NC_DB:-db}")"
+NC_WEB="$(normalize_service "${NC_WEB:-web}")"
+NC_CRON="$(normalize_service "${NC_CRON:-cron}")"
 NC_VOL="${NC_VOL:-nextcloud}"
 
 # Runtime dir holding compose.override.yml and .env
@@ -67,6 +79,7 @@ build_compose_args() {
 }
 
 dc() { docker compose "${COMPOSE_ARGS[@]}" "$@"; }
+dc_id() { dc ps -q "$1" | head -n1; }
 
 # --- Pick latest artifacts -----------------------------------------------------
 pick_artifacts() {
@@ -96,13 +109,18 @@ pick_artifacts() {
 }
 
 wait_healthy() {
-  local c="$1" st
+  local svc="$1" st cid
+  cid="$(dc_id "$svc")"
+  if [[ -z "$cid" ]]; then
+    echo "Container not found for service: $svc" >&2
+    return 1
+  fi
   for _ in $(seq 1 60); do
-    st="$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo none)"
+    st="$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo none)"
     [[ "$st" == "healthy" || "$st" == "none" ]] && return 0
     sleep 2
   done
-  echo "Timeout waiting for $c (health)" >&2
+  echo "Timeout waiting for $svc (health)" >&2
   return 1
 }
 
@@ -113,8 +131,8 @@ main() {
   pick_artifacts
 
   # Stop writers & enter maintenance (best-effort)
-  dc stop app web cron || true
-  docker exec -u www-data "$NC_APP" php occ maintenance:mode --on || true
+  dc stop "$NC_APP" "$NC_WEB" "$NC_CRON" || true
+  dc exec -T -u www-data "$NC_APP" php occ maintenance:mode --on || true
 
   # Restore volume
   echo "Restoring volume $NC_VOL..."
@@ -132,34 +150,34 @@ main() {
     '
 
   # Ensure DB/redis up before import
-  dc up -d db redis
+  dc up -d "$NC_DB" redis
   wait_healthy "$NC_DB" || true
 
   # Restore database (supports .sql and .sql.gz)
   echo "Restoring database..."
   if [[ "$DB_FILE" == *.gz ]]; then
     gzip -t "$DB_FILE"
-    gunzip -c "$DB_FILE" | docker exec -i \
+    gunzip -c "$DB_FILE" | dc exec -T \
       -e MYSQL_PWD="${NC_DB_PASS:-}" \
       -e DB_USER="${NC_DB_USER:-}" \
       -e DB_NAME="${NC_DB_NAME:-}" \
-      "$NC_DB" sh -lc 'exec mariadb -u"$DB_USER" "$DB_NAME"'
+      "$NC_DB" sh -lc "exec mariadb -u\"\$DB_USER\" \"\$DB_NAME\""
   else
-    docker exec -i \
+    dc exec -T \
       -e MYSQL_PWD="${NC_DB_PASS:-}" \
       -e DB_USER="${NC_DB_USER:-}" \
       -e DB_NAME="${NC_DB_NAME:-}" \
-      "$NC_DB" sh -lc 'exec mariadb -u"$DB_USER" "$DB_NAME"' < "$DB_FILE"
+      "$NC_DB" sh -lc "exec mariadb -u\"\$DB_USER\" \"\$DB_NAME\"" < "$DB_FILE"
   fi
 
   # Bring up app → then web/cron
-  dc up -d app
+  dc up -d "$NC_APP"
   wait_healthy "$NC_APP" || true
-  dc up -d web cron
+  dc up -d "$NC_WEB" "$NC_CRON"
 
   # Repairs & maintenance off
-  docker exec -u www-data "$NC_APP" php occ maintenance:repair || true
-  docker exec -u www-data "$NC_APP" php occ maintenance:mode --off || true
+  dc exec -T -u www-data "$NC_APP" php occ maintenance:repair || true
+  dc exec -T -u www-data "$NC_APP" php occ maintenance:mode --off || true
 
   echo "Restore complete."
 }

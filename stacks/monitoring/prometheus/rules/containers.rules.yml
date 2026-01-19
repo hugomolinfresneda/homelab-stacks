@@ -3,8 +3,10 @@ groups:
     rules:
       - alert: InfraContainerRestartLoop
         expr: >-
-          label_replace(changes(container_start_time_seconds{name=~"mon-(prometheus|alertmanager|blackbox|cadvisor|node-exporter|loki|promtail).*"}[15m]),
-          "service", "$1", "name", "mon-(.*)") >= 2
+          label_replace(
+            changes(container_start_time_seconds{container_label_com_stack="monitoring",container_label_com_docker_compose_service=~"prometheus|alertmanager|blackbox|cadvisor|node-exporter|loki|promtail"}[15m]),
+            "service", "$1", "container_label_com_docker_compose_service", "(.*)"
+          ) >= 2
         labels:
           severity: critical
           component: container
@@ -20,7 +22,7 @@ groups:
     rules:
       - alert: NextcloudContainerRestartLoop
         expr: >-
-          changes(container_start_time_seconds{name=~"nc-(app|web|db|redis|redis-exporter|mysqld-exporter|cron).*"}[15m])
+          changes(container_start_time_seconds{container_label_com_stack="nextcloud",container_label_com_docker_compose_service=~"app|web|db|redis|redis-exporter|mysqld-exporter|cron"}[15m])
           >= 2
         labels:
           severity: warning
@@ -35,8 +37,7 @@ groups:
         for: 0m
       - alert: CloudflaredContainerRestartLoop
         expr: >-
-          changes(container_start_time_seconds{name=~".*cloudflared.*"}[15m]) >=
-          2
+          changes(container_start_time_seconds{container_label_com_stack="cloudflared"}[15m]) >= 2
         labels:
           severity: warning
           service: cloudflared

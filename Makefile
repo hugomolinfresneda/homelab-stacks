@@ -40,7 +40,7 @@ help:
 	@echo "  make up stack=<name>              - Launch stack (delegates to helper if present)"
 	@echo "       (add PROFILES=monitoring to include exporters, if the stack defines them)"
 	@echo "  make down stack=<name>            - Stop stack"
-	@echo "  make ps stack=<name>              - Show stack status"
+	@echo "  make ps stack=<name>              - Show stack status (project name = stack)"
 	@echo "  make pull stack=<name>            - Pull images for the stack"
 	@echo "  make logs stack=<name> [follow=true]- Show/follow logs (if helper present uses it)"
 	@echo "  make install|post|status|reset-db - Extra ops (only if the stack ships a helper)"
@@ -57,7 +57,7 @@ help:
 	@echo ""
 	@echo "Monitoring (Prometheus/Grafana) helpers:"
 	@echo "  make check-prom                   - promtool check config (mon)"
-	@echo "  make reload-prom                  - send HUP to mon-prometheus"
+	@echo "  make reload-prom                  - send HUP to prometheus (monitoring stack)"
 	@echo "  make bb-ls [JOB=blackbox-http]    - List targets in mon"
 	@echo "  make bb-add JOB=... TARGET=...    - Add target in mon"
 	@echo "  make bb-rm  JOB=... TARGET=...    - Remove target in mon"
@@ -363,8 +363,6 @@ echo-vars: require-stack
 # ------------------------------------------------------------
 MON_STACK_DIR := $(STACKS_REPO)/stacks/monitoring
 PROM_FILE_MON_REL  := prometheus/prometheus.yml
-MON_PROM_CONTAINER := mon-prometheus
-
 promtool = docker run --rm -v "$(MON_STACK_DIR)":/workdir -w /workdir --entrypoint /bin/promtool prom/prometheus:latest
 
 # ---- promtool checks (mon) ----
@@ -376,10 +374,11 @@ check-prom:
 	  $(promtool) check config "$$f"
 
 # ---- reload via HUP (mon) ----
+reload-prom: STACK=monitoring
 reload-prom:
-	@docker kill -s HUP $(MON_PROM_CONTAINER) >/dev/null 2>&1 || \
-	  { echo "warn: could not send HUP to $(MON_PROM_CONTAINER) (is it running?)"; exit 1; }
-	@echo "Reload sent to $(MON_PROM_CONTAINER)"
+	@STACK=monitoring $(compose_all) exec -T prometheus kill -HUP 1 >/dev/null 2>&1 || \
+	  { echo "warn: could not send HUP to prometheus (is it running?)"; exit 1; }
+	@echo "Reload sent to prometheus"
 
 # ---- blackbox targets (wrappers over stacks/monitoring/scripts/blackbox-targets.sh) ----
 # Variables: JOB (defaults to blackbox-http), TARGET (required for add/rm)

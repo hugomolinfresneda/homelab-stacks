@@ -8,7 +8,6 @@
 services:
   couchdb:
     image: couchdb@sha256:d3fb6f79033173171d6f73f8c7f9d8e2c885a83fc88125991dba1f8e6a936577
-    container_name: couchdb
     expose:
       - "5984"
     environment:
@@ -32,7 +31,6 @@ services:
 
   couchdb-exporter:
     image: gesellix/couchdb-prometheus-exporter@sha256:a4e3425024a608fb92c9252919f71f5c0bff7cdb83d9f4e7ede59e0b9bcf8a1b
-    container_name: couchdb-exporter
     restart: unless-stopped
     depends_on:
       couchdb:
