@@ -5,6 +5,19 @@
 # Local overrides live in homelab-runtime/stacks/couchdb/
 # -------------------------------------------------------------------
 
+x-anchors:
+  labels-stack: &labels_stack
+    com.repo: homelab-stacks
+    com.stack: couchdb
+    com.env: lab
+  restart-policy: &restart_policy unless-stopped
+  networks:
+    proxy-only: &net_proxy_only
+      - proxy
+    proxy-mon: &net_proxy_mon
+      - proxy
+      - mon-net
+
 services:
   couchdb:
     image: couchdb@sha256:d3fb6f79033173171d6f73f8c7f9d8e2c885a83fc88125991dba1f8e6a936577
@@ -13,9 +26,8 @@ services:
     environment:
       COUCHDB_USER: ${COUCHDB_USER}
       COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
-    networks:
-      - proxy
-    restart: unless-stopped
+    networks: *net_proxy_only
+    restart: *restart_policy
     stop_grace_period: 60s
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5984/_up"]
@@ -24,14 +36,12 @@ services:
       retries: 5
       start_period: 15s
     labels:
-      com.repo: homelab-stacks
-      com.stack: couchdb
-      com.env: lab
+      <<: *labels_stack
       com.logging: "true"
 
   couchdb-exporter:
     image: gesellix/couchdb-prometheus-exporter@sha256:a4e3425024a608fb92c9252919f71f5c0bff7cdb83d9f4e7ede59e0b9bcf8a1b
-    restart: unless-stopped
+    restart: *restart_policy
     depends_on:
       couchdb:
         condition: service_healthy
@@ -40,16 +50,14 @@ services:
     environment:
       COUCHDB_USERNAME: ${COUCHDB_USER}
       COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
-    networks:
-      - proxy
-      - mon-net
+    networks: *net_proxy_mon
     labels:
-      com.repo: homelab-stacks
-      com.stack: couchdb
-      com.env: lab
+      <<: *labels_stack
 
 networks:
+  # proxy: reverse proxy / ingress
   proxy:
     external: true
+  # mon-net: monitoring / Prometheus scrape
   mon-net:
     external: true

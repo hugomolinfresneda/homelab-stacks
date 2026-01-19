@@ -5,6 +5,15 @@
 # Local overrides live in homelab-runtime/stacks/adguard-home/
 # -------------------------------------------------------------------
 
+x-anchors:
+  labels-stack: &labels_stack
+    com.stack: adguard-home
+  restart-policy: &restart_policy unless-stopped
+  networks:
+    proxy-mon: &net_proxy_mon
+      - proxy
+      - mon-net
+
 services:
   adguard-home:
     image: adguard/adguardhome@sha256:09a24f05e110e53e213a340b22e5d3c8cdab12ff9be6775388c71b140255c54c
@@ -12,13 +21,11 @@ services:
       - "3000"   # Web UI (wizard/admin). Keep 3000; runtime will map host:3000
     environment:
       TZ: ${TZ:-Europe/Madrid}
-    networks:
-      - proxy
-      - mon-net
-    restart: unless-stopped
+    networks: *net_proxy_mon
+    restart: *restart_policy
     labels:
+      <<: *labels_stack
       com.repo: homelab-stacks
-      com.stack: adguard-home
       com.env: lab
       com.logging: "true"
 
@@ -35,17 +42,17 @@ services:
       log_limit: 10000
     expose:
       - "${ADGUARD_EXPORTER_PORT}"
-    networks:
-      - proxy
-      - mon-net
-    restart: unless-stopped
+    networks: *net_proxy_mon
+    restart: *restart_policy
     labels:
-      com.stack: adguard-home
+      <<: *labels_stack
       com.component: exporter
 
 
 networks:
+  # proxy: reverse proxy / ingress
   proxy:
     external: true
+  # mon-net: monitoring / Prometheus scrape
   mon-net:
     external: true
