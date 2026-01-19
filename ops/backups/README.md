@@ -79,7 +79,8 @@ Minimal example (aligns with the example env file shipped next to it):
 
 ```dotenv
 # --- Restic ---
-export RESTIC_REPOSITORY="/mnt/backups/homelab-restic"   # or s3:..., b2:..., rclone:...
+export BACKUPS_DIR="/mnt/backups"                       # base mount for local backup storage
+export RESTIC_REPOSITORY="${BACKUPS_DIR}/homelab-restic" # or s3:..., b2:..., rclone:...
 export RESTIC_PASSWORD="CHANGE_ME"
 
 # Retention policy
@@ -100,7 +101,7 @@ export RESTIC_EXCLUDE_FILE="/opt/homelab-stacks/ops/backups/exclude.txt"
 # Uptime Kuma (Push monitor)
 export KUMA_PUSH_URL="https://uptime-kuma.<YOUR_DOMAIN>/api/push/<YOUR_TOKEN>"
 # Optional DNS override for Kuma push (hairpin NAT/DNS issues)
-# export KUMA_RESOLVE_IP="192.168.1.44"
+# export KUMA_RESOLVE_IP="<KUMA_LAN_IP>"
 
 # What to back up (paths may be absent; the script will skip them cleanly)
 # NOTE: do NOT put the Nextcloud data volume here; use the dedicated nc-backup.sh flow.
@@ -112,7 +113,7 @@ BACKUP_PATHS=(
   "/opt/homelab-runtime/stacks/couchdb/data"
 
   # Nextcloud backup artifacts (sql+tar+.sha256), not the data volume
-  "/mnt/backups/nextcloud"
+  "${BACKUPS_DIR}/nextcloud"
 
   # Uptime Kuma data (bind)
   "/opt/homelab-runtime/stacks/uptime-kuma/data"
@@ -255,6 +256,8 @@ If `KUMA_PUSH_URL` is set, the script pushes **up/down** with a short message:
 
 This appears as a dedicated monitor in **Uptime Kuma** and, indirectly, in the global status dashboard in Grafana.
 
+Use `KUMA_RESOLVE_IP` when `KUMA_PUSH_URL` points to public DNS but the host needs to reach Kuma over a LAN IP (hairpin NAT/DNS issues). It forces the push to resolve the Kuma hostname to the supplied IP.
+
 ---
 
 ## Troubleshooting
@@ -275,7 +278,7 @@ This appears as a dedicated monitor in **Uptime Kuma** and, indirectly, in the g
 
 - `restic.env` lives in the **runtime** repo, is **not versioned**, and should be owned by root (`chown root:root`, mode `600`).
 - The restic repository is encrypted, but you should still:
-  - Keep it on a dedicated backups disk (e.g. `/mnt/backups/homelab-restic`).
+  - Keep it on a dedicated backups disk (e.g. `${BACKUPS_DIR}/homelab-restic` for local repos).
   - Restrict permissions to root (`chown -R root:root`, mode `700`).
 - All repository operations should run as root (via systemd or `sudo`).
 - For offsite copies, combine this with `rclone`/object storage lifecycle (S3/B2/etc.).

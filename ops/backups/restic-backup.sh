@@ -85,9 +85,19 @@ RUN_FORGET="${RUN_FORGET:-1}"
 # ------------------------------------------------------------------------------
 # 2) Preflight checks
 # ------------------------------------------------------------------------------
+require_env() {
+  local var="$1"
+  local reason="$2"
+  if [[ -z "${!var:-}" ]]; then
+    log "[ERR] ${var} is empty (set it in ${ENV_FILE} or the current environment)"
+    push_kuma down "$reason"
+    exit 1
+  fi
+}
+
 command -v restic >/dev/null 2>&1 || { log "[ERR] restic not found in PATH"; push_kuma down "restic-missing"; exit 1; }
-[[ -n "${RESTIC_REPOSITORY:-}" ]] || { log "[ERR] RESTIC_REPOSITORY is empty"; push_kuma down "repo-missing"; exit 1; }
-[[ -n "${RESTIC_PASSWORD:-}"   ]] || { log "[ERR] RESTIC_PASSWORD is empty"; push_kuma down "password-missing"; exit 1; }
+require_env "RESTIC_REPOSITORY" "repo-missing"
+require_env "RESTIC_PASSWORD" "password-missing"
 
 # Initialize repo if needed
 if ! restic snapshots >/dev/null 2>&1; then
