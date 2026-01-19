@@ -2153,8 +2153,8 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "mon-grafana",
-          "value": "mon-grafana"
+          "text": "monitoring_grafana_1",
+          "value": "monitoring_grafana_1"
         },
         "definition": "label_values(container_memory_working_set_bytes{job=\"cadvisor\", container_label_com_docker_compose_project=\"$stack\", container_label_com_docker_compose_service=\"$service\"},name)",
         "description": "Container name within the selected stack and service.",

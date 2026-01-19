@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Operational overview of the self-hosted Nextcloud service exposed via Cloudflared.\n\nTop row: external health via Blackbox probing of /status.php (availability, 24h success rate/SLO, and HTTP latency).\n\nMiddle row: dependency health and workload for MariaDB and Redis via dedicated exporters (DB/Redis availability, queries/s, active connections, commands/s, and connected clients).\n\nBottom row: application error signal from nc-app logs (Loki). Use “View logs in Loki (Nextcloud)” for deeper triage and context.\n\nSecurity: This dashboard includes public service endpoints and may surface sensitive log content; restrict access and redact before sharing.",
+  "description": "Operational overview of the self-hosted Nextcloud service exposed via Cloudflared.\n\nTop row: external health via Blackbox probing of /status.php (availability, 24h success rate/SLO, and HTTP latency).\n\nMiddle row: dependency health and workload for MariaDB and Redis via dedicated exporters (DB/Redis availability, queries/s, active connections, commands/s, and connected clients).\n\nBottom row: application error signal from app logs (Loki, compose_service=\"app\"). Use “View logs in Loki (Nextcloud)” for deeper triage and context.\n\nSecurity: This dashboard includes public service endpoints and may surface sensitive log content; restrict access and redact before sharing.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -31,7 +31,7 @@
       "title": "View logs in Loki (Nextcloud)",
       "tooltip": "",
       "type": "link",
-      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=nextcloud&var-service=nc-web&var-container=All&var-search="
+      "url": "/d/huhcpmn/loki-e28093-logs-quick-search?var-stack=nextcloud&var-service=web&var-container=All&var-search="
     }
   ],
   "panels": [
@@ -887,7 +887,7 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "Context: Application-level failures surfaced from the Nextcloud app container logs.\n\nFocus: Error/exception-like log events for nc-app, intended to highlight actionable failures.\n\nImplementation: Loki query:\n`{job=\"dockerlogs\", stack=\"nextcloud\", container=\"nc-app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"`\n\nSecurity: Application logs may contain sensitive data depending on Nextcloud log settings; restrict access and ensure redaction policies if required.",
+      "description": "Context: Application-level failures surfaced from the Nextcloud app logs.\n\nFocus: Error/exception-like log events for the app service (compose_service=\"app\"), intended to highlight actionable failures.\n\nImplementation: Loki query:\n`{job=\"dockerlogs\", stack=\"nextcloud\", compose_service=\"app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"`\n\nSecurity: Application logs may contain sensitive data depending on Nextcloud log settings; restrict access and ensure redaction policies if required.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -915,7 +915,7 @@
         {
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{job=\"dockerlogs\", stack=\"nextcloud\", container=\"nc-app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"",
+          "expr": "{job=\"dockerlogs\", stack=\"nextcloud\", compose_service=\"app\"}\n|= \"PHP message: [nextcloud]\"\n|~ \"error|exception|critical|fatal\"",
           "queryType": "range",
           "refId": "A"
         }

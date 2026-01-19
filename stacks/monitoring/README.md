@@ -504,7 +504,7 @@ topk(5, sum by (compose_service) (rate({job="dockerlogs"}[1m])))
 Find a marker inside promtail logs:
 
 ```logql
-{job="dockerlogs", container="promtail"} |= "LOKI_SMOKE_"
+{job="dockerlogs", compose_service="promtail"} |= "LOKI_SMOKE_"
 ```
 
 ---
@@ -517,7 +517,7 @@ Docker container logs into Loki with a small, explicit label set that matches th
 **Discovery**
 
 - Uses `docker_sd` against `unix:///var/run/docker.sock`. The Docker socket is mounted
-  into the `mon-promtail` container via the runtime override (see
+  into the `promtail` container via the runtime override (see
   `stacks/monitoring/compose.override.example.yaml`), so Promtail can discover
   running containers even in a rootless Docker setup.
 
@@ -534,7 +534,8 @@ and dashboards:
 
 - `job="dockerlogs"` — constant for all Docker-based streams.
 - `container` and `container_name` — derived from the Docker container name (without
-  the leading slash).
+  the leading slash). With Compose defaults this looks like
+  `<project>_<service>_1`, so prefer `compose_service` for stable selectors.
 - `repo`, `stack`, `env`, `compose_service` — derived from existing container labels
   (`com.repo`, `com.stack`, `com.env`, `com.docker_compose_service`).
 - `service` — derived from the container label `service` (for example `service="dozzle"`);
@@ -724,7 +725,7 @@ Changes are **idempotent** (deduplicate + sort) and validated with `promtool`.
 ### 17.1 Direct script usage
 
 ```bash
-# Main stack (mon-)
+# Main stack (project: monitoring)
 stacks/monitoring/scripts/blackbox-targets.sh ls [blackbox-http]
 
 stacks/monitoring/scripts/blackbox-targets.sh add blackbox-http https://example.org
@@ -761,7 +762,7 @@ make -f stacks/monitoring/Makefile.demo demo-reload-prom    # demo stack
 These delegate to the script above and pick the right file automatically:
 
 ```bash
-# Main stack (mon-)
+# Main stack (project: monitoring)
 make bb-ls                 [JOB=blackbox-http]
 make bb-add  TARGET=<url>  [JOB=blackbox-http]
 make bb-rm   TARGET=<url>  [JOB=blackbox-http]
@@ -1110,9 +1111,9 @@ The only assumptions are:
 
 - The monitoring stack (Prometheus, Loki, etc.) runs on the same Docker host as the containers
   you care about.
-- `mon-node-exporter` is attached to the `mon-net` network and scrapes the host via the
+- `node-exporter` is attached to the `mon-net` network and scrapes the host via the
   `/host` bind-mount (see the runtime override).
-- `mon-cadvisor` is attached to `mon-net`, runs `privileged: true` with the host mounts
+- `cadvisor` is attached to `mon-net`, runs `privileged: true` with the host mounts
   from the runtime override, and Docker containers are started via Compose so that standard
   `com.docker.compose.*` labels are present (used to derive `stack`, `service` and
   `container` in the dashboard).
@@ -1231,7 +1232,7 @@ This stack also exposes a small observability bundle for the Nextcloud stack def
 The only assumption is that the Nextcloud stack is running on the same Docker host and that:
 
 - The `nextcloud` stack is attached to the `mon-net` network.
-- The exporters `nc-mysqld-exporter` and `nc-redis-exporter` are running (see the Nextcloud README).
+- The exporters `mysqld-exporter` and `redis-exporter` are running (see the Nextcloud README).
 - The public HTTPS endpoint you actually use in production is the one configured in the
   Blackbox HTTP probe to `status.php` in the monitoring stack.
 
@@ -1275,7 +1276,7 @@ Layout summary (the dashboard lives in **20_Apps / Nextcloud – Service Overvie
 
 **Third row – application logs**
 
-- *Nextcloud – Application errors* – Loki query that surfaces application-level failures from the `nc-app` container logs. The panel is intentionally focused on error/exception-like messages; use the “View logs in Loki (Nextcloud)” link for deeper triage and surrounding context.
+- *Nextcloud – Application errors* – Loki query that surfaces application-level failures from the `app` service logs (`compose_service="app"`). The panel is intentionally focused on error/exception-like messages; use the “View logs in Loki (Nextcloud)” link for deeper triage and surrounding context.
 
 Security: This dashboard includes public service endpoints and may surface sensitive log content; restrict access and redact before sharing.
 
@@ -1481,8 +1482,9 @@ conventions:
 - `stack` → logical stack (`nextcloud`, `monitoring`, `cloudflared`,
   `adguard-home`, `couchdb`, …).
 - `compose_service` → Docker Compose service name (`grafana`, `loki`,
-  `nc-web`, `cloudflared`, `adguard-home`, `couchdb`, …).
-- `container` → concrete container name (`mon-grafana`, `mon-loki`, etc.).
+  `web`, `cloudflared`, `adguard-home`, `couchdb`, …).
+- `container` → concrete container name (for example `monitoring-grafana-1`,
+  `monitoring-loki-1`, etc.).
 
 For error-focused panels, the dashboard uses a consistent definition of
 “error-level logs”:

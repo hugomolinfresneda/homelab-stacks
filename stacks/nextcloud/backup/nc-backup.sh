@@ -119,20 +119,63 @@ trap _nc_err_trap ERR
 : "${NC_DB_NAME:=${DB_NAME:-}}"
 : "${NC_DB_USER:=${DB_USER:-}}"
 : "${NC_DB_PASS:=${DB_PASSWORD:-}}"
-: "${NC_DB_HOST:=${DB_HOST:-nc-db}}"
+: "${NC_DB_HOST:=${DB_HOST:-db}}"
 
 # --- Explicit inputs ----------------------------------------------------------
-# Containers / volume (allow classic names as fallbacks)
-NC_APP_CONT="${NC_APP_CONT:-${NC_APP:-nc-app}}"
-NC_DB_CONT="${NC_DB_CONT:-${NC_DB:-nc-db}}"
-NC_WEB_CONT="${NC_WEB_CONT:-${NC_WEB:-nc-web}}"
-NC_CRON_CONT="${NC_CRON_CONT:-${NC_CRON:-nc-cron}}"
+# Runtime dir holding compose.override.yml and .env
+RUNTIME_DIR="${RUNTIME_DIR:-/opt/homelab-runtime/stacks/nextcloud}"
+
+normalize_service() {
+  case "$1" in
+    nc-app) echo "app" ;;
+    nc-db) echo "db" ;;
+    nc-web) echo "web" ;;
+    nc-cron) echo "cron" ;;
+    nc-mysqld-exporter) echo "mysqld-exporter" ;;
+    nc-redis-exporter) echo "redis-exporter" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# Compose services / volume (allow legacy nc-* inputs)
+NC_APP_SERVICE="$(normalize_service "${NC_APP_CONT:-${NC_APP:-app}}")"
+NC_DB_SERVICE="$(normalize_service "${NC_DB_CONT:-${NC_DB:-db}}")"
+NC_WEB_SERVICE="$(normalize_service "${NC_WEB_CONT:-${NC_WEB:-web}}")"
+NC_CRON_SERVICE="$(normalize_service "${NC_CRON_CONT:-${NC_CRON:-cron}}")"
 NC_VOL="${NC_VOL:-nextcloud_nextcloud}"
 
 # Required DB params
 : "${NC_DB_NAME:?NC_DB_NAME is required}"
 : "${NC_DB_USER:?NC_DB_USER is required}"
 : "${NC_DB_PASS:?NC_DB_PASS is required}"
+
+# --- Determine compose file and args ------------------------------------------
+discover_compose_file() {
+  if [[ -n "${COMPOSE_FILE:-}" ]]; then
+    CF="$COMPOSE_FILE"
+  else
+    local script_dir stack_dir
+    script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
+    stack_dir="$(dirname "$script_dir")"
+    if [[ -f "$stack_dir/compose.yaml" ]]; then
+      CF="$stack_dir/compose.yaml"
+    elif [[ -f "$stack_dir/compose.yml" ]]; then
+      CF="$stack_dir/compose.yml"
+    else
+      echo "ERROR: cannot find compose.(yml|yaml) under $stack_dir. Set COMPOSE_FILE/STACK_DIR." >&2
+      exit 1
+    fi
+  fi
+}
+
+build_compose_args() {
+  COMPOSE_ARGS=(-f "$CF")
+  [[ -f "$RUNTIME_DIR/compose.override.yml" ]] && COMPOSE_ARGS+=(-f "$RUNTIME_DIR/compose.override.yml")
+  [[ -f "$RUNTIME_DIR/.env" ]] && COMPOSE_ARGS+=(--env-file "$RUNTIME_DIR/.env")
+}
+
+dc() { docker compose "${COMPOSE_ARGS[@]}" "$@"; }
+dc_id() { dc ps -q "$1" | head -n1; }
 
 # --- Output directory (expand ~ and $HOME; ensure absolute) -------------------
 BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
@@ -151,6 +194,9 @@ mkdir -p "$BACKUP_DIR"
 NC_VOL=${NC_VOL//\"/}
 NC_VOL=${NC_VOL//\'/}
 
+discover_compose_file
+build_compose_args
+
 BACKUP_START_TS="$(date +%s)"
 ts="$(date -u +%F_%H%M%S)"
 prefix="$BACKUP_DIR/nc-${ts}"
@@ -163,16 +209,21 @@ flock -n 9 || { echo "[ERR] Another Nextcloud backup is already running (lock: $
 
 # --- Helpers ------------------------------------------------------------------
 wait_ready() {
-  local c="$1" s h
+  local svc="$1" s h cid
+  cid="$(dc_id "$svc")"
+  if [[ -z "$cid" ]]; then
+    echo "[WARN] Container not found for service: ${svc}" >&2
+    return 1
+  fi
   for _ in $(seq 1 60); do
-    s="$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null || echo false)"
-    h="$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo none)"
+    s="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || echo false)"
+    h="$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo none)"
     if [[ "$s" == "true" && ( "$h" == "healthy" || "$h" == "none" ) ]]; then
       return 0
     fi
     sleep 2
   done
-  echo "[WARN] Timeout waiting for container: ${c}" >&2
+  echo "[WARN] Timeout waiting for service: ${svc}" >&2
   return 1
 }
 
@@ -180,21 +231,21 @@ FROZEN_MODE="none"
 unfreeze() {
   set +e
   if [[ "$FROZEN_MODE" == "maintenance" ]]; then
-    docker exec -u 33 "$NC_APP_CONT" php /var/www/html/occ maintenance:mode --off >/dev/null 2>&1 || true
+    dc exec -T -u 33 "$NC_APP_SERVICE" php /var/www/html/occ maintenance:mode --off >/dev/null 2>&1 || true
   elif [[ "$FROZEN_MODE" == "stopped" ]]; then
-    docker start "$NC_DB_CONT" >/dev/null 2>&1 || true
-    docker start "$NC_APP_CONT" "$NC_WEB_CONT" "$NC_CRON_CONT" >/dev/null 2>&1 || true
+    dc start "$NC_DB_SERVICE" >/dev/null 2>&1 || true
+    dc start "$NC_APP_SERVICE" "$NC_WEB_SERVICE" "$NC_CRON_SERVICE" >/dev/null 2>&1 || true
   fi
 }
 trap unfreeze EXIT
 
 # Ensure DB/app are minimally reachable
-wait_ready "$NC_DB_CONT"  || true
-wait_ready "$NC_APP_CONT" || true
+wait_ready "$NC_DB_SERVICE"  || true
+wait_ready "$NC_APP_SERVICE" || true
 
 echo "==> Enabling maintenance mode…"
 set +e
-OCC_OUT="$(docker exec -u 33 "$NC_APP_CONT" php /var/www/html/occ maintenance:mode --on 2>&1)"
+OCC_OUT="$(dc exec -T -u 33 "$NC_APP_SERVICE" php /var/www/html/occ maintenance:mode --on 2>&1)"
 OCC_RC=$?
 set -e
 
@@ -204,9 +255,9 @@ if [[ $OCC_RC -eq 0 ]]; then
 else
   if echo "$OCC_OUT" | grep -qi 'read-only'; then
     echo "==> config_is_read_only; stopping app/web/cron as fallback…"
-    docker stop "$NC_APP_CONT" "$NC_WEB_CONT" "$NC_CRON_CONT"
+    dc stop "$NC_APP_SERVICE" "$NC_WEB_SERVICE" "$NC_CRON_SERVICE"
     FROZEN_MODE="stopped"
-    wait_ready "$NC_DB_CONT"
+    wait_ready "$NC_DB_SERVICE"
   else
     echo "$OCC_OUT" >&2
     exit 1
@@ -215,7 +266,7 @@ fi
 
 echo "==> Dumping MariaDB…"
 # Pass credentials from host env (no inner-shell placeholder variables)
-docker exec "$NC_DB_CONT" mariadb-dump \
+dc exec -T "$NC_DB_SERVICE" mariadb-dump \
   -u"$NC_DB_USER" -p"$NC_DB_PASS" "$NC_DB_NAME" \
   --single-transaction --quick --routines --events \
   > "${prefix}-db.sql"

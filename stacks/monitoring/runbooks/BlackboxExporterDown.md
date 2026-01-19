@@ -32,7 +32,8 @@ In Prometheus Targets, check the `blackbox` job is **DOWN** and capture the erro
 From the Prometheus container (preferred, same network path as scraping):
 
 ```bash
-docker exec -t mon-prometheus sh -lc 'getent hosts blackbox && wget -qO- http://blackbox:9115/metrics | head -n 5'
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  exec -T prometheus sh -lc 'getent hosts blackbox && wget -qO- http://blackbox:9115/metrics | head -n 5'
 ```
 
 If this succeeds, the issue is likely Prometheus configuration or target label mismatch rather than the exporter itself.
@@ -40,9 +41,10 @@ If this succeeds, the issue is likely Prometheus configuration or target label m
 ### 3) Check container state and recent logs
 
 ```bash
-docker ps --filter name=blackbox
-docker inspect mon-blackbox --format '{{.State.Status}} restarting={{.State.Restarting}} restarts={{.RestartCount}}' 2>/dev/null || true
-docker logs --tail=200 mon-blackbox 2>/dev/null || true
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml ps blackbox
+docker inspect "$(docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml ps -q blackbox)" \
+  --format '{{.State.Status}} restarting={{.State.Restarting}} restarts={{.RestartCount}}' 2>/dev/null || true
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml logs --tail=200 blackbox 2>/dev/null || true
 ```
 
 ---
@@ -62,7 +64,8 @@ Actions:
 - Inspect the mounted config exists inside the container:
 
 ```bash
-docker exec -t mon-blackbox sh -lc 'ls -la /etc/blackbox_exporter/ && sed -n "1,120p" /etc/blackbox_exporter/blackbox.yml 2>/dev/null || true'
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  exec -T blackbox sh -lc 'ls -la /etc/blackbox_exporter/ && sed -n "1,120p" /etc/blackbox_exporter/blackbox.yml 2>/dev/null || true'
 ```
 
 *(Adjust path if your container uses a different config location.)*
@@ -74,7 +77,8 @@ If Prometheus cannot resolve `blackbox` or connect:
 - Check name resolution from Prometheus:
 
 ```bash
-docker exec -t mon-prometheus sh -lc 'getent hosts blackbox || (echo "DNS failed" && exit 1)'
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  exec -T prometheus sh -lc 'getent hosts blackbox || (echo "DNS failed" && exit 1)'
 ```
 
 If DNS fails intermittently, check Docker DNS (`127.0.0.11`) and network health.
@@ -89,7 +93,8 @@ If you can curl `/metrics` but Prometheus shows DOWN:
 Fast check of Prometheus current config (inside container, if available):
 
 ```bash
-docker exec -t mon-prometheus sh -lc 'wget -qO- http://localhost:9090/api/v1/status/config | head -n 40'
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  exec -T prometheus sh -lc 'wget -qO- http://localhost:9090/api/v1/status/config | head -n 40'
 ```
 
 ### D) Resource exhaustion / host-level issues
@@ -109,7 +114,7 @@ docker stats --no-stream | head
 ### 1) Restart blackbox exporter
 
 ```bash
-docker restart mon-blackbox
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml restart blackbox
 ```
 
 ### 2) Fix configuration errors
@@ -132,7 +137,8 @@ If logs indicate config parsing issues:
 1) Exporter endpoint responds:
 
 ```bash
-docker exec -t mon-prometheus sh -lc 'wget -qO- http://blackbox:9115/metrics | head -n 5'
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  exec -T prometheus sh -lc 'wget -qO- http://blackbox:9115/metrics | head -n 5'
 ```
 
 2) Prometheus target `blackbox` is **UP**.

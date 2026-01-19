@@ -8,7 +8,6 @@
 services:
   adguard-home:
     image: adguard/adguardhome@sha256:09a24f05e110e53e213a340b22e5d3c8cdab12ff9be6775388c71b140255c54c
-    container_name: adguard-home
     expose:
       - "3000"   # Web UI (wizard/admin). Keep 3000; runtime will map host:3000
     environment:
@@ -25,7 +24,6 @@ services:
 
   adguard-exporter:
     image: ebrianne/adguard-exporter@sha256:03b2fda733121eb7de3310362bc1b5bc0a7b2d93aca6946a6b5c31e97f4cd85b
-    container_name: adguard-exporter
     environment:
       adguard_protocol: ${ADGUARD_PROTOCOL}
       adguard_hostname: ${ADGUARD_HOSTNAME:-adguard-home}

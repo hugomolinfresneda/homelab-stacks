@@ -32,9 +32,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROM_FILE_MON="prometheus/prometheus.yml"
 PROM_FILE_DEMO="prometheus/prometheus.demo.yml"
 
-# Containers to HUP when reloading config
-PROM_CONTAINER_MON="mon-prometheus"
-PROM_CONTAINER_DEMO="demo-prometheus"
+# Reload hints (avoid container_name assumptions)
+RELOAD_HINT_MON="make reload-prom"
+RELOAD_HINT_DEMO="make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=\${DEMO_PROJECT:-mon-demo}"
 
 need_docker(){ command -v docker >/dev/null 2>&1 || die "Docker is required on the host."; }
 
@@ -47,8 +47,7 @@ selinux_flag(){
 MOUNT_OPTS="$(selinux_flag)"
 
 PROM_FILE="$PROM_FILE_MON"
-PROM_CONTAINER="$PROM_CONTAINER_MON"
-RELOAD_HINT="docker kill -s HUP $PROM_CONTAINER"
+RELOAD_HINT="$RELOAD_HINT_MON"
 
 # --- Parse flags/action -------------------------------------------------------
 ACTION=""
@@ -56,8 +55,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --demo)
       PROM_FILE="$PROM_FILE_DEMO"
-      PROM_CONTAINER="$PROM_CONTAINER_DEMO"
-      RELOAD_HINT="docker kill -s HUP $PROM_CONTAINER"
+      RELOAD_HINT="$RELOAD_HINT_DEMO"
       shift;;
     --file)
       [[ $# -ge 2 ]] || die "Missing path after --file"

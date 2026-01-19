@@ -1,3 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-docker exec -w /var/www/html -u www-data nc-app php occ "$@"
+
+NC_PROJECT="${NC_PROJECT:-${COMPOSE_PROJECT_NAME:-nextcloud}}"
+NC_APP_ID="$(docker ps -q \
+  --filter "label=com.docker.compose.project=${NC_PROJECT}" \
+  --filter "label=com.docker.compose.service=app" \
+  | head -n1)"
+
+if [[ -z "$NC_APP_ID" ]]; then
+  echo "error: Nextcloud app container not found (project=${NC_PROJECT})" >&2
+  exit 1
+fi
+
+docker exec -w /var/www/html -u www-data "$NC_APP_ID" php occ "$@"

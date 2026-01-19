@@ -199,7 +199,8 @@ dig @<HOST_LAN_IP> example.com A +short
 docker run --rm --network proxy curlimages/curl:8.10.1 -sSI http://adguard-home:3000 | head -n1
 
 # Exporter metrics reachable from Prometheus network
-docker exec mon-prometheus wget -qO- http://adguard-exporter:9617/metrics | head
+docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+  exec -T prometheus wget -qO- http://adguard-exporter:9617/metrics | head
 ```
 
 ---

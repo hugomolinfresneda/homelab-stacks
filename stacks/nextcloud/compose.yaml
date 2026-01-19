@@ -7,7 +7,6 @@
 services:
   db:
     image: mariadb@sha256:4b1e7958f820681b1b93b9cf9ea05a76e0785da12699a1fb1d05e0eb2137e56b
-    container_name: nc-db
     restart: unless-stopped
     stop_grace_period: 60s
     logging:
@@ -34,7 +33,6 @@ services:
 
   redis:
     image: redis@sha256:90e7a336d044f1abc9e9dbc05d65566850896d11453bbd1dd0fb7e5059f0e8fb
-    container_name: nc-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     logging:
@@ -55,7 +53,6 @@ services:
 
   app:
     image: nextcloud@sha256:2a2078e24cb19b22bf0052aae7a5cce74b51ebe41676f72f5783b5953619c4a1
-    container_name: nc-app
     restart: unless-stopped
     stop_grace_period: 30s
     logging:
@@ -90,7 +87,6 @@ services:
 
   web:
     image: nginx@sha256:6784fb0834aa7dbbe12e3d7471e69c290df3e6ba810dc38b34ae33d3c1c05f7d
-    container_name: nc-web
     restart: unless-stopped
     logging:
       driver: json-file
@@ -118,7 +114,6 @@ services:
 
   cron:
     image: nextcloud@sha256:2a2078e24cb19b22bf0052aae7a5cce74b51ebe41676f72f5783b5953619c4a1
-    container_name: nc-cron
     user: "${PUID:-33}:${PGID:-33}"
     restart: unless-stopped
     stop_grace_period: 20s
@@ -142,7 +137,6 @@ services:
 
   mysqld-exporter:
     image: prom/mysqld-exporter@sha256:2598c0571f383708e19016d119bb45c06128a9ebc962c9f49483278ac5a94c41
-    container_name: nc-mysqld-exporter
     profiles: ["monitoring"]
     restart: unless-stopped
     logging:
@@ -162,7 +156,7 @@ services:
     depends_on:
       db: {condition: service_healthy}
     networks:
-      - default     # reach nc-db on the stack network
+      - default     # reach db on the stack network
       - mon-net     # allow Prometheus to scrape
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9104/metrics >/dev/null || exit 1"]
@@ -177,7 +171,6 @@ services:
 
   redis-exporter:
     image: oliver006/redis_exporter@sha256:cd5fad1591e585db5b58beec7fca427027c61a4349f50109af67cf2f07964d02
-    container_name: nc-redis-exporter
     profiles: ["monitoring"]
     restart: unless-stopped
     deploy:
@@ -195,7 +188,7 @@ services:
     depends_on:
       redis: {condition: service_healthy}
     networks:
-      - default     # reach nc-redis
+      - default     # reach redis
       - mon-net     # allow Prometheus to scrape
     labels:
       com.repo: homelab-stacks

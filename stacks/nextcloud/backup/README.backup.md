@@ -51,11 +51,11 @@ $EDITOR ~/.config/nextcloud/nc-backup.env
 Recommended content (edit to match **your** runtime):
 
 ```dotenv
-# Containers (must match your compose service names)
-NC_APP_CONT=nc-app
-NC_DB_CONT=nc-db
-NC_WEB_CONT=nc-web
-NC_CRON_CONT=nc-cron
+# Compose services (legacy nc-* names are accepted and auto-mapped)
+NC_APP_CONT=app
+NC_DB_CONT=db
+NC_WEB_CONT=web
+NC_CRON_CONT=cron
 
 # Named data volume for Nextcloud code/config/data
 # Tip: docker volume ls | grep nextcloud
@@ -267,7 +267,7 @@ systemctl list-timers | grep nextcloud-backup
 1. Create a fresh backup and verify checksums (see §4, §5 and §7).
 2. Stop writers in production (`app/web/cron` will be stopped by the restore script anyway).
 3. Restore in place (or to a staging host) using `make restore` or the script directly.
-4. Ensure `nc-app` reaches **healthy**, browse the UI, and check **OCC status**:
+4. Ensure `app` reaches **healthy**, browse the UI, and check **OCC status**:
 
    ```bash
    /opt/homelab-stacks/stacks/nextcloud/tools/occ status
@@ -289,13 +289,14 @@ systemctl list-timers | grep nextcloud-backup
   Check your `BACKUP_DIR`. File patterns must be `nc-*-db.sql[.gz]` and `nc-vol-*.tar.gz`.
 
 - **HTTP 502 after restore**
-  `nc-app` may still be warming up. Check `docker logs nc-app` and `nc-web`. The script brings services back in the correct order.
+  `app` may still be warming up. Check `docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml --env-file /opt/homelab-runtime/stacks/nextcloud/.env logs app web`. The script brings services back in the correct order.
 
 - **Wrong volume name**
   Confirm with:
 
   ```bash
-  docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Name}}{{end}}{{end}}' nc-app
+  docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Name}}{{end}}{{end}}' \
+    "$(docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml --env-file /opt/homelab-runtime/stacks/nextcloud/.env ps -q app)"
   ```
 
   Then set `NC_VOL` accordingly in your `nc-backup.env`.
