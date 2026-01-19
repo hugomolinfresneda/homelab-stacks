@@ -222,7 +222,7 @@ should adapt these mounts in your private runtime override (see
 - Runtime override for host mounts (copy `stacks/monitoring/compose.override.example.yaml`
   to `/opt/homelab-runtime/stacks/monitoring/compose.override.yml` and edit)
 - **Rootless-friendly binds** for Promtail in your runtime override:
-  - `${DOCKER_SOCK}` → usually `/run/user/1000/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
+- `${DOCKER_SOCK}` → usually `/run/user/<UID>/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
   - `${SELINUX_SUFFIX}` → leave empty unless you need `,Z (or ,z)` on SELinux hosts
 
