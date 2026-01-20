@@ -10,7 +10,7 @@ clients:
 scrape_configs:
   - job_name: dockerlogs
     docker_sd_configs:
-      - host: unix:///var/run/docker.sock
+      - host: "${DOCKER_HOST}"
 
     relabel_configs:
       # Only keep containers explicitly marked for logging
@@ -57,3 +57,7 @@ scrape_configs:
 
     pipeline_stages:
       - docker: {}
+      # Align with Loki reject_old_samples_max_age (~1h) to avoid 400 spam
+      - drop:
+          older_than: 1h
+          drop_counter_reason: too_old
