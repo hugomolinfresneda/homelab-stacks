@@ -104,7 +104,7 @@ services:
 
   promtail:
     image: grafana/promtail@sha256:086e4e85d2eb383fb04ea83c0f5074da81df56e415062ca888dba426abd8dfa5
-    command: ["-config.file=/etc/promtail/config.yml"]
+    command: ["-config.file=/etc/promtail/config.yml", "-config.expand-env=true"]
     expose:
       - "9080"
     volumes:

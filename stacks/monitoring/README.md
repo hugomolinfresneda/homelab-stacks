@@ -205,7 +205,8 @@ In particular, add these binds in your runtime override:
     real host instead of the container.
 
 - **Promtail**
-  - Connects to the Docker API at `/var/run/docker.sock`.
+  - Connects to the Docker API via `docker-socket-proxy` (`${DOCKER_HOST}`).
+  - The proxy mounts the host Docker socket (`${DOCKER_SOCK}`) read-only.
   - Reads Docker JSON log files from `/var/lib/docker/containers`.
   - Only containers explicitly labelled with `com.logging="true"` are scraped.
 
@@ -221,9 +222,10 @@ should adapt these mounts in your private runtime override (see
 - External docker networks created: `mon-net`, `proxy`
 - Runtime override for host mounts (copy `stacks/monitoring/compose.override.example.yaml`
   to `/opt/homelab-runtime/stacks/monitoring/compose.override.yml` and edit)
-- **Rootless-friendly binds** for Promtail in your runtime override:
-- `${DOCKER_SOCK}` → usually `/run/user/<UID>/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
+- **Rootless-friendly binds** for Promtail + docker-socket-proxy in your runtime override:
+  - `${DOCKER_SOCK}` → usually `/run/user/<UID>/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
+  - `${DOCKER_HOST}` → docker-socket-proxy endpoint, typically `tcp://docker-socket-proxy:2375`
   - `${SELINUX_SUFFIX}` → leave empty unless you need `,Z (or ,z)` on SELinux hosts
 
 ---
@@ -253,9 +255,19 @@ should adapt these mounts in your private runtime override (see
 
   ```yaml
   services:
-    promtail:
+    docker-socket-proxy:
+      image: tecnativa/docker-socket-proxy@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
+      environment:
+        - CONTAINERS=1
+        - EVENTS=1
+        - INFO=1
       volumes:
         - ${DOCKER_SOCK}:/var/run/docker.sock:ro${SELINUX_SUFFIX}
+
+    promtail:
+      environment:
+        DOCKER_HOST: ${DOCKER_HOST}
+      volumes:
         - ${DOCKER_CONTAINERS_DIR}:/var/lib/docker/containers:ro${SELINUX_SUFFIX}
 
     node-exporter:
@@ -279,7 +291,8 @@ should adapt these mounts in your private runtime override (see
         - /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
   ```
 
-  The Promtail volumes give it access to Docker logs in both rootless and rootful setups.
+  The docker-socket-proxy service exposes a minimal read-only Docker API to Promtail,
+  and the Promtail volume gives it access to Docker logs in both rootless and rootful setups.
   The node-exporter and cAdvisor volumes enable host and container metrics.
   The Prometheus volume injects the Uptime Kuma metrics password as a plain read-only file, avoiding Docker Swarm secrets for maximum portability on single-node homelab deployments.
   If you need Alertmanager secrets, mount them here as well. The Telegram bot token is
@@ -516,8 +529,8 @@ Docker container logs into Loki with a small, explicit label set that matches th
 
 **Discovery**
 
-- Uses `docker_sd` against `unix:///var/run/docker.sock`. The Docker socket is mounted
-  into the `promtail` container via the runtime override (see
+- Uses `docker_sd` against `${DOCKER_HOST}`. The Docker socket is mounted into the
+  `docker-socket-proxy` container via the runtime override (see
   `stacks/monitoring/compose.override.example.yaml`), so Promtail can discover
   running containers even in a rootless Docker setup.
 
