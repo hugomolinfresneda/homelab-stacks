@@ -302,7 +302,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max by (mountpoint) (\n  100 * (1 - (\n    node_filesystem_avail_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n    /\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n  ))\n)",
+          "expr": "max by (mountpoint) (\n  100 * (1 - (\n    node_filesystem_avail_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^${backups_mountpoint:raw}$\"\n    }\n    /\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^${backups_mountpoint:raw}$\"\n    }\n  ))\n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -321,7 +321,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "^/mnt/backups$",
+            "regex": "^${backups_mountpoint:raw}$",
             "renamePattern": "backups"
           }
         }
@@ -860,7 +860,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max by (mountpoint) (\n  100 * (1 - (\n    node_filesystem_avail_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n    /\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^/mnt/backups$\"\n    }\n  ))\n)",
+          "expr": "max by (mountpoint) (\n  100 * (1 - (\n    node_filesystem_avail_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^${backups_mountpoint:raw}$\"\n    }\n    /\n    node_filesystem_size_bytes{\n      job=\"node\",\n      fstype=~\"ext4|xfs|btrfs\",\n      mountpoint=~\"^/$|^${backups_mountpoint:raw}$\"\n    }\n  ))\n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -878,7 +878,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "^/mnt/backups$",
+            "regex": "^${backups_mountpoint:raw}$",
             "renamePattern": "backups"
           }
         }
@@ -1043,7 +1043,26 @@
     "node_exporter"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": {
+          "text": "/mnt/backups",
+          "value": "/mnt/backups"
+        },
+        "description": "Backup mountpoint to include in filesystem panels.",
+        "label": "backup mountpoint",
+        "name": "backups_mountpoint",
+        "options": [
+          {
+            "selected": true,
+            "text": "/mnt/backups",
+            "value": "/mnt/backups"
+          }
+        ],
+        "query": "/mnt/backups",
+        "type": "textbox"
+      }
+    ]
   },
   "time": {
     "from": "now-1h",

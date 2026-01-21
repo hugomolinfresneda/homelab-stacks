@@ -5,7 +5,11 @@
 Rules are split by domain to keep ownership and reviews sane:
 
 - `prometheus/rules/infra.rules.yml`
-  - Host storage signals (`BackupDiskNotMounted`, disk space low), Tier-0 exporter health, etc.
+  - Tier-0 exporter health and root filesystem capacity alerts.
+
+- `prometheus/rules/infra.backups.rules.yml.example`
+  - Backup disk mountpoint alerts; copy to `infra.backups.rules.yml` and replace
+    `<BACKUPS_MOUNTPOINT>` for your host.
 
 - `prometheus/rules/containers.rules.yml`
   - Container restart-loop detection (tiered: infra vs service).
