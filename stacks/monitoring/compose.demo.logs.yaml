@@ -57,7 +57,7 @@ services:
       - "9080"
     volumes:
       - ./promtail/config.demo.yaml:/etc/promtail/config.yaml:ro
-      - ${DOCKER_CONTAINERS_DIR:-/var/lib/docker/containers}:/var/lib/docker/containers:ro${SELINUX_SUFFIX:-}
+      - ${DOCKER_CONTAINERS_DIR}:/var/lib/docker/containers:ro${SELINUX_SUFFIX:-}
       - demo-promtail-positions:/positions
     environment:
       - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mon-demo}

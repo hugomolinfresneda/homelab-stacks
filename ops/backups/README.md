@@ -79,7 +79,7 @@ Minimal example (aligns with the example env file shipped next to it):
 
 ```dotenv
 # --- Restic ---
-export BACKUPS_DIR="/mnt/backups"                       # base mount for local backup storage
+export BACKUPS_DIR="/path/to/backups"                   # base mount for local backup storage
 export RESTIC_REPOSITORY="${BACKUPS_DIR}/homelab-restic" # or s3:..., b2:..., rclone:...
 export RESTIC_PASSWORD="CHANGE_ME"
 

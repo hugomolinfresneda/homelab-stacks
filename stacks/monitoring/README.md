@@ -228,6 +228,9 @@ should adapt these mounts in your private runtime override (see
   - `${DOCKER_HOST}` → docker-socket-proxy endpoint, typically `tcp://docker-socket-proxy:2375`
   - `${SELINUX_SUFFIX}` → leave empty unless you need `,Z (or ,z)` on SELinux hosts
 
+The Promtail bind target stays `/var/lib/docker/containers`; only the host path
+(`DOCKER_CONTAINERS_DIR`) changes between rootful and rootless setups.
+
 ---
 
 ## 5) Compose files
@@ -1156,6 +1159,9 @@ Layout summary (the dashboard lives in **10_Infra / Host – System overview**):
   filesystem (`/`). The panel is wired to the `node_filesystem_` metrics and filters out
   pseudo-mounts and bind-mount noise.
 
+Note: the dashboard uses a textbox variable `backups_mountpoint` to include the backup
+filesystem in the panels. Default is `/mnt/backups`; update it if your mountpoint differs.
+
 **Second row – memory & swap**
 
 - **Memory usage** — percentage of RAM used, computed from
@@ -1324,7 +1330,9 @@ new runtime requirements.
 Backup alert rules are defined in:
 
 - `stacks/monitoring/prometheus/rules/backups.rules.yml`
-- `stacks/monitoring/prometheus/rules/infra.rules.yml` (host-level backup disk signals)
+- `stacks/monitoring/prometheus/rules/infra.backups.rules.yml.example` (copy to
+  `infra.backups.rules.yml` and replace `<BACKUPS_MOUNTPOINT>` for host-level
+  backup disk signals)
 
 The policy is:
 - Hard RPO breaches are **critical**.

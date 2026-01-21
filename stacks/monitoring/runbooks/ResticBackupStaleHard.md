@@ -10,6 +10,9 @@
 
 > This runbook also applies to `NextcloudBackupStaleHard`. See **Scope** below.
 
+**Note:** Replace `<BACKUPS_MOUNTPOINT>` with the mountpoint configured in your
+backup disk alert rule.
+
 ---
 
 ## Purpose
@@ -55,11 +58,11 @@ curl -fsS http://localhost:9100/metrics | grep -E '^(restic_last_status|restic_l
 ### 2) Confirm storage prerequisites (fast sanity checks)
 
 ```bash
-findmnt /mnt/backups || true
-df -hT /mnt/backups || true
+findmnt <BACKUPS_MOUNTPOINT> || true
+df -hT <BACKUPS_MOUNTPOINT> || true
 ```
 
-If `/mnt/backups` is not mounted, address **BackupDiskNotMounted** first.
+If `<BACKUPS_MOUNTPOINT>` is not mounted, address **BackupDiskNotMounted** first.
 
 ### 3) Confirm last successful run time
 
@@ -115,7 +118,7 @@ Check for:
 - filesystem errors
 
 ```bash
-df -hT /mnt/backups
+df -hT <BACKUPS_MOUNTPOINT>
 dmesg -T | tail -n 200
 ```
 
@@ -159,7 +162,7 @@ sudo journalctl -u homelab-restic-backup -n 200 --no-pager
 
 Examples:
 - Re-mount backup disk (`BackupDiskNotMounted`)
-- Free space on `/mnt/backups`
+- Free space on `<BACKUPS_MOUNTPOINT>`
 - Restore repository credentials
 - Clear stale locks (only if you understand why they exist)
 
@@ -201,7 +204,7 @@ curl -fsS http://localhost:9100/metrics | grep -E '^nextcloud_backup_last_succes
 
 ## Prevention / Hardening
 
-- Keep backup jobs fail-fast if `/mnt/backups` is not mounted.
+- Keep backup jobs fail-fast if `<BACKUPS_MOUNTPOINT>` is not mounted.
 - Add explicit logging for start/end status and exit code.
 - Keep repository credentials and configuration in runtime-only storage.
 - Consider a "backup smoke test" on a schedule (e.g., `restic snapshots`).
