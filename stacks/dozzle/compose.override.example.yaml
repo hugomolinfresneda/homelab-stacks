@@ -1,0 +1,18 @@
+# Runtime-only overrides for Dozzle: docker socket + optional local UI bind.
+# Replace placeholders:
+# - DOCKER_SOCK in .env (rootless or rootful socket path)
+# Variables (from .env.example):
+# - DOCKER_SOCK: host socket path
+# Optional port bind (defaults inline):
+# - HTTP_PORT: host port for local access (default: 5984)
+# - BIND_LOCALHOST: bind address for local-only access (default: 127.0.0.1)
+#   You may define these in your runtime .env if you want different values.
+# Security: keep the socket read-only and avoid public exposure.
+
+services:
+  dozzle:
+    volumes:
+      - "${DOCKER_SOCK}:/var/run/docker.sock:ro"
+    # Optional local bind for UI access
+    # ports:
+    #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8081}:8080"

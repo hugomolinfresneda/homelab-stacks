@@ -1,0 +1,13 @@
+# Runtime-only overrides for Cloudflared: config + credentials mounts.
+# Replace placeholders:
+# - /path/to/runtime/cloudflared/config.yml (tunnel config)
+# - /path/to/runtime/cloudflared/credentials.json (tunnel credentials)
+# Variables (from .env.example):
+# - CLOUDFLARED_CRED_FILE: container path to credentials JSON
+# Security: never commit credentials and avoid exposing ports.
+
+services:
+  cloudflared:
+    volumes:
+      - /path/to/runtime/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - /path/to/runtime/cloudflared/credentials.json:${CLOUDFLARED_CRED_FILE}:ro
