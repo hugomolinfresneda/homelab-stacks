@@ -15,13 +15,19 @@ PROFILES ?= $(profiles)
 STACKS_REPO := $(abspath $(CURDIR))
 RUNTIME_DIR ?= /opt/homelab-runtime/stacks/$(STACK)
 ENV_FILE     ?= $(RUNTIME_DIR)/.env
+DB_ENV_FILE  ?= $(RUNTIME_DIR)/db.env
+ENV_FILES    ?= $(ENV_FILE)
+
+ifeq ($(STACK),nextcloud)
+ENV_FILES = $(ENV_FILE) $(DB_ENV_FILE)
+endif
 
 BASE_FILE     := $(STACKS_REPO)/stacks/$(STACK)/compose.yaml
 OVERRIDE_FILE := $(RUNTIME_DIR)/compose.override.yml
 
 # Docker Compose invocations (base vs base+override)
 # Inject --profile <name> for each item in $(PROFILES). No-op if empty.
-compose_base = docker compose --project-directory $(RUNTIME_DIR) --env-file $(ENV_FILE) $(foreach p,$(PROFILES),--profile $(p)) -f $(BASE_FILE)
+compose_base = docker compose --project-directory $(RUNTIME_DIR) $(foreach f,$(ENV_FILES),--env-file $(f)) $(foreach p,$(PROFILES),--profile $(p)) -f $(BASE_FILE)
 compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
 
 # Helper detection (e.g., stacks/nextcloud/tools/nc)
@@ -107,10 +113,10 @@ require-stack:
 ifeq ($(USE_HELPER),$(STACK_HELPER))
 
 up: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" up
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" up
 
 down: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" down
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" down
 
 ps: require-stack
 	@$(compose_all) ps
@@ -119,19 +125,19 @@ pull: require-stack
 	@$(compose_base) pull
 
 logs: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" logs
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" logs
 
 install: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" install
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" install
 
 post: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" post
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" post
 
 status: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" status
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" status
 
 reset-db: require-stack
-	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" "$(STACK_HELPER)" reset-db
+	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" reset-db
 
 # -------- Generic path (no helper) --------
 else
