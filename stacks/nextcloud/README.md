@@ -69,7 +69,7 @@ stacks/nextcloud/
 
 - Docker Engine + **Docker Compose v2** (`docker compose ...` syntax)
 - An external docker network used by your reverse proxy: `proxy`
-- DNS for your public domain (e.g., `cloud.example.com`) pointing to your reverse proxy or tunnel endpoint
+- DNS for your public domain (e.g., `your-domain.tld`) pointing to your reverse proxy or tunnel endpoint
 - TLS termination at the edge (reverse proxy or Cloudflare Tunnel)
 
 ---
@@ -87,43 +87,53 @@ $EDITOR /opt/homelab-runtime/stacks/nextcloud/.env
 
 **Key variables** (excerpt):
 ```dotenv
-COMPOSE_PROJECT_NAME=nextcloud
-TZ=Europe/Madrid
+COMPOSE_PROJECT_NAME=yourproject
+TZ=Region/City
 
 # UID/GID for Nextcloud containers (cron user)
-PUID=33
-PGID=33
+PUID=your-uid
+PGID=your-gid
 
 # Public fqdn and trusted domains (space-separated)
-NC_DOMAIN=cloud.example.com
-NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} web localhost
+NC_DOMAIN=your-domain.tld
+NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} your-alt-domain.tld your-local-host
 
 # DB credentials (duplicated for Nextcloud's CLI)
-NC_DB_NAME=nextcloud
-NC_DB_USER=ncuser
-NC_DB_PASS=change-me
-NC_DB_ROOT=change-me-too
+NC_DB_NAME=exampledb
+NC_DB_USER=exampleuser
+NC_DB_PASS=changeme
+NC_DB_ROOT=changeme
 
 # Nextcloud admin bootstrap
-NC_ADMIN_USER=admin
-NC_ADMIN_PASS=change-me
+NC_ADMIN_USER=your-admin-user
+NC_ADMIN_PASS=changeme
 NEXTCLOUD_ADMIN_USER=${NC_ADMIN_USER}
 NEXTCLOUD_ADMIN_PASSWORD=${NC_ADMIN_PASS}
 
 # PHP limits
-PHP_MEMORY_LIMIT=1024M
-PHP_UPLOAD_LIMIT=2G
+PHP_MEMORY_LIMIT=your-memory-limit
+PHP_UPLOAD_LIMIT=your-upload-limit
 
 # Local bind for the internal Nginx (runtime-only)
-BIND_LOCALHOST=127.0.0.1
-HTTP_PORT=8082
+BIND_LOCALHOST=your-bind-ip
+HTTP_PORT=your-port
 ```
 
 > With `container_name` removed, Compose names containers as
-> `<project>-<service>-1`. Keep `COMPOSE_PROJECT_NAME=nextcloud` (or use the
+> `<project>-<service>-1`. Keep `COMPOSE_PROJECT_NAME=yourproject` (or use the
 > Makefile/helpers) so `docker compose ps` stays readable.
 
 > Keeping **both** `NC_*` and `NEXTCLOUD_*`/`MYSQL_*` is deliberate to avoid warnings and ensure CLI operations have all the data.
+
+---
+
+## 4.5) Secrets & runtime
+
+- **Public repo**: `.env.example` and `*.env.example` include placeholders only.
+- **Runtime**: keep real DB credentials in `stacks/nextcloud/db.env` (not committed).
+- **Provisioning**: copy `stacks/nextcloud/secrets/db.env.example` to your runtime `stacks/nextcloud/db.env` and fill in values.
+- **Why**: isolating secrets reduces accidental leaks when sharing or reviewing `.env`.
+- **Policy**: never commit secrets into this repo.
 
 ---
 
@@ -242,7 +252,7 @@ docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
 
 ## 9) Data & backups (quick notes)
 
-**Named volumes** (auto-prefixed by `COMPOSE_PROJECT_NAME=nextcloud`):
+**Named volumes** (auto-prefixed by `COMPOSE_PROJECT_NAME=yourproject`):
 - `nextcloud_db` — MariaDB data
 - `nextcloud_redis` — Redis AOF
 - `nextcloud_nextcloud` — Nextcloud code tree, incl. `/var/www/html/config` and `/var/www/html/data`

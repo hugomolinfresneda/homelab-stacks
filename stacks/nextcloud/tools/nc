@@ -9,7 +9,7 @@ set -euo pipefail
 WORKSPACE=${WORKSPACE:-$HOME/Proyectos/Curro}
 STACKS_REPO=${STACKS_REPO:-"$WORKSPACE/homelab-stacks"}
 RUNTIME_DIR=${RUNTIME_DIR:-"$WORKSPACE/homelab-runtime/stacks/nextcloud"}
-ENV_FILE="$RUNTIME_DIR/.env"
+ENV_FILES=${ENV_FILES:-"$RUNTIME_DIR/.env"}
 QUIET=${QUIET:-0}                 # 1 = reduced output
 
 # Optional, space-separated: e.g. PROFILES="monitoring debug"
@@ -33,6 +33,15 @@ build_profile_flags() {
   printf '%s' "$flags"
 }
 
+build_env_flags() {
+  local flags=""
+  local f
+  for f in ${ENV_FILES}; do
+    [[ -n "$f" ]] && flags+=" --env-file \"$f\""
+  done
+  printf '%s' "$flags"
+}
+
 # For 'down': include current profiles and, if exporters are detected,
 # ensure "--profile monitoring" is present even if not specified.
 build_profile_flags_for_down() {
@@ -45,10 +54,11 @@ build_profile_flags_for_down() {
 }
 
 PROF_STR="$(build_profile_flags)"
+ENV_STR="$(build_env_flags)"
 
-BASE="docker compose --env-file \"$ENV_FILE\"$PROF_STR -f \"$BASE_FILE\""
-OVRD="docker compose --env-file \"$ENV_FILE\"$PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
-OVRD_MON="docker compose --env-file \"$ENV_FILE\" --profile monitoring -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+BASE="docker compose$ENV_STR$PROF_STR -f \"$BASE_FILE\""
+OVRD="docker compose$ENV_STR$PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+OVRD_MON="docker compose$ENV_STR --profile monitoring -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
 
 # ---------- Helpers ----------
 log()  { echo "▶ $*"; }
@@ -190,7 +200,7 @@ case "${1:-}" in
   down)
     # Build a compose command that includes profiles for exporters if needed.
     DOWN_PROF_STR="$(build_profile_flags_for_down)"
-    CMD_DOWN="docker compose --env-file \"$ENV_FILE\"$DOWN_PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+    CMD_DOWN="docker compose$ENV_STR$DOWN_PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
 
     if [[ "$DOWN_PROF_STR" == *"--profile monitoring"* ]]; then
       log "Stopping stack (including monitoring profile)"
