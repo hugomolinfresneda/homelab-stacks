@@ -1,0 +1,21 @@
+# Runtime-only overrides for Nextcloud: custom php.ini + optional local web bind.
+# Replace placeholders:
+# - /path/to/runtime/nextcloud/php.ini (custom PHP settings)
+# Variables (from .env.example):
+# - HTTP_PORT: host port for local web access (optional)
+# - BIND_LOCALHOST: bind address for local-only access (optional)
+# Security: keep ports on loopback and never commit secrets.
+
+services:
+  app:
+    volumes:
+      - /path/to/runtime/nextcloud/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
+
+  cron:
+    volumes:
+      - /path/to/runtime/nextcloud/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
+
+  web:
+    # Optional local bind for the internal Nginx
+    # ports:
+    #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8082}:8080"

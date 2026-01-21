@@ -1,0 +1,22 @@
+# Runtime-only overrides for AdGuard Home: persistence + optional local binds.
+# Replace placeholders:
+# - /path/to/runtime/adguard-home/conf (AdGuardHome.yaml)
+# - /path/to/runtime/adguard-home/work (runtime data)
+# Variables (from .env.example):
+# - WEB_PORT: host port for the UI (optional)
+# - DNS_PORT: host port for DNS (optional)
+# Optional port bind (defaults inline):
+# - BIND_LOCALHOST: bind address for local-only access (default: 127.0.0.1)
+#   You may define these in your runtime .env if you want different values.
+# Security: keep ports on loopback and never commit secrets.
+
+services:
+  adguard-home:
+    volumes:
+      - /path/to/runtime/adguard-home/conf:/opt/adguardhome/conf
+      - /path/to/runtime/adguard-home/work:/opt/adguardhome/work
+    # Optional local binds (recommended: loopback only)
+    # ports:
+    #   - "${BIND_LOCALHOST:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    #   - "${BIND_LOCALHOST:-127.0.0.1}:${DNS_PORT:-53}:53/tcp"
+    #   - "${BIND_LOCALHOST:-127.0.0.1}:${DNS_PORT:-53}:53/udp"
