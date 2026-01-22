@@ -30,6 +30,10 @@ stacks/*/data/
 stacks/monitoring/.env.demo
 stacks/monitoring/compose.yaml.bak*
 
+# Runtime-only blackbox targets
+stacks/monitoring/prometheus/targets/*.yml
+!stacks/monitoring/prometheus/targets/*.example.yml
+
 # Ignore real configs in local.d but not the templates
 stacks/*/local.d/*.ini
 !stacks/*/local.d/*.ini.example
@@ -37,3 +41,6 @@ stacks/*/local.d/*.ini
 
 # artefacto accidental (literal $HOME)
 $HOME/
+
+# audit dir
+reports/

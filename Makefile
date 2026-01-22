@@ -64,9 +64,9 @@ help:
 	@echo "Monitoring (Prometheus/Grafana) helpers:"
 	@echo "  make check-prom                   - promtool check config (mon)"
 	@echo "  make reload-prom                  - send HUP to prometheus (monitoring stack)"
-	@echo "  make bb-ls [JOB=blackbox-http]    - List targets in mon"
-	@echo "  make bb-add JOB=... TARGET=...    - Add target in mon"
-	@echo "  make bb-rm  JOB=... TARGET=...    - Remove target in mon"
+	@echo "  make bb-ls  [JOB=blackbox-http] BB_TARGETS_MAP=... - List targets in mon (runtime only)"
+	@echo "  make bb-add JOB=... TARGET=... BB_TARGETS_MAP=...  - Add target in mon (runtime only)"
+	@echo "  make bb-rm  JOB=... TARGET=... BB_TARGETS_MAP=...  - Remove target in mon (runtime only)"
 	@echo ""
 	@echo "Restic (infra dual-repo) helpers:"
 	@echo "  make backup stack=restic          - Run Restic backup via systemd (uses $(RESTIC_ENV_FILE))"
@@ -390,23 +390,27 @@ reload-prom:
 # Variables: JOB (defaults to blackbox-http), TARGET (required for add/rm)
 JOB ?= blackbox-http
 TARGET ?=
+BB_TARGETS_MAP ?=
 
 bb-ls:
+	@if [ -z "$(BB_TARGETS_MAP)" ]; then echo "error: set BB_TARGETS_MAP with --targets-file job=path (runtime targets required)"; exit 1; fi
 	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" ls "$(JOB)"
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" $(BB_TARGETS_MAP) ls "$(JOB)"
 
 bb-add:
 	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
+	@if [ -z "$(BB_TARGETS_MAP)" ]; then echo "error: set BB_TARGETS_MAP with --targets-file job=path (runtime targets required)"; exit 1; fi
 	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" add "$(JOB)" "$(TARGET)"
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" $(BB_TARGETS_MAP) add "$(JOB)" "$(TARGET)"
 
 bb-rm:
 	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
+	@if [ -z "$(BB_TARGETS_MAP)" ]; then echo "error: set BB_TARGETS_MAP with --targets-file job=path (runtime targets required)"; exit 1; fi
 	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
-	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" rm "$(JOB)" "$(TARGET)"
+	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" $(BB_TARGETS_MAP) rm "$(JOB)" "$(TARGET)"
 
 print-mon:
 	@printf 'STACKS_REPO=%s\nMON_STACK_DIR=%s\n' '$(STACKS_REPO)' '$(MON_STACK_DIR)'

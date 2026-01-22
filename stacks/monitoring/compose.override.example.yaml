@@ -18,6 +18,11 @@ services:
       - mon-net
     restart: unless-stopped
 
+  prometheus:
+    volumes:
+      # Runtime-only blackbox targets (file_sd_configs)
+      - /opt/homelab-runtime/stacks/monitoring/prometheus/targets:/etc/prometheus/targets:ro${SELINUX_SUFFIX}
+
   promtail:
     environment:
       DOCKER_HOST: ${DOCKER_HOST}
