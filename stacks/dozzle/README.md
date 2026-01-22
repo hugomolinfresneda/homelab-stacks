@@ -86,10 +86,21 @@ docker compose \
 
 ```yaml
 services:
-  dozzle:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
+    environment:
+      - CONTAINERS=1
+      # - EVENTS=1 # uncomment if you need live container start/stop updates
     volumes:
       # Rootless example: /run/user/<UID>/docker.sock
       - ${DOCKER_SOCK:-<ROOTLESS_DOCKER_SOCK>}:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    restart: unless-stopped
+
+  dozzle:
+    environment:
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     # Optional: bind locally for debugging
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8081}:8080"
@@ -150,9 +161,19 @@ Ensure TLS (Let’s Encrypt) and proper access control (Basic Auth or Cloudflare
 ## Security notes
 
 * Never expose Dozzle publicly without authentication.
-* Mount the Docker socket **read-only**.
+* Avoid mounting the Docker socket directly in Dozzle; use a socket proxy with minimal endpoints.
+* Keep the proxy internal (no published ports) and on a trusted network.
 * Keep it isolated within the shared `proxy` network.
 * When running rootless Docker, use `<ROOTLESS_DOCKER_SOCK>`.
+
+## Why socket proxy
+
+The Docker API is powerful and effectively grants root-equivalent control over the host.
+Using `docker-socket-proxy` limits the exposed endpoints to the minimum Dozzle needs,
+reducing blast radius if the container is ever compromised.
+
+If Dozzle is missing live updates when containers start/stop, enable the `EVENTS=1`
+endpoint in the proxy. Add other endpoints only when you can justify the need.
 
 ---
 
