@@ -22,11 +22,25 @@ must never be published. For runtime overrides, see `docs/runtime-overrides.md`.
 - Real values are provided at runtime via local env files or secret stores.
 - Defaults, if any, are non-sensitive and safe for public display.
 
+## Paths and Targets (Sensitive vs Default)
+- Sensitive/personal path: host-specific absolute paths that reveal real mounts, usernames,
+  devices, or data locations (e.g., `/home/<user>/...`, `/mnt/<disk>/...`). Keep these
+  only in runtime overrides or local env files.
+- Default configurable convention: repo-safe defaults used in docs/templates (e.g.,
+  `/opt/homelab-stacks`, `/opt/homelab-runtime`, `/path/to/runtime/<stack>`). These are
+  conventions/placeholders and must be overridable via runtime config (see
+  `docs/runtime-overrides.md`).
+- Real targets (hostnames/IPs, including private IPv4 RFC1918 and private IPv6/ULA) belong
+  only in runtime. Examples in the repo must use placeholders or documentation ranges:
+  RFC5737 IPv4 (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) and RFC3849 IPv6
+  (`2001:db8::/32`).
+
 ## Never Publish in This Repo
 - Secrets, tokens, API keys, or passwords.
-- Runtime overrides, real env files, or secret files.
-- Real host paths, IPs, or infrastructure identifiers.
-- Private registry credentials or deployment endpoints.
+- Runtime overrides with real values, real env files, or secret files (templates like
+  `.env.example` and `compose.override.example.yaml` are ok).
+- Sensitive/personal host paths or real infrastructure identifiers (see "Paths and Targets").
+- Private registry credentials or real deployment endpoints/targets.
 - Any runtime-generated files that include sensitive context.
 
 ## Demo-Only Usage (No Runtime)
