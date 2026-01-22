@@ -48,7 +48,8 @@ On the **host** (Proxmox node / VM):
 
 For observability (optional):
 
-- `node_exporter` with the **textfile collector** enabled and pointing to:
+- `node_exporter` with the **textfile collector** enabled and pointing to your
+  textfile directory (default shown below):
 
   ```text
   /var/lib/node_exporter/textfile_collector
@@ -98,6 +99,10 @@ export RUN_FORGET=1
 # Prefer this var name (singular). The script also accepts EXCLUDE_FILE and legacy RESTIC_EXCLUDES_FILE.
 export RESTIC_EXCLUDE_FILE="/opt/homelab-stacks/ops/backups/exclude.txt"
 
+# Prometheus textfile collector (optional)
+# Default is /var/lib/node_exporter/textfile_collector
+# export BACKUP_TEXTFILE_DIR="/path/to/textfile_collector"
+
 # Uptime Kuma (Push monitor)
 export KUMA_PUSH_URL="https://uptime-kuma.<YOUR_DOMAIN>/api/push/<YOUR_TOKEN>"
 # Optional DNS override for Kuma push (hairpin NAT/DNS issues)
@@ -135,8 +140,11 @@ The backup script sources a shared helper:
 When the backup runs as **root** and node_exporter’s textfile collector is configured, it writes:
 
 ```text
-/var/lib/node_exporter/textfile_collector/restic_backup.prom
+${BACKUP_TEXTFILE_DIR}/restic_backup.prom
 ```
+
+(`BACKUP_TEXTFILE_DIR` defaults to `/var/lib/node_exporter/textfile_collector` and can be
+overridden via the environment, e.g. in `restic.env`.)
 
 with the following gauges:
 

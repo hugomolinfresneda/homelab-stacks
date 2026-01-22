@@ -1197,8 +1197,9 @@ Layout summary (the dashboard lives in **10_Infra / Host – System overview**):
   filesystem (`/`). The panel is wired to the `node_filesystem_` metrics and filters out
   pseudo-mounts and bind-mount noise.
 
-Note: the dashboard uses a textbox variable `backups_mountpoint` to include the backup
-filesystem in the panels. Default is `/mnt/backups`; update it if your mountpoint differs.
+Note: the dashboard uses a textbox variable `backups_mountpoint` to include the backups
+filesystem in the panels. Set it to your backups mountpoint (e.g. `/path/to/backups`),
+or leave it empty to disable path filtering.
 
 **Second row – memory & swap**
 

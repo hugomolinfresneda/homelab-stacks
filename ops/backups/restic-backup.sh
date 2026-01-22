@@ -31,9 +31,6 @@ else
   log "[WARN] backup-metrics helper not found; Prometheus metrics disabled"
 fi
 
-# Must match the directory mounted in node_exporter (--collector.textfile.directory)
-METRIC_FILE="/var/lib/node_exporter/textfile_collector/restic_backup.prom"
-
 # ------------------------------------------------------------------------------
 # Uptime Kuma integration
 # ------------------------------------------------------------------------------
@@ -81,6 +78,10 @@ fi
 # Resolve exclude precedence: EXCLUDE_FILE > RESTIC_EXCLUDE_FILE > RESTIC_EXCLUDES_FILE > default
 EXCLUDE_FILE="${EXCLUDE_FILE:-${RESTIC_EXCLUDE_FILE:-${RESTIC_EXCLUDES_FILE:-/opt/homelab-stacks/ops/backups/exclude.txt}}}"
 RUN_FORGET="${RUN_FORGET:-1}"
+
+# Prometheus textfile collector output (can be overridden via BACKUP_TEXTFILE_DIR)
+BACKUP_TEXTFILE_DIR="${BACKUP_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
+METRIC_FILE="${BACKUP_TEXTFILE_DIR%/}/restic_backup.prom"
 
 # ------------------------------------------------------------------------------
 # 2) Preflight checks

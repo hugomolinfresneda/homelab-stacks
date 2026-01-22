@@ -1046,20 +1046,20 @@
     "list": [
       {
         "current": {
-          "text": "/mnt/backups",
-          "value": "/mnt/backups"
+          "text": "",
+          "value": ""
         },
-        "description": "Backup mountpoint to include in filesystem panels.",
-        "label": "backup mountpoint",
+        "description": "Set to your backups mountpoint path (e.g. /path/to/backups). Leave empty to disable path filtering.",
+        "label": "Backups mountpoint",
         "name": "backups_mountpoint",
         "options": [
           {
             "selected": true,
-            "text": "/mnt/backups",
-            "value": "/mnt/backups"
+            "text": "",
+            "value": ""
           }
         ],
-        "query": "/mnt/backups",
+        "query": "",
         "type": "textbox"
       }
     ]
