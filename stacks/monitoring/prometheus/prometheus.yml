@@ -25,12 +25,10 @@ scrape_configs:
     metrics_path: /probe
     params:
       module: [http_2xx]
-    static_configs:
-      - targets:
-          - https://cloud.atardecer-naranja.es/status.php
-          - https://couchdb.atardecer-naranja.es/_up
-          - https://dozzle.atardecer-naranja.es/
-          - https://uptime-kuma.atardecer-naranja.es/
+    # runtime should supply real targets via file_sd_configs
+    file_sd_configs:
+      - files:
+          - targets/blackbox-http.yml
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -45,10 +43,10 @@ scrape_configs:
     metrics_path: /probe
     params:
       module: [icmp]
-    static_configs:
-      - targets:
-          - 1.1.1.1
-          - 8.8.8.8
+    # runtime should supply real targets via file_sd_configs
+    file_sd_configs:
+      - files:
+          - targets/blackbox-icmp.yml
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

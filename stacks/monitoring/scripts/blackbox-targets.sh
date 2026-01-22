@@ -13,14 +13,15 @@ die(){ echo "Error: $*" >&2; exit 1; }
 usage(){
   cat <<'USAGE' >&2
 Usage:
-  stacks/monitoring/scripts/blackbox-targets.sh [--demo|--file <path>] ls [job] [--raw]
-  stacks/monitoring/scripts/blackbox-targets.sh [--demo|--file <path>] add <job> <target>
-  stacks/monitoring/scripts/blackbox-targets.sh [--demo|--file <path>] rm  <job> <target>
+  stacks/monitoring/scripts/blackbox-targets.sh [--demo|--file <path>] [--targets-file <job>=<path>] ls [job] [--raw]
+  stacks/monitoring/scripts/blackbox-targets.sh [--demo|--file <path>] [--targets-file <job>=<path>] add <job> <target>
+  stacks/monitoring/scripts/blackbox-targets.sh [--demo|--file <path>] [--targets-file <job>=<path>] rm  <job> <target>
 
 Examples:
   stacks/monitoring/scripts/blackbox-targets.sh --demo ls
   stacks/monitoring/scripts/blackbox-targets.sh add blackbox-http https://example.org
-  stacks/monitoring/scripts/blackbox-targets.sh --demo rm blackbox-http http://127.0.0.1:65535
+  stacks/monitoring/scripts/blackbox-targets.sh --demo rm blackbox-http http://example.com:65535
+  stacks/monitoring/scripts/blackbox-targets.sh --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml ls blackbox-http
 USAGE
   exit 1
 }
@@ -48,6 +49,7 @@ MOUNT_OPTS="$(selinux_flag)"
 
 PROM_FILE="$PROM_FILE_MON"
 RELOAD_HINT="$RELOAD_HINT_MON"
+declare -A TARGETS_MAP=()
 
 # --- Parse flags/action -------------------------------------------------------
 ACTION=""
@@ -66,6 +68,19 @@ while [[ $# -gt 0 ]]; do
         esac
       else
         PROM_FILE="$2"
+      fi
+      shift 2;;
+    --targets-file)
+      [[ $# -ge 2 ]] || die "Missing job=path after --targets-file"
+      case "$2" in
+        *=*) map_job="${2%%=*}"; map_path="${2#*=}" ;;
+        *) die "Expected <job>=<path> after --targets-file" ;;
+      esac
+      [[ -n "$map_path" ]] || die "Empty path in --targets-file"
+      if [[ "$map_path" = /* ]]; then
+        TARGETS_MAP["$map_job"]="$map_path"
+      else
+        TARGETS_MAP["$map_job"]="$ROOT/$map_path"
       fi
       shift 2;;
     ls|add|rm) ACTION="$1"; shift; break;;
@@ -89,6 +104,64 @@ yq_eval(){
     docker run --rm       -e JOB -e TARGET       -v "${mount_src}:${mount_dest}${MOUNT_OPTS}" -w "$mount_dest"       mikefarah/yq:4 "$@" "$(basename "$HOST_FILE")"
   else
     docker run --rm       -e JOB -e TARGET       -v "${ROOT}:/workdir${MOUNT_OPTS}" -w /workdir       mikefarah/yq:4 "$@" "$PROM_FILE"
+  fi
+}
+
+# Resolve file_sd_configs target file for a job (if present)
+target_file_from_job(){
+  local job="$1"
+  JOB="$job" yq_eval -r '
+    .scrape_configs[]
+    | select(.job_name == env(JOB))
+    | .file_sd_configs[0].files[0] // ""'
+}
+
+resolve_target_file(){
+  local job="$1"
+  local file
+  local override="${TARGETS_MAP[$job]:-}"
+  if [[ -n "$override" ]]; then
+    HOST_TARGET_FILE="$override"
+    return 0
+  fi
+  file="$(target_file_from_job "$job")"
+  if [[ -z "$file" || "$file" == "null" ]]; then
+    return 1
+  fi
+  if [[ "$file" = /* ]]; then
+    HOST_TARGET_FILE="$file"
+  else
+    HOST_TARGET_FILE="$(dirname "$HOST_FILE")/$file"
+  fi
+}
+
+yq_eval_target(){
+  need_docker
+  local mount_src mount_dest
+  mount_src="$(dirname "$HOST_TARGET_FILE")"
+  mount_dest="/hostdir"
+  docker run --rm \
+    -e JOB -e TARGET \
+    -v "${mount_src}:${mount_dest}${MOUNT_OPTS}" -w "$mount_dest" \
+    mikefarah/yq:4 "$@" "$(basename "$HOST_TARGET_FILE")"
+}
+
+yq_update_target(){
+  local expr="$1"
+  need_docker
+  local tmp
+  tmp="$(mktemp)"
+  JOB="${JOB:-}" TARGET="${TARGET:-}" yq_eval_target -o=yaml "$expr" > "$tmp"
+  cat "$tmp" > "$HOST_TARGET_FILE"
+  rm -f "$tmp"
+}
+
+ensure_target_file(){
+  local dir
+  dir="$(dirname "$HOST_TARGET_FILE")"
+  mkdir -p "$dir"
+  if [ ! -f "$HOST_TARGET_FILE" ]; then
+    printf -- "- targets: []\n" > "$HOST_TARGET_FILE"
   fi
 }
 
@@ -144,14 +217,26 @@ case "$ACTION" in
     RAW="${2:-}"
     check_job "$JOB"
 
-    mapfile -t TARGETS < <(
-      JOB="$JOB" yq_eval -r '
-        .scrape_configs[]
-        | select(.job_name == env(JOB))
-        | (.static_configs // [])[]
-        | (.targets // [])
-        | .[]'
-    )
+    TARGET_MODE="static"
+    if resolve_target_file "$JOB"; then
+      TARGET_MODE="file_sd"
+      if [ -f "$HOST_TARGET_FILE" ]; then
+        mapfile -t TARGETS < <(
+          yq_eval_target -r '.[]? | (.targets // [])[]'
+        )
+      else
+        TARGETS=()
+      fi
+    else
+      mapfile -t TARGETS < <(
+        JOB="$JOB" yq_eval -r '
+          .scrape_configs[]
+          | select(.job_name == env(JOB))
+          | (.static_configs // [])[]
+          | (.targets // [])
+          | .[]'
+      )
+    fi
 
     if [[ "$RAW" == "--raw" ]]; then
       printf "%s
@@ -159,7 +244,12 @@ case "$ACTION" in
       exit 0
     fi
 
-    echo "File: $HOST_FILE"
+    if [[ "$TARGET_MODE" == "file_sd" ]]; then
+      echo "Config: $HOST_FILE"
+      echo "Targets file: $HOST_TARGET_FILE"
+    else
+      echo "File: $HOST_FILE"
+    fi
     echo "Job:  $JOB"
     echo "Targets (${#TARGETS[@]}):"
     i=1; for t in "${TARGETS[@]:-}"; do printf "  %2d) %s
@@ -171,24 +261,36 @@ case "$ACTION" in
     JOB="$1"; TARGET="$2"
     check_job "$JOB"
 
-    # already present?
-    if JOB="$JOB" yq_eval -r '
-        .scrape_configs[] | select(.job_name == env(JOB))
-        | (.static_configs // [])[]
-        | (.targets // [])
-        | .[]' | grep -Fxq "$TARGET"; then
-      echo "Already present in $JOB: $TARGET"
-      exit 0
-    fi
+    if resolve_target_file "$JOB"; then
+      ensure_target_file
+      if yq_eval_target -r '.[]? | (.targets // [])[]' | grep -Fxq "$TARGET"; then
+        echo "Already present in $JOB: $TARGET"
+        exit 0
+      fi
+      yq_update_target '
+        (. // [ {"targets": []} ])
+        | .[0].targets = ((.[0].targets // []) + [env(TARGET)] | unique | sort )
+      '
+    else
+      # already present?
+      if JOB="$JOB" yq_eval -r '
+          .scrape_configs[] | select(.job_name == env(JOB))
+          | (.static_configs // [])[]
+          | (.targets // [])
+          | .[]' | grep -Fxq "$TARGET"; then
+        echo "Already present in $JOB: $TARGET"
+        exit 0
+      fi
 
-    # ensure list exists, then append, uniq + sort for idempotency
-    yq_update '
-      (.scrape_configs[] | select(.job_name == env(JOB)) | .static_configs) |=
-        ( . // [ {"targets": []} ] )
-      |
-      (.scrape_configs[] | select(.job_name == env(JOB)) | .static_configs[0].targets) |=
-        ( (. // []) + [env(TARGET)] | unique | sort )
-    '
+      # ensure list exists, then append, uniq + sort for idempotency
+      yq_update '
+        (.scrape_configs[] | select(.job_name == env(JOB)) | .static_configs) |=
+          ( . // [ {"targets": []} ] )
+        |
+        (.scrape_configs[] | select(.job_name == env(JOB)) | .static_configs[0].targets) |=
+          ( (. // []) + [env(TARGET)] | unique | sort )
+      '
+    fi
 
     echo "Added to $JOB: $TARGET"
     validate_config
@@ -199,10 +301,18 @@ case "$ACTION" in
     JOB="$1"; TARGET="$2"
     check_job "$JOB"
 
-    yq_update '
-      (.scrape_configs[] | select(.job_name == env(JOB)) | .static_configs[]?.targets) |=
-        ( (. // []) | map(select(. != env(TARGET))) )
-    '
+    if resolve_target_file "$JOB"; then
+      ensure_target_file
+      yq_update_target '
+        (. // [])
+        | .[0].targets = ((.[0].targets // []) | map(select(. != env(TARGET))))
+      '
+    else
+      yq_update '
+        (.scrape_configs[] | select(.job_name == env(JOB)) | .static_configs[]?.targets) |=
+          ( (. // []) | map(select(. != env(TARGET))) )
+      '
+    fi
 
     echo "Removed from $JOB (if it existed): $TARGET"
     validate_config

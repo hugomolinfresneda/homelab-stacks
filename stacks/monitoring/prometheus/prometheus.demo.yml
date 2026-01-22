@@ -30,9 +30,10 @@ scrape_configs:
       module: [http_external]
     static_configs:
       - targets:
+          # runtime should supply real targets; this is an example placeholder
           - https://example.com
           - https://example.org
-          - https://httpstat.us/200
+          - https://example.net
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -47,9 +48,10 @@ scrape_configs:
       module: [icmp]
     static_configs:
       - targets:
-          - 1.1.1.1
-          - 52.250.42.159
-          - 8.8.8.8
+          # runtime should supply real targets; this is an example placeholder
+          - 192.0.2.20
+          - 198.51.100.25
+          - 203.0.113.30
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

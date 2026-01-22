@@ -1,0 +1,6 @@
+# Example targets only. Copy to blackbox-icmp.yml for runtime use.
+- targets:
+    - 192.0.2.10
+    - 198.51.100.15
+  labels:
+    env: example

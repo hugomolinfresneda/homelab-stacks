@@ -738,33 +738,57 @@ Manage the HTTP/ICMP probe target lists that Prometheus scrapes via **Blackbox E
 The helper uses containerized **yq** and **promtool**, so you only need Docker on the host.
 Changes are **idempotent** (deduplicate + sort) and validated with `promtool`.
 
+For the **main stack**, blackbox targets are loaded via `file_sd_configs` from:
+
+- `stacks/monitoring/prometheus/targets/blackbox-http.yml`
+- `stacks/monitoring/prometheus/targets/blackbox-icmp.yml`
+
+Copy the example files in `stacks/monitoring/prometheus/targets/*.example.yml` to those
+paths in your private runtime and replace the placeholders. These runtime files are
+intended to stay private (gitignored).
+
 ### 17.1 Direct script usage
 
 ```bash
-# Main stack (project: monitoring)
-stacks/monitoring/scripts/blackbox-targets.sh ls [blackbox-http]
+# Main stack (project: monitoring, runtime targets map required)
+stacks/monitoring/scripts/blackbox-targets.sh \
+  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml \
+  ls blackbox-http
 
-stacks/monitoring/scripts/blackbox-targets.sh add blackbox-http https://example.org
+stacks/monitoring/scripts/blackbox-targets.sh \
+  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml \
+  add blackbox-http https://example.org
 
-stacks/monitoring/scripts/blackbox-targets.sh rm  blackbox-http https://example.org
+stacks/monitoring/scripts/blackbox-targets.sh \
+  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml \
+  rm blackbox-http https://example.org
 ```
 
-**Demo stack** (isolated `demo-*` services):
+**Demo stack** (isolated `demo-*` services, inline targets; no map required):
 
 ```bash
 stacks/monitoring/scripts/blackbox-targets.sh --demo ls
-stacks/monitoring/scripts/blackbox-targets.sh --demo add blackbox-http https://httpstat.us/200
-stacks/monitoring/scripts/blackbox-targets.sh --demo rm  blackbox-http https://httpstat.us/200
+stacks/monitoring/scripts/blackbox-targets.sh --demo add blackbox-http https://example.net
+stacks/monitoring/scripts/blackbox-targets.sh --demo rm  blackbox-http https://example.net
 ```
 
 **Explicit file selection** (advanced):
 
 ```bash
-stacks/monitoring/scripts/blackbox-targets.sh   --file stacks/monitoring/prometheus/prometheus.yml   add blackbox-http https://cloudflare.com
+stacks/monitoring/scripts/blackbox-targets.sh \
+  --file stacks/monitoring/prometheus/prometheus.yml \
+  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+  add blackbox-http https://example.com
 ```
 
 After a change the script runs `promtool check config`.
 To apply the new targets, reload Prometheus:
+
+> Demo targets still live inline in `stacks/monitoring/prometheus/prometheus.demo.yml`
+> and are managed the same way as before.
 
 ```bash
 make reload-prom         # main stack
@@ -779,9 +803,17 @@ These delegate to the script above and pick the right file automatically:
 
 ```bash
 # Main stack (project: monitoring)
-make bb-ls                 [JOB=blackbox-http]
-make bb-add  TARGET=<url>  [JOB=blackbox-http]
-make bb-rm   TARGET=<url>  [JOB=blackbox-http]
+make bb-ls  BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+                            --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml" \
+           [JOB=blackbox-http]
+make bb-add TARGET=<url> \
+           BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+                           --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml" \
+           [JOB=blackbox-http]
+make bb-rm  TARGET=<url> \
+           BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+                           --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml" \
+           [JOB=blackbox-http]
 make reload-prom
 
 # Demo stack (project-scoped)
@@ -794,8 +826,11 @@ make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PRO
 **Examples**
 
 ```bash
-make bb-ls
-make bb-add TARGET=https://cloudflare.com
+make bb-ls BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+                           --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml"
+make bb-add TARGET=https://example.com \
+  BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+                  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml"
 make reload-prom
 
 make -f stacks/monitoring/Makefile.demo bb-ls-demo
@@ -806,7 +841,10 @@ make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PRO
 **Notes**
 
 - Jobs must already exist in the Prometheus config (see `stacks/monitoring/prometheus/*.yml`).
-- The helper ensures the `static_configs[0].targets` list exists, appends the target, runs `unique | sort`, and writes back safely.
+- For `file_sd_configs` jobs, the helper ensures the target file has at least one group,
+  appends the target, runs `unique | sort`, and writes back safely.
+- The main stack wrappers require `BB_TARGETS_MAP` and operate on runtime targets only.
+- For demo (inline static configs), it edits `static_configs[0].targets` in the config file.
 - If you see `error: no prometheus.(yml|yaml)…`, check the files exist in `stacks/monitoring/prometheus/`.
 
 ---
