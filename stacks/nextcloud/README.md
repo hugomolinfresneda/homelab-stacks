@@ -96,7 +96,8 @@ PGID=your-gid
 
 # Public fqdn and trusted domains (space-separated)
 NC_DOMAIN=your-domain.tld
-NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} your-alt-domain.tld your-local-host
+NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} 
+# For multiple trusted domains: configure them in Nextcloud after install, or update compose to pass them through (follow-up PR).
 
 # DB credentials (duplicated for Nextcloud's CLI)
 NC_DB_NAME=exampledb
@@ -107,8 +108,7 @@ NC_DB_ROOT=changeme
 # Nextcloud admin bootstrap
 NC_ADMIN_USER=your-admin-user
 NC_ADMIN_PASS=changeme
-NEXTCLOUD_ADMIN_USER=${NC_ADMIN_USER}
-NEXTCLOUD_ADMIN_PASSWORD=${NC_ADMIN_PASS}
+# NEXTCLOUD_ADMIN_* is derived in compose.yaml from NC_ADMIN_*
 
 # PHP limits
 PHP_MEMORY_LIMIT=your-memory-limit
@@ -123,7 +123,7 @@ HTTP_PORT=your-port
 > `<project>-<service>-1`. Keep `COMPOSE_PROJECT_NAME=yourproject` (or use the
 > Makefile/helpers) so `docker compose ps` stays readable.
 
-> Keeping **both** `NC_*` and `NEXTCLOUD_*`/`MYSQL_*` is deliberate to avoid warnings and ensure CLI operations have all the data.
+> `compose.yaml` maps `NEXTCLOUD_ADMIN_*` and `MYSQL_*` from `NC_*` values, so you only need to set the `NC_*` variables in your runtime `.env`.
 
 ---
 
