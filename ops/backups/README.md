@@ -15,6 +15,13 @@ Backs up your **public stacks definition** and **private runtime state** with [r
 
 ---
 
+## Canonical paths (setup)
+Use these variables in commands and file paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+```
+
 ## Architecture
 
 | Repository          | Purpose                                                                                          |
@@ -44,7 +51,7 @@ On the **host** (Proxmox node / VM):
 - `restic` installed.
 - `systemd` available (the backup runs as a root oneshot service).
 - A backup repository (local directory, S3/B2, rclone remote, …).
-- A dual layout on disk (`/opt/homelab-stacks` + `/opt/homelab-runtime`).
+- A dual layout on disk (`STACKS_DIR` + `RUNTIME_ROOT`; e.g. `/opt/homelab-stacks` y `/opt/homelab-runtime`).
 
 For observability (optional):
 
@@ -62,25 +69,26 @@ For observability (optional):
 ## File layout
 
 ```text
-/opt/homelab-stacks/
+${STACKS_DIR}/
 └── ops/backups/
     ├── restic-backup.sh
     └── exclude.txt
 
-/opt/homelab-runtime/
+${RUNTIME_ROOT}/
 └── ops/backups/
     └── restic.env        # repo/password/policy/paths (not in git)
 ```
 
 ---
 
-## Runtime configuration (`/opt/homelab-runtime/ops/backups/restic.env`)
+## Runtime configuration (`${RUNTIME_ROOT}/ops/backups/restic.env`)
+Example path: e.g. `/opt/homelab-runtime/ops/backups/restic.env`.
 
 Minimal example (aligns with the example env file shipped next to it):
 
 ```dotenv
 # --- Restic ---
-export BACKUPS_DIR="/path/to/backups"                   # base mount for local backup storage
+export BACKUPS_DIR="/abs/path/backups"                  # base mount for local backup storage
 export RESTIC_REPOSITORY="${BACKUPS_DIR}/homelab-restic" # or s3:..., b2:..., rclone:...
 export RESTIC_PASSWORD="CHANGE_ME"
 
@@ -97,11 +105,11 @@ export RUN_FORGET=1
 
 # Exclusions
 # Prefer this var name (singular). The script also accepts EXCLUDE_FILE and legacy RESTIC_EXCLUDES_FILE.
-export RESTIC_EXCLUDE_FILE="/opt/homelab-stacks/ops/backups/exclude.txt"
+export RESTIC_EXCLUDE_FILE="${STACKS_DIR}/ops/backups/exclude.txt"
 
 # Prometheus textfile collector (optional)
 # Default is /var/lib/node_exporter/textfile_collector
-# export BACKUP_TEXTFILE_DIR="/path/to/textfile_collector"
+# export BACKUP_TEXTFILE_DIR="/abs/path/textfile_collector"
 
 # Uptime Kuma (Push monitor)
 export KUMA_PUSH_URL="https://uptime-kuma.<YOUR_DOMAIN>/api/push/<YOUR_TOKEN>"
@@ -112,16 +120,16 @@ export KUMA_PUSH_URL="https://uptime-kuma.<YOUR_DOMAIN>/api/push/<YOUR_TOKEN>"
 # NOTE: do NOT put the Nextcloud data volume here; use the dedicated nc-backup.sh flow.
 BACKUP_PATHS=(
   # Public infra (scripts, ops, etc.)
-  "/opt/homelab-stacks/ops"
+  "${STACKS_DIR}/ops"
 
   # CouchDB (bind)
-  "/opt/homelab-runtime/stacks/couchdb/data"
+  "${RUNTIME_ROOT}/stacks/couchdb/data"
 
   # Nextcloud backup artifacts (sql+tar+.sha256), not the data volume
   "${BACKUPS_DIR}/nextcloud"
 
   # Uptime Kuma data (bind)
-  "/opt/homelab-runtime/stacks/uptime-kuma/data"
+  "${RUNTIME_ROOT}/stacks/uptime-kuma/data"
 )
 ```
 
@@ -134,7 +142,7 @@ BACKUP_PATHS=(
 The backup script sources a shared helper:
 
 ```text
-/opt/homelab-stacks/ops/backups/lib/backup-metrics.sh
+${STACKS_DIR}/ops/backups/lib/backup-metrics.sh
 ```
 
 When the backup runs as **root** and node_exporter’s textfile collector is configured, it writes:
@@ -164,7 +172,7 @@ If the script runs as a **non-root** user and cannot write into the textfile col
 
 ## Deployment (Makefile integration)
 
-From the **stacks** repo (`/opt/homelab-stacks`):
+From the **stacks** repo (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
 
 ```bash
 make backup stack=restic
@@ -173,7 +181,8 @@ make backup stack=restic
 This target:
 
 - triggers the backup via the `homelab-restic-backup.service` systemd unit (root),
-- uses `/opt/homelab-runtime/ops/backups/restic.env` as its configuration source,
+- uses `${RUNTIME_ROOT}/ops/backups/restic.env` as its configuration source
+  (e.g. `/opt/homelab-runtime/ops/backups/restic.env`),
 - and honours `BACKUP_PATHS`, `RESTIC_KEEP_*`, `RESTIC_GROUP_BY`, etc.
 
 For advanced operations (`restic snapshots`, `restic check`, …) you can call `restic` directly after loading `restic.env` into your environment.
@@ -195,8 +204,8 @@ After=network-online.target
 Type=oneshot
 User=root
 Group=root
-Environment=ENV_FILE=/opt/homelab-runtime/ops/backups/restic.env
-ExecStart=/opt/homelab-stacks/ops/backups/restic-backup.sh
+Environment=ENV_FILE=${RUNTIME_ROOT}/ops/backups/restic.env
+ExecStart=${STACKS_DIR}/ops/backups/restic-backup.sh
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
@@ -237,7 +246,7 @@ sudo systemctl enable --now homelab-restic-backup.timer # enable daily backup
 To run the backup script directly (bypassing Makefile and systemd), execute **as root**:
 
 ```bash
-sudo ENV_FILE=/opt/homelab-runtime/ops/backups/restic.env   /opt/homelab-stacks/ops/backups/restic-backup.sh
+sudo ENV_FILE=${RUNTIME_ROOT}/ops/backups/restic.env   ${STACKS_DIR}/ops/backups/restic-backup.sh
 ```
 
 This matches what the systemd service does and is useful for first-time validation or debugging.

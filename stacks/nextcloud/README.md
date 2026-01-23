@@ -38,7 +38,14 @@ Client ──(HTTPS)──▶ Reverse Proxy / Tunnel
 
 ## 2) Repos layout
 
-**Public repo** (e.g., `/opt/homelab-stacks`):
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+```
+
+**Public repo** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
 ```
 stacks/nextcloud/
 ├─ compose.yaml
@@ -53,7 +60,7 @@ stacks/nextcloud/
    └─ occ    # OCC convenience
 ```
 
-**Private runtime** (e.g., `/opt/homelab-runtime`):
+**Private runtime** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`):
 ```
 stacks/nextcloud/
 ├─ .env
@@ -79,10 +86,10 @@ stacks/nextcloud/
 Copy the template from the **public** repo and adjust it in your **runtime**:
 
 ```bash
-cp /opt/homelab-stacks/stacks/nextcloud/.env.example \
-   /opt/homelab-runtime/stacks/nextcloud/.env
+cp ${STACKS_DIR}/stacks/nextcloud/.env.example \
+   ${RUNTIME_DIR}/.env
 
-$EDITOR /opt/homelab-runtime/stacks/nextcloud/.env
+$EDITOR ${RUNTIME_DIR}/.env
 ```
 
 **Key variables** (excerpt):
@@ -139,14 +146,14 @@ HTTP_PORT=your-port
 
 ## 5) Compose files
 
-- **Base**: `/opt/homelab-stacks/stacks/nextcloud/compose.yaml`
+- **Base**: `${STACKS_DIR}/stacks/nextcloud/compose.yaml`
   - Pinned image digests for `nextcloud`, `nginx`, `mariadb`, `redis`
   - Mounts `nginx.conf` from the **public** repo into `web`
   - Uses named volumes for data: `nextcloud_db`, `nextcloud_redis`, `nextcloud_nextcloud` (Docker auto-prefixes by project)
   - `deploy.resources` is omitted because classic Compose ignores it; set limits in a Swarm stack
     or enforce host-level constraints if you need hard caps.
 
-- **Runtime override**: `/opt/homelab-runtime/stacks/nextcloud/compose.override.yml`
+- **Runtime override**: `${RUNTIME_DIR}/compose.override.yml`
   ```yaml
   services:
     app:
@@ -157,6 +164,8 @@ HTTP_PORT=your-port
       ports:
         - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8082}:8080"
   ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 > The runtime does **not** override `nginx.conf` or the `config/` tree. This avoids “Cannot write into config directory” and other bind headaches.
 
@@ -170,22 +179,22 @@ The helper lives in the **public** repo and orchestrates idempotent install + po
 
 ```bash
 # Up in two phases: (db,redis) → (app,web,cron)
-/opt/homelab-stacks/stacks/nextcloud/tools/nc up
+${STACKS_DIR}/stacks/nextcloud/tools/nc up
 
 # Install (waits for container-side bootstrap and seeds config snippets)
-/opt/homelab-stacks/stacks/nextcloud/tools/nc install
+${STACKS_DIR}/stacks/nextcloud/tools/nc install
 
 # Post-setup (cron mode, trusted_domains, basic repairs)
-/opt/homelab-stacks/stacks/nextcloud/tools/nc post
+${STACKS_DIR}/stacks/nextcloud/tools/nc post
 
 # Status (occ + HTTP check)
-/opt/homelab-stacks/stacks/nextcloud/tools/nc status
+${STACKS_DIR}/stacks/nextcloud/tools/nc status
 
 # Logs (follow app logs)
-/opt/homelab-stacks/stacks/nextcloud/tools/nc logs
+${STACKS_DIR}/stacks/nextcloud/tools/nc logs
 
 # Down
-/opt/homelab-stacks/stacks/nextcloud/tools/nc down
+${STACKS_DIR}/stacks/nextcloud/tools/nc down
 ```
 
 What the helper does for you:
@@ -233,14 +242,16 @@ From the runtime host:
 ```bash
 # Docker-level health
 docker compose \
-  -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
-  -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
-  --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+  -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
+  --env-file "${RUNTIME_DIR}/.env" \
   ps
 
 # Intra-network HTTP check (200/302/403 are ok during bootstrap)
 docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://web:8080 | head -n1
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 If you see `HTTP/1.1 400 Bad Request` without a `Host`, try with your domain header:
 ```bash
@@ -263,15 +274,15 @@ If you bind or migrate volumes to the host, align ownership to avoid write error
 **Ad-hoc DB dump** (example):
 ```bash
 docker compose \
-  -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
-  -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
-  --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+  -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
+  --env-file "${RUNTIME_DIR}/.env" \
   exec -T db sh -lc 'exec mysqldump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
 ```
 
 **Full stop & copy** (cold backup; example outline):
 ```bash
-/opt/homelab-stacks/stacks/nextcloud/tools/nc down
+${STACKS_DIR}/stacks/nextcloud/tools/nc down
 docker run --rm -v nextcloud_nextcloud:/vol -v "$PWD":/backup busybox tar czf /backup/nextcloud-data.tgz -C /vol .
 docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/mariadb.tgz -C /vol .
 ```
@@ -297,9 +308,9 @@ docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/m
    ```
 4. Inside `app`, run post-maintenance (idempotent):
    ```bash
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ upgrade || true
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ db:add-missing-indices || true
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ maintenance:repair || true
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ upgrade || true
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ db:add-missing-indices || true
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:repair || true
    ```
 
 > Image **digests** are pinned in `compose.yaml`. Bump digests in a dedicated PR when you decide to upgrade.
@@ -312,19 +323,19 @@ docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/m
   - Do **not** bind-mount `/var/www/html` from the host.
   - Let the helper create `config/` **inside** the container and seed snippets.
 - **HTTP 502 from `web`**
-  - `app` not ready yet (check `docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml --env-file /opt/homelab-runtime/stacks/nextcloud/.env logs app web`).
+- `app` not ready yet (check `docker compose -f ${STACKS_DIR}/stacks/nextcloud/compose.yaml -f ${RUNTIME_DIR}/compose.override.yml --env-file ${RUNTIME_DIR}/.env logs app web`).
   - Wrong upstream — ensure `fastcgi_pass app:9000` is intact in `nginx.conf`.
 - **HTTP 400 on `/status.php`**
   - Missing `Host` header. Test with your domain using `-H "Host: ${NC_DOMAIN}"`.
 - **DB errors on fresh installs**
   - If you reinstalled many times: wipe controlled (only if safe to do):
     ```bash
-    /opt/homelab-stacks/stacks/nextcloud/tools/nc down
+    ${STACKS_DIR}/stacks/nextcloud/tools/nc down
     docker volume rm nextcloud_db nextcloud_nextcloud nextcloud_redis || true
-    /opt/homelab-stacks/stacks/nextcloud/tools/nc up
-    /opt/homelab-stacks/stacks/nextcloud/tools/nc install
-    /opt/homelab-stacks/stacks/nextcloud/tools/nc post
-    /opt/homelab-stacks/stacks/nextcloud/tools/nc status
+    ${STACKS_DIR}/stacks/nextcloud/tools/nc up
+    ${STACKS_DIR}/stacks/nextcloud/tools/nc install
+    ${STACKS_DIR}/stacks/nextcloud/tools/nc post
+    ${STACKS_DIR}/stacks/nextcloud/tools/nc status
     ```
 
 ---
@@ -342,7 +353,7 @@ This yields **parity** between `make` and `tools/nc` and keeps a single source o
 
 **Public**:
 ```
-/opt/homelab-stacks/stacks/nextcloud
+${STACKS_DIR}/stacks/nextcloud
 ├─ compose.yaml
 ├─ nginx.conf
 ├─ php.ini
@@ -357,7 +368,7 @@ This yields **parity** between `make` and `tools/nc` and keeps a single source o
 
 **Runtime**:
 ```
-/opt/homelab-runtime/stacks/nextcloud
+${RUNTIME_DIR}
 ├─ .env
 └─ compose.override.yml
 ```
@@ -371,15 +382,15 @@ This yields **parity** between `make` and `tools/nc` and keeps a single source o
 docker network create proxy || true
 
 # 1) Prepare env
-cp /opt/homelab-stacks/stacks/nextcloud/.env.example \
-   /opt/homelab-runtime/stacks/nextcloud/.env
-$EDITOR /opt/homelab-runtime/stacks/nextcloud/.env
+cp ${STACKS_DIR}/stacks/nextcloud/.env.example \
+   ${RUNTIME_DIR}/.env
+$EDITOR ${RUNTIME_DIR}/.env
 
 # 2) Bring up + install + post + verify (helper way)
-/opt/homelab-stacks/stacks/nextcloud/tools/nc up
-/opt/homelab-stacks/stacks/nextcloud/tools/nc install
-/opt/homelab-stacks/stacks/nextcloud/tools/nc post
-/opt/homelab-stacks/stacks/nextcloud/tools/nc status
+${STACKS_DIR}/stacks/nextcloud/tools/nc up
+${STACKS_DIR}/stacks/nextcloud/tools/nc install
+${STACKS_DIR}/stacks/nextcloud/tools/nc post
+${STACKS_DIR}/stacks/nextcloud/tools/nc status
 
 # (or) Runtime make
 make up stack=nextcloud
@@ -408,7 +419,7 @@ docker run --rm --network nextcloud_default \
 
 ### 2) Runtime-only credentials file
 
-Create `/opt/homelab-runtime/stacks/nextcloud/exporters/mysqld-exporter.my.cnf`:
+Create `${RUNTIME_DIR}/exporters/mysqld-exporter.my.cnf`:
 
 ```ini
 [client]
@@ -420,7 +431,7 @@ port=3306
 
 ### 3) Runtime override (mount the file and keep generic flags public)
 
-`/opt/homelab-runtime/stacks/nextcloud/compose.override.yml`:
+`${RUNTIME_DIR}/compose.override.yml`:
 
 ```yaml
 services:
@@ -432,7 +443,7 @@ services:
       - --collect.engine_innodb_status
       - --no-collect.slave_status
     volumes:
-      - /opt/homelab-runtime/stacks/nextcloud/exporters/mysqld-exporter.my.cnf:/run/secrets/mysql_exporter.cnf:ro
+      - ${RUNTIME_DIR}/exporters/mysqld-exporter.my.cnf:/run/secrets/mysql_exporter.cnf:ro
 
   # No healthcheck here; Prometheus is the source of truth
   redis-exporter:
@@ -445,9 +456,9 @@ services:
 
 ```bash
 docker compose \
-  -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
-  -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
-  --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+  -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
+  --env-file "${RUNTIME_DIR}/.env" \
   up -d mysqld-exporter redis-exporter
 ```
 
@@ -492,7 +503,7 @@ The dashboards assume that Nextcloud writes structured messages to the PHP error
 From the Docker host this can be enforced with the `occ` wrapper provided by the stack:
 
 ```bash
-cd /opt/homelab-stacks
+cd "${STACKS_DIR}"
 
 ./stacks/nextcloud/tools/occ config:system:set log_type --value=errorlog
 ./stacks/nextcloud/tools/occ config:system:set loglevel --value=2

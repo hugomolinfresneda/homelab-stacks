@@ -26,9 +26,11 @@ must never be published. For runtime overrides, see `docs/runtime-overrides.md`.
 - Sensitive/personal path: host-specific absolute paths that reveal real mounts, usernames,
   devices, or data locations (e.g., `/home/<user>/...`, `/mnt/<disk>/...`). Keep these
   only in runtime overrides or local env files.
-- Default configurable convention: repo-safe defaults used in docs/templates (e.g.,
-  `/opt/homelab-stacks`, `/opt/homelab-runtime`, `/path/to/runtime/<stack>`). These are
-  conventions/placeholders and must be overridable via runtime config (see
+- Default configurable convention: repo-safe placeholders expressed with canonical
+  variables: `STACKS_DIR` (public repo root) and `RUNTIME_ROOT` (private runtime root),
+  with stack-specific paths like `${RUNTIME_ROOT}/stacks/<stack>`. Examples: `STACKS_DIR`
+  (e.g. `/opt/homelab-stacks`) and `RUNTIME_ROOT` (e.g. `/opt/homelab-runtime`).
+  These are conventions/placeholders and must be overridable via runtime config (see
   `docs/runtime-overrides.md`).
 - Real targets (hostnames/IPs, including private IPv4 RFC1918 and private IPv6/ULA) belong
   only in runtime. Examples in the repo must use placeholders or documentation ranges:

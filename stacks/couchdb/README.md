@@ -14,10 +14,17 @@ It is intended to be published via **Cloudflare Tunnel** (no host ports exposed)
 
 ---
 
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/couchdb"
+```
+
 ## File layout
 
 ```
-/opt/homelab-stacks/stacks/couchdb/
+${STACKS_DIR}/stacks/couchdb/
 ├── compose.yaml
 ├── .env.example
 ├── local.d/
@@ -26,7 +33,7 @@ It is intended to be published via **Cloudflare Tunnel** (no host ports exposed)
 │   └── 30-auth.ini.example
 └── README.md
 
-/opt/homelab-runtime/stacks/couchdb/
+${RUNTIME_DIR}/
 ├── compose.override.yml
 ├── .env
 ├── data/
@@ -97,7 +104,7 @@ Templates live in `homelab-stacks/stacks/couchdb/local.d/*.ini.example` and cont
   ```
 
   Template: `local.d/30-auth.ini.example` in `homelab-stacks`.
-  Real file: `/opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini` (mode `600`, not versioned).
+  Real file: `${RUNTIME_DIR}/local.d/30-auth.ini` (mode `600`, not versioned; e.g. `/opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini`).
 
 * **Optional:** `10-cors.ini` (CORS for LiveSync / web frontends)
 
@@ -142,11 +149,13 @@ docker run --rm --network=proxy curlimages/curl -sS http://couchdb:5984/_up
 
 ```bash
 docker compose \
-  --env-file /opt/homelab-runtime/stacks/couchdb/.env \
-  -f /opt/homelab-stacks/stacks/couchdb/compose.yaml \
-  -f /opt/homelab-runtime/stacks/couchdb/compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/couchdb/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   up -d
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
@@ -155,7 +164,7 @@ docker compose \
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# /opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/cloudflared/config.yml
 ingress:
   - hostname: couchdb.<your-domain>
     service: http://couchdb:5984
@@ -190,7 +199,7 @@ make up stack=couchdb
 Backups (include in your restic policy):
 
 ```
-/opt/homelab-runtime/stacks/couchdb/data/
+${RUNTIME_DIR}/data/
 ```
 
 ---
@@ -295,8 +304,8 @@ Security: CouchDB is published via the tunnel; treat hostnames and endpoint meta
 ```bash
 # Effective compose (debug)
 docker compose \
-  -f /opt/homelab-stacks/stacks/couchdb/compose.yaml \
-  -f /opt/homelab-runtime/stacks/couchdb/compose.override.yml \
+  -f "${STACKS_DIR}/stacks/couchdb/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   config
 
 # Quick version check

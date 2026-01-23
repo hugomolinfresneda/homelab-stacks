@@ -15,16 +15,23 @@ It runs a minimal container (`cloudflare/cloudflared`) that maintains outbound c
 
 ---
 
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/cloudflared"
+```
+
 ## File layout
 
 ```
-/opt/homelab-stacks/stacks/cloudflared/
+${STACKS_DIR}/stacks/cloudflared/
 ├── compose.yaml
 ├── .env.example
 ├── cloudflared/config.yml.example
 └── README.md
 
-/opt/homelab-runtime/stacks/cloudflared/
+${RUNTIME_DIR}/
 ├── compose.override.yml
 ├── .env
 └── cloudflared/config.yml
@@ -48,7 +55,7 @@ It runs a minimal container (`cloudflare/cloudflared`) that maintains outbound c
 
 ## Runtime configuration
 
-Example `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml` (see `stacks/cloudflared/cloudflared/config.yml.example`):
+Example `${RUNTIME_DIR}/cloudflared/config.yml` (e.g. `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml`; see `stacks/cloudflared/cloudflared/config.yml.example`):
 
 ```yaml
 tunnel: <TUNNEL_UUID>
@@ -107,11 +114,13 @@ Registered tunnel connection
 
 ```bash
 docker compose \
-  --env-file /opt/homelab-runtime/stacks/cloudflared/.env \
-  -f /opt/homelab-stacks/stacks/cloudflared/compose.yaml \
-  -f /opt/homelab-runtime/stacks/cloudflared/compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/cloudflared/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   up -d
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 

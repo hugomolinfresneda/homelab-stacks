@@ -2,10 +2,17 @@
 
 This document explains the **backup & restore** workflow for the Nextcloud stack, aligned with the repo split you are using:
 
-- **Public stacks repo** (for example, `/opt/homelab-stacks`)
-- **Private runtime repo** (for example, `/opt/homelab-runtime`)
+- **Public stacks repo** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`)
+- **Private runtime repo** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`)
 
 It covers **how the scripts work**, **required environment**, **usage from both repos**, **verification**, **scheduling**, **observability** and **troubleshooting**—with a focus on **reproducibility**, **safety**, and **boring operations**.
+
+Use the canonical variables for absolute paths in this doc:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+```
 
 ---
 
@@ -26,7 +33,7 @@ Artifacts are written to `BACKUP_DIR` as **three files per run**:
 Public repo:
 
 ```text
-/opt/homelab-stacks/stacks/nextcloud/backup/
+${STACKS_DIR}/stacks/nextcloud/backup/
 ├─ nc-backup.sh          # DB dump + volume archive + .sha256 + optional Kuma/Prometheus metrics
 ├─ nc-restore.sh         # Volume restore + DB import (with verification)
 └─ nc-backup.env.example # Example env for backups (copy to your home)
@@ -44,7 +51,7 @@ Copy the example to your home (or any location you prefer):
 
 ```bash
 mkdir -p ~/.config/nextcloud
-cp /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.env.example    ~/.config/nextcloud/nc-backup.env
+cp ${STACKS_DIR}/stacks/nextcloud/backup/nc-backup.env.example    ~/.config/nextcloud/nc-backup.env
 $EDITOR ~/.config/nextcloud/nc-backup.env
 ```
 
@@ -92,7 +99,7 @@ You can set these as environment variables when invoking `nc-backup.sh` (or insi
 
 - `ENV_FILE`: path to the backup env file (default is `~/.config/nextcloud/nc-backup.env`).
 - `COMPOSE_FILE`: base compose file path (defaults to the stack `compose.yaml` next to the script).
-- `RUNTIME_DIR`: runtime stack dir used to add overrides and runtime env (if used). If unset, nc-backup.sh uses its internal logic (see nc-backup.sh evidence). Example: `/opt/homelab-runtime/stacks/nextcloud`.
+- `RUNTIME_DIR`: runtime stack dir used to add overrides and runtime env (if used). If unset, nc-backup.sh uses its internal logic (see nc-backup.sh evidence). Example: `${RUNTIME_DIR}` (e.g. `/opt/homelab-runtime/stacks/nextcloud`).
 - `BACKUP_TEXTFILE_DIR`: node_exporter textfile collector directory. If unset, nc-backup.sh uses its internal logic (see nc-backup.sh evidence). Example: `/var/lib/node_exporter/textfile_collector` (only used if the metrics helper is present).
 - `KUMA_RESOLVE_IP`: optional IP override for Uptime Kuma push (used only when `KUMA_PUSH_URL` is set).
 
@@ -149,7 +156,7 @@ Aliases for compatibility:
 
 ## 4) Usage from the **runtime** repo
 
-From `/opt/homelab-runtime`:
+From `${RUNTIME_ROOT}` (e.g. `/opt/homelab-runtime`):
 
 ```bash
 # Backup (env in your home)
@@ -168,7 +175,7 @@ The runtime Makefile special-cases Nextcloud to avoid `--project-directory` path
 
 ## 5) Usage from the **public** repo
 
-From `/opt/homelab-stacks`:
+From `${STACKS_DIR}` (e.g. `/opt/homelab-stacks`):
 
 ```bash
 # Backup with extra trace (optional)
@@ -178,7 +185,7 @@ make backup stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"   BACKUP_ENV=
 make backup-verify stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"
 
 # Restore (point to your runtime dir explicitly)
-make restore stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"   RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud   BACKUP_TRACE=1
+make restore stack=nextcloud   BACKUP_DIR="$HOME/Backups/nextcloud"   RUNTIME_DIR="${RUNTIME_DIR}"   BACKUP_TRACE=1
 ```
 
 The `BACKUP_TRACE=1` flag prints which script and paths are being used for easier diagnosis.
@@ -191,11 +198,13 @@ If you prefer to call the scripts directly:
 
 ```bash
 # Backup
-ENV_FILE="$HOME/.config/nextcloud/nc-backup.env" BACKUP_DIR="$HOME/Backups/nextcloud" bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh
+ENV_FILE="$HOME/.config/nextcloud/nc-backup.env" BACKUP_DIR="$HOME/Backups/nextcloud" bash ${STACKS_DIR}/stacks/nextcloud/backup/nc-backup.sh
 
 # Restore (public compose base + runtime override)
-COMPOSE_FILE="/opt/homelab-stacks/stacks/nextcloud/compose.yaml" RUNTIME_DIR="/opt/homelab-runtime/stacks/nextcloud" BACKUP_DIR="$HOME/Backups/nextcloud" bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-restore.sh
+COMPOSE_FILE="${STACKS_DIR}/stacks/nextcloud/compose.yaml" RUNTIME_DIR="${RUNTIME_DIR}" BACKUP_DIR="$HOME/Backups/nextcloud" bash ${STACKS_DIR}/stacks/nextcloud/backup/nc-restore.sh
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
@@ -233,7 +242,7 @@ sudo crontab -e
 Add a nightly run at 02:15 (UTC) with a seven-day retention as a simple example:
 
 ```cron
-15 2 * * * ENV_FILE=$HOME/.config/nextcloud/nc-backup.env BACKUP_DIR=$HOME/Backups/nextcloud   bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
+15 2 * * * ENV_FILE=$HOME/.config/nextcloud/nc-backup.env BACKUP_DIR=$HOME/Backups/nextcloud   bash ${STACKS_DIR}/stacks/nextcloud/backup/nc-backup.sh >> /var/log/nextcloud-backup.log 2>&1
 ```
 
 > Rotation and offsite sync are not handled by the script. Use your preferred tooling (for example, `restic`, `rclone`, ZFS/Btrfs snapshots, object storage versions).
@@ -250,7 +259,7 @@ Description=Nextcloud backup (DB + volume)
 Type=oneshot
 Environment=ENV_FILE=$HOME/.config/nextcloud/nc-backup.env
 Environment=BACKUP_DIR=$HOME/Backups/nextcloud
-ExecStart=/usr/bin/bash /opt/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh
+ExecStart=/usr/bin/bash ${STACKS_DIR}/stacks/nextcloud/backup/nc-backup.sh
 ```
 
 `/etc/systemd/system/nextcloud-backup.timer`:
@@ -286,7 +295,7 @@ systemctl list-timers | grep nextcloud-backup
 4. Ensure `app` reaches **healthy**, browse the UI, and check **OCC status**:
 
    ```bash
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ status
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ status
    ```
 
 5. Validate that recent files exist and that login works.
@@ -305,14 +314,14 @@ systemctl list-timers | grep nextcloud-backup
   Check your `BACKUP_DIR`. File patterns must be `nc-*-db.sql[.gz]` and `nc-vol-*.tar.gz`.
 
 - **HTTP 502 after restore**
-  `app` may still be warming up. Check `docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml --env-file /opt/homelab-runtime/stacks/nextcloud/.env logs app web`. The script brings services back in the correct order.
+  `app` may still be warming up. Check `docker compose -f ${STACKS_DIR}/stacks/nextcloud/compose.yaml -f ${RUNTIME_DIR}/compose.override.yml --env-file ${RUNTIME_DIR}/.env logs app web`. The script brings services back in the correct order.
 
 - **Wrong volume name**
   Confirm with:
 
   ```bash
   docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Name}}{{end}}{{end}}' \
-    "$(docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml --env-file /opt/homelab-runtime/stacks/nextcloud/.env ps -q app)"
+    "$(docker compose -f ${STACKS_DIR}/stacks/nextcloud/compose.yaml -f ${RUNTIME_DIR}/compose.override.yml --env-file ${RUNTIME_DIR}/.env ps -q app)"
   ```
 
   Then set `NC_VOL` accordingly in your `nc-backup.env`.
@@ -330,15 +339,15 @@ systemctl list-timers | grep nextcloud-backup
 
 ## 12) Reference: Makefile targets
 
-### Public repo (`/opt/homelab-stacks`)
+### Public repo (`STACKS_DIR`; e.g. `/opt/homelab-stacks`)
 
 ```bash
 make backup         stack=nextcloud BACKUP_DIR=... BACKUP_ENV=... [BACKUP_TRACE=1]
 make backup-verify  stack=nextcloud BACKUP_DIR=...
-make restore        stack=nextcloud BACKUP_DIR=... RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud
+make restore        stack=nextcloud BACKUP_DIR=... RUNTIME_DIR=${RUNTIME_DIR}
 ```
 
-### Runtime repo (`/opt/homelab-runtime`)
+### Runtime repo (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`)
 
 ```bash
 make backup         stack=nextcloud BACKUP_DIR=... BACKUP_ENV=...
@@ -422,7 +431,7 @@ Once configured, the Uptime-Kuma-based Grafana dashboard can surface this status
 When `nc-backup.sh` is able to source the shared helper:
 
 ```text
-/opt/homelab-stacks/ops/backups/lib/backup-metrics.sh
+${STACKS_DIR}/ops/backups/lib/backup-metrics.sh
 ```
 
 and has permission to write to the node_exporter textfile directory:

@@ -1,8 +1,16 @@
 # Nextcloud — Disaster Recovery (DR) Runbook
 
 > **Scope**: This runbook covers end‑to‑end recovery of the **Nextcloud** stack deployed with the split repos model
-> **public**: `/opt/homelab-stacks`; **runtime**: `/opt/homelab-runtime`). It assumes you are using the provided
-> backup scripts: `stacks/nextcloud/backup/nc-backup.sh` and `stacks/nextcloud/backup/nc-restore.sh`.
+> **public**: `STACKS_DIR` (e.g. `/opt/homelab-stacks`); **runtime**: `RUNTIME_ROOT` (e.g. `/opt/homelab-runtime`).
+> It assumes you are using the provided backup scripts: `stacks/nextcloud/backup/nc-backup.sh` and
+> `stacks/nextcloud/backup/nc-restore.sh`.
+
+Use the canonical variables for absolute paths in this runbook:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+```
 
 ---
 
@@ -20,7 +28,7 @@
    # Public repo
    make restore stack=nextcloud \
      BACKUP_DIR="$HOME/Backups/nextcloud" \
-     RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud
+     RUNTIME_DIR="${RUNTIME_DIR}"
    ```
 5. **Smoke tests** → status, HTTP checks (see §6).
 6. **Close incident** → write short post‑mortem (what failed, what we fixed, how to prevent).
@@ -80,7 +88,7 @@ Symptoms: 502 from `web`, app container crash loop, wrong config, but DB and dat
 1. **Recreate containers** (pull+up):
    ```bash
    # Runtime (preferred)
-   cd /opt/homelab-runtime
+   cd "${RUNTIME_ROOT}"
    make pull stack=nextcloud
    make up   stack=nextcloud
    make status stack=nextcloud
@@ -90,8 +98,8 @@ Symptoms: 502 from `web`, app container crash loop, wrong config, but DB and dat
 
 3. Run **repairs**:
    ```bash
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ maintenance:repair || true
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ db:add-missing-indices || true
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:repair || true
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ db:add-missing-indices || true
    ```
 
 ### B) Data corruption or bad upgrade (need to roll back)
@@ -108,11 +116,11 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
    ```bash
    make restore stack=nextcloud \
      BACKUP_DIR="$HOME/Backups/nextcloud" \
-     RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud
+     RUNTIME_DIR="${RUNTIME_DIR}"
    ```
 3. **Post‑restore repairs** will run automatically; if needed, run again:
    ```bash
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ maintenance:repair || true
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:repair || true
    ```
 4. Validate with the smoke tests in §6.
 
@@ -136,15 +144,15 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
    ```
 2. **Recover repos**:
    ```bash
-   sudo mkdir -p /opt/homelab-stacks /opt/homelab-runtime
-   sudo chown -R "$USER":"$USER" /opt/homelab-stacks /opt/homelab-runtime
+   sudo mkdir -p "${STACKS_DIR}" "${RUNTIME_ROOT}"
+   sudo chown -R "$USER":"$USER" "${STACKS_DIR}" "${RUNTIME_ROOT}"
 
    # Clone your repos (adjust remotes/branches)
-   git clone <PUBLIC_REPO_URL>  /opt/homelab-stacks
-   git clone <RUNTIME_REPO_URL> /opt/homelab-runtime
+   git clone <PUBLIC_REPO_URL>  "${STACKS_DIR}"
+   git clone <RUNTIME_REPO_URL> "${RUNTIME_ROOT}"
    ```
 3. **Prepare runtime**:
-   - Ensure `/opt/homelab-runtime/stacks/nextcloud/.env` exists and is correct.
+   - Ensure `${RUNTIME_DIR}/.env` exists and is correct.
    - Ensure `compose.override.yml` exposes `web` to your reverse proxy (port/bind).
    - Create external proxy network if needed:
      ```bash
@@ -152,15 +160,15 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
      ```
 4. **Start stack** (no data yet; we will restore next):
    ```bash
-   cd /opt/homelab-runtime
+   cd "${RUNTIME_ROOT}"
    make up stack=nextcloud
    ```
 5. **Restore** from backups:
    ```bash
-   cd /opt/homelab-stacks
+   cd "${STACKS_DIR}"
    make restore stack=nextcloud \
      BACKUP_DIR="$HOME/Backups/nextcloud" \
-     RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud
+     RUNTIME_DIR="${RUNTIME_DIR}"
    ```
 6. **Re‑attach reverse proxy / tunnel** (if applicable):
    - Nginx/Traefik: route `cloud.example.com` → `web:8080` (via `proxy` network).
@@ -174,16 +182,18 @@ Symptoms: unknown errors after upgrade, missing files, broken indices, DB integr
 1. **Runtime health**:
    ```bash
    docker compose \
-     -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
-     -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
-     --env-file /opt/homelab-runtime/stacks/nextcloud/.env ps
+     -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
+     -f "${RUNTIME_DIR}/compose.override.yml" \
+     --env-file "${RUNTIME_DIR}/.env" ps
    ```
+
+   Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 2. **OCC / Nextcloud status**:
    ```bash
-   /opt/homelab-stacks/stacks/nextcloud/tools/nc status
+   ${STACKS_DIR}/stacks/nextcloud/tools/nc status
    # or directly:
-   /opt/homelab-stacks/stacks/nextcloud/tools/occ status
+   ${STACKS_DIR}/stacks/nextcloud/tools/occ status
    ```
 
 3. **HTTP check inside the docker network** (200/302/403 acceptable during bootstrap):
@@ -220,7 +230,7 @@ Run restore as usual, then move files back.
 
 ## 8) Running from Public vs Runtime
 
-**Public repository** (`/opt/homelab-stacks`):
+**Public repository** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
 ```bash
 # Backup
 make backup stack=nextcloud \
@@ -233,10 +243,10 @@ make backup-verify stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
 # Restore
 make restore stack=nextcloud \
   BACKUP_DIR="$HOME/Backups/nextcloud" \
-  RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud
+  RUNTIME_DIR="${RUNTIME_DIR}"
 ```
 
-**Runtime repository** (`/opt/homelab-runtime`):
+**Runtime repository** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`):
 ```bash
 make backup         stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud" BACKUP_ENV="$HOME/.config/nextcloud/nc-backup.env"
 make backup-verify  stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
@@ -251,7 +261,7 @@ make restore        stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
 
 - **Left in maintenance mode** after a failed run:
   ```bash
-  /opt/homelab-stacks/stacks/nextcloud/tools/occ maintenance:mode --off || true
+  ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:mode --off || true
   ```
 
 - **502 from reverse proxy** right after recovery:
@@ -293,9 +303,9 @@ make restore        stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
 
 - **Manual DB dump** (bypass script):
   ```bash
-  docker compose -f /opt/homelab-stacks/stacks/nextcloud/compose.yaml \
-    -f /opt/homelab-runtime/stacks/nextcloud/compose.override.yml \
-    --env-file /opt/homelab-runtime/stacks/nextcloud/.env \
+  docker compose -f ${STACKS_DIR}/stacks/nextcloud/compose.yaml \
+    -f ${RUNTIME_DIR}/compose.override.yml \
+    --env-file ${RUNTIME_DIR}/.env \
     exec -T db sh -lc 'exec mariadb-dump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
   ```
 
@@ -306,12 +316,12 @@ make restore        stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
 
 - **Wipe & reinstall** (only for labs; **dangerous** on prod):
   ```bash
-  /opt/homelab-stacks/stacks/nextcloud/tools/nc down
+  ${STACKS_DIR}/stacks/nextcloud/tools/nc down
   docker volume rm nextcloud_db nextcloud_nextcloud nextcloud_redis || true
-  /opt/homelab-stacks/stacks/nextcloud/tools/nc up
-  /opt/homelab-stacks/stacks/nextcloud/tools/nc install
-  /opt/homelab-stacks/stacks/nextcloud/tools/nc post
-  /opt/homelab-stacks/stacks/nextcloud/tools/nc status
+  ${STACKS_DIR}/stacks/nextcloud/tools/nc up
+  ${STACKS_DIR}/stacks/nextcloud/tools/nc install
+  ${STACKS_DIR}/stacks/nextcloud/tools/nc post
+  ${STACKS_DIR}/stacks/nextcloud/tools/nc status
   ```
 
 ---
