@@ -1,7 +1,8 @@
 # Runtime-only overrides for AdGuard Home: persistence + optional local binds.
-# Replace placeholders:
-# - /path/to/runtime/adguard-home/conf (AdGuardHome.yaml)
-# - /path/to/runtime/adguard-home/work (runtime data)
+# Runtime paths (under RUNTIME_ROOT):
+# - ${RUNTIME_ROOT}/stacks/adguard-home/conf (AdGuardHome.yaml)
+# - ${RUNTIME_ROOT}/stacks/adguard-home/work (runtime data)
+# (RUNTIME_ROOT is required when using this override)
 # Variables (from .env.example):
 # - WEB_PORT: host port for the UI (optional)
 # - DNS_PORT: host port for DNS (optional)
@@ -13,8 +14,8 @@
 services:
   adguard-home:
     volumes:
-      - /path/to/runtime/adguard-home/conf:/opt/adguardhome/conf
-      - /path/to/runtime/adguard-home/work:/opt/adguardhome/work
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/adguard-home/conf:/opt/adguardhome/conf
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/adguard-home/work:/opt/adguardhome/work
     # Optional local binds (recommended: loopback only)
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${WEB_PORT:-3000}:3000"

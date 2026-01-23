@@ -1,6 +1,7 @@
 # Runtime-only overrides for Nextcloud: custom php.ini + optional local web bind.
-# Replace placeholders:
-# - /path/to/runtime/nextcloud/php.ini (custom PHP settings)
+# Runtime path (under RUNTIME_ROOT):
+# - ${RUNTIME_ROOT}/stacks/nextcloud/php.ini (custom PHP settings)
+# (RUNTIME_ROOT is required when using this override)
 # Variables (from .env.example):
 # - HTTP_PORT: host port for local web access (optional)
 # - BIND_LOCALHOST: bind address for local-only access (optional)
@@ -9,11 +10,11 @@
 services:
   app:
     volumes:
-      - /path/to/runtime/nextcloud/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/nextcloud/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
 
   cron:
     volumes:
-      - /path/to/runtime/nextcloud/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/nextcloud/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
 
   web:
     # Optional local bind for the internal Nginx

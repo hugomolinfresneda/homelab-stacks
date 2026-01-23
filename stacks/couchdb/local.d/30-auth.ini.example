@@ -2,7 +2,7 @@
 ; Generate once per environment:
 ;   openssl rand -hex 32
 ; Runtime path (not versioned, mode 600):
-;   /opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini
+;   Example (set your runtime root): <ABS_PATH_TO_RUNTIME_ROOT>/stacks/couchdb/local.d/30-auth.ini
 
 [chttpd_auth]
 secret = <HEX_64>

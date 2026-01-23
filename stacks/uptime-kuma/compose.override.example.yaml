@@ -1,6 +1,7 @@
 # Runtime-only overrides for Uptime Kuma: persistent data + optional local UI bind.
-# Replace placeholders:
-# - /path/to/runtime/uptime-kuma/data (app data)
+# Runtime path (under RUNTIME_ROOT):
+# - ${RUNTIME_ROOT}/stacks/uptime-kuma/data (app data)
+# (RUNTIME_ROOT is required when using this override)
 # Variables (from .env.example):
 # - HTTP_PORT: host port for local UI access (optional)
 # - BIND_LOCALHOST: bind address for local-only access (optional)
@@ -9,7 +10,7 @@
 services:
   uptime-kuma:
     volumes:
-      - /path/to/runtime/uptime-kuma/data:/app/data
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/uptime-kuma/data:/app/data
     # Optional local bind for UI access
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-3001}:3001"
