@@ -33,8 +33,8 @@ services:
       - "9090"
     volumes:
       - mon-prom-data:/prometheus
-      - /opt/homelab-stacks/stacks/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - /opt/homelab-stacks/stacks/monitoring/prometheus/rules/:/etc/prometheus/rules/:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules/:/etc/prometheus/rules/:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
       interval: 10s
@@ -53,8 +53,8 @@ services:
     expose:
       - "9093"
     volumes:
-      - /opt/homelab-stacks/stacks/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - /opt/homelab-stacks/stacks/monitoring/alertmanager/templates:/etc/alertmanager/templates:ro
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/templates:/etc/alertmanager/templates:ro
       - mon-alertmanager-data:/alertmanager
       # Runtime-only: secret mounts live in compose.override.yml.
     healthcheck:
@@ -75,7 +75,7 @@ services:
     cap_add:
       - NET_RAW
     volumes:
-      - /opt/homelab-stacks/stacks/monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9115/"]
       interval: 30s
@@ -92,7 +92,7 @@ services:
       - "3100"
     volumes:
       - mon-loki-data:/loki
-      - /opt/homelab-stacks/stacks/monitoring/loki/config.yaml:/etc/loki/local-config.yaml:ro
+      - ./loki/config.yaml:/etc/loki/local-config.yaml:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready >/dev/null"]
       interval: 15s
@@ -108,7 +108,7 @@ services:
     expose:
       - "9080"
     volumes:
-      - /opt/homelab-stacks/stacks/monitoring/promtail/config.yaml:/etc/promtail/config.yml:ro
+      - ./promtail/config.yaml:/etc/promtail/config.yml:ro
       - mon-promtail-positions:/positions
       # Runtime-only: docker socket + container log mounts live in compose.override.yml.
     networks: *net_mon_only
@@ -164,9 +164,9 @@ services:
       TZ: ${TZ:-Europe/Madrid}
     volumes:
       - mon-grafana-data:/var/lib/grafana
-      - /opt/homelab-stacks/stacks/monitoring/grafana/provisioning.mon/datasources:/etc/grafana/provisioning/datasources:ro
-      - /opt/homelab-stacks/stacks/monitoring/grafana/provisioning.mon/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ${STACKS_DIR:-/opt/homelab-stacks}/stacks/monitoring/grafana/dashboards/exported/mon:/etc/grafana/provisioning/dashboards/exported-mon:ro
+      - ./grafana/provisioning.mon/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning.mon/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards/exported/mon:/etc/grafana/provisioning/dashboards/exported-mon:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s

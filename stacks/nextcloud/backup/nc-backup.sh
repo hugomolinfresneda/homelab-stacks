@@ -37,14 +37,19 @@ load_env_file() {
 
 load_env_file "$ENV_FILE"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -z "${STACKS_DIR:-}" ]]; then
+  STACKS_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd -P)"
+fi
+
 # --- Prometheus backup metrics helper (textfile collector) --------------------
 BACKUP_METRICS_ENABLED=0
 BACKUP_TEXTFILE_DIR="${BACKUP_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
 METRIC_FILE="${BACKUP_TEXTFILE_DIR}/nextcloud_backup.prom"
 
-if [[ -r /opt/homelab-stacks/ops/backups/lib/backup-metrics.sh ]]; then
+if [[ -r "${STACKS_DIR}/ops/backups/lib/backup-metrics.sh" ]]; then
   # shellcheck source=/dev/null
-  . /opt/homelab-stacks/ops/backups/lib/backup-metrics.sh
+  . "${STACKS_DIR}/ops/backups/lib/backup-metrics.sh"
   BACKUP_METRICS_ENABLED=1
 else
   echo "[WARN] backup-metrics helper not found; Prometheus metrics disabled" >&2
@@ -123,7 +128,13 @@ trap _nc_err_trap ERR
 
 # --- Explicit inputs ----------------------------------------------------------
 # Runtime dir holding compose.override.yml and .env
-RUNTIME_DIR="${RUNTIME_DIR:-/opt/homelab-runtime/stacks/nextcloud}"
+if [[ -z "${RUNTIME_DIR:-}" ]]; then
+  if [[ -z "${RUNTIME_ROOT:-}" ]]; then
+    echo "error: set RUNTIME_ROOT=/abs/path/to/homelab-runtime (required)" >&2
+    exit 1
+  fi
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+fi
 
 normalize_service() {
   case "$1" in

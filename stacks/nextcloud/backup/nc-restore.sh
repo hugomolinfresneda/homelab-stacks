@@ -9,6 +9,11 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -z "${STACKS_DIR:-}" ]]; then
+  STACKS_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd -P)"
+fi
+
 # --- Inputs (overridable via env) ---------------------------------------------
 BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
 
@@ -31,7 +36,13 @@ NC_CRON="$(normalize_service "${NC_CRON:-cron}")"
 NC_VOL="${NC_VOL:-nextcloud}"
 
 # Runtime dir holding compose.override.yml and .env
-RUNTIME_DIR="${RUNTIME_DIR:-/opt/homelab-runtime/stacks/nextcloud}"
+if [[ -z "${RUNTIME_DIR:-}" ]]; then
+  if [[ -z "${RUNTIME_ROOT:-}" ]]; then
+    echo "error: set RUNTIME_ROOT or RUNTIME_DIR (expected RUNTIME_ROOT/stacks/nextcloud)" >&2
+    exit 1
+  fi
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+fi
 
 # --- Safe loader for runtime .env (no eval; tolerates spaces & CRLF) ----------
 load_runtime_env() {

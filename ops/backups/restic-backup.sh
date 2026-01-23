@@ -13,8 +13,19 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -z "${STACKS_DIR:-}" ]]; then
+  STACKS_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
+fi
+
 # Centralised env file location (can be overridden via ENV_FILE in the environment)
-ENV_FILE="${ENV_FILE:-/opt/homelab-runtime/ops/backups/restic.env}"
+if [[ -z "${ENV_FILE:-}" ]]; then
+  if [[ -z "${RUNTIME_ROOT:-}" ]]; then
+    echo "error: set RUNTIME_ROOT=/abs/path/to/homelab-runtime (required for runtime ops)" >&2
+    exit 1
+  fi
+  ENV_FILE="${RUNTIME_ROOT}/ops/backups/restic.env"
+fi
 
 ts() { date +"[%Y-%m-%dT%H:%M:%S%z]"; }
 log() { echo "$(ts) $*"; }
@@ -23,9 +34,9 @@ log() { echo "$(ts) $*"; }
 # Optional: Prometheus backup metrics helper (textfile collector)
 # ------------------------------------------------------------------------------
 BACKUP_METRICS_ENABLED=0
-if [[ -r /opt/homelab-stacks/ops/backups/lib/backup-metrics.sh ]]; then
+if [[ -r "${STACKS_DIR}/ops/backups/lib/backup-metrics.sh" ]]; then
   # shellcheck source=/dev/null
-  . /opt/homelab-stacks/ops/backups/lib/backup-metrics.sh
+  . "${STACKS_DIR}/ops/backups/lib/backup-metrics.sh"
   BACKUP_METRICS_ENABLED=1
 else
   log "[WARN] backup-metrics helper not found; Prometheus metrics disabled"
@@ -76,7 +87,7 @@ fi
 
 # Defaults (can be overridden in ENV_FILE)
 # Resolve exclude precedence: EXCLUDE_FILE > RESTIC_EXCLUDE_FILE > RESTIC_EXCLUDES_FILE > default
-EXCLUDE_FILE="${EXCLUDE_FILE:-${RESTIC_EXCLUDE_FILE:-${RESTIC_EXCLUDES_FILE:-/opt/homelab-stacks/ops/backups/exclude.txt}}}"
+EXCLUDE_FILE="${EXCLUDE_FILE:-${RESTIC_EXCLUDE_FILE:-${RESTIC_EXCLUDES_FILE:-${STACKS_DIR}/ops/backups/exclude.txt}}}"
 RUN_FORGET="${RUN_FORGET:-1}"
 
 # Prometheus textfile collector output (can be overridden via BACKUP_TEXTFILE_DIR)
