@@ -1,7 +1,8 @@
 # Runtime-only overrides for CouchDB: persistence + local.d config + optional local bind.
-# Replace placeholders:
-# - /path/to/runtime/couchdb/data (database files)
-# - /path/to/runtime/couchdb/local.d (ini snippets)
+# Runtime paths (under RUNTIME_ROOT):
+# - ${RUNTIME_ROOT}/stacks/couchdb/data (database files)
+# - ${RUNTIME_ROOT}/stacks/couchdb/local.d (ini snippets)
+# (RUNTIME_ROOT is required when using this override)
 # Optional port bind (defaults inline):
 # - HTTP_PORT: host port for local access (default: 5984)
 # - BIND_LOCALHOST: bind address for local-only access (default: 127.0.0.1)
@@ -11,8 +12,8 @@
 services:
   couchdb:
     volumes:
-      - /path/to/runtime/couchdb/data:/opt/couchdb/data
-      - /path/to/runtime/couchdb/local.d:/opt/couchdb/etc/local.d:ro
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/couchdb/data:/opt/couchdb/data
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/couchdb/local.d:/opt/couchdb/etc/local.d:ro
     # Optional local bind for testing/troubleshooting
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-5984}:5984"

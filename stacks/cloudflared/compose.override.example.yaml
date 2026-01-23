@@ -1,7 +1,8 @@
 # Runtime-only overrides for Cloudflared: config + credentials mounts.
-# Replace placeholders:
-# - /path/to/runtime/cloudflared/config.yml (tunnel config)
-# - /path/to/runtime/cloudflared/credentials.json (tunnel credentials)
+# Runtime paths (under RUNTIME_ROOT):
+# - ${RUNTIME_ROOT}/stacks/cloudflared/config.yml (tunnel config)
+# - ${RUNTIME_ROOT}/stacks/cloudflared/credentials.json (tunnel credentials)
+# (RUNTIME_ROOT is required when using this override)
 # Variables (from .env.example):
 # - CLOUDFLARED_CRED_FILE: container path to credentials JSON
 # Security: never commit credentials and avoid exposing ports.
@@ -9,5 +10,5 @@
 services:
   cloudflared:
     volumes:
-      - /path/to/runtime/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
-      - /path/to/runtime/cloudflared/credentials.json:${CLOUDFLARED_CRED_FILE}:ro
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/cloudflared/credentials.json:${CLOUDFLARED_CRED_FILE}:ro
