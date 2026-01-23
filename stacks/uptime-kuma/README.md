@@ -18,6 +18,13 @@ This stack follows the **two-repository architecture** of the homelab:
 
 ---
 
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/uptime-kuma"
+```
+
 ## Requirements
 
 - Docker + Compose plugin
@@ -38,12 +45,12 @@ Uptime Kuma attaches to both `proxy` (for HTTP ingress through your reverse prox
 ## File layout
 
 ```
-/opt/homelab-stacks/stacks/uptime-kuma/
+${STACKS_DIR}/stacks/uptime-kuma/
 ├── compose.yaml
 ├── .env.example
 └── README.md
 
-/opt/homelab-runtime/stacks/uptime-kuma/
+${RUNTIME_DIR}/
 ├── compose.override.yml
 ├── .env
 └── data/
@@ -56,21 +63,21 @@ Uptime Kuma attaches to both `proxy` (for HTTP ingress through your reverse prox
 Copy the environment file to the runtime path:
 
 ```bash
-cp /opt/homelab-stacks/stacks/uptime-kuma/.env.example    /opt/homelab-runtime/stacks/uptime-kuma/.env
+cp ${STACKS_DIR}/stacks/uptime-kuma/.env.example    ${RUNTIME_DIR}/.env
 ```
 
 Example:
 
 ```dotenv
 TZ=<REGION/CITY>
-RUNTIME_DIR=<RUNTIME_DIR>
+RUNTIME_DIR="/abs/path/homelab-runtime/stacks/uptime-kuma"  # e.g. /opt/homelab-runtime/stacks/uptime-kuma
 
 # Optional: local UI bind (recommended if you need host access)
 BIND_LOCALHOST=127.0.0.1
 HTTP_PORT=3001
 ```
 
-Set `RUNTIME_DIR` to your runtime root so the bind mount examples resolve correctly.
+Set `RUNTIME_DIR` to your runtime stack directory so the bind mount examples resolve correctly.
 
 ---
 
@@ -102,8 +109,14 @@ uptime-kuma   Up (healthy)             3001/tcp
 If you’re not using the Makefile helper:
 
 ```bash
-docker compose   --env-file /opt/homelab-runtime/stacks/uptime-kuma/.env   -f /opt/homelab-stacks/stacks/uptime-kuma/compose.yaml   -f /opt/homelab-runtime/stacks/uptime-kuma/compose.override.yml   up -d
+docker compose \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/uptime-kuma/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
+  up -d
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
@@ -113,7 +126,7 @@ docker compose   --env-file /opt/homelab-runtime/stacks/uptime-kuma/.env   -f /o
 services:
   uptime-kuma:
     volumes:
-      - ${RUNTIME_DIR}/stacks/uptime-kuma/data:/app/data
+      - ${RUNTIME_DIR}/data:/app/data
     # Optional bind for local access (recommended: loopback only)
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-3001}:3001"
@@ -130,7 +143,7 @@ The runtime override is responsible for:
 
 ### Option A — Cloudflare Tunnel
 
-Add the rule in `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml`:
+Add the rule in `${RUNTIME_ROOT}/stacks/cloudflared/cloudflared/config.yml`:
 
 ```yaml
 ingress:
@@ -165,7 +178,7 @@ server {
 Application data is stored under:
 
 ```text
-${RUNTIME_DIR}/stacks/uptime-kuma/data/
+${RUNTIME_DIR}/data/
 ```
 
 Include this path in your backup rotation.
@@ -199,10 +212,10 @@ from within the `mon-net` network.
 On the monitoring side, the password is stored in a simple file in the runtime repo:
 
 ```bash
-mkdir -p "${RUNTIME_DIR}/stacks/monitoring/secrets"
+mkdir -p "${RUNTIME_ROOT}/stacks/monitoring/secrets"
 printf '%s\n' 'the-same-password-you-set-in-kuma' \
-  > "${RUNTIME_DIR}/stacks/monitoring/secrets/kuma_password"
-chmod 0444 "${RUNTIME_DIR}/stacks/monitoring/secrets/kuma_password"
+  > "${RUNTIME_ROOT}/stacks/monitoring/secrets/kuma_password"
+chmod 0444 "${RUNTIME_ROOT}/stacks/monitoring/secrets/kuma_password"
 ```
 
 The monitoring stack’s runtime override mounts this file into Prometheus:
@@ -211,7 +224,7 @@ The monitoring stack’s runtime override mounts this file into Prometheus:
 services:
   prometheus:
     volumes:
-      - ${RUNTIME_DIR}/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
+      - ${RUNTIME_ROOT}/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
 ```
 
 ### 3) Prometheus scrape job (defined in the monitoring stack)

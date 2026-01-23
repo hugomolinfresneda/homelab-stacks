@@ -15,6 +15,13 @@ a public repository with clean, reusable definitions, and a private runtime repo
 
 ---
 
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/dozzle"
+```
+
 ## Requirements
 
 * Docker + Compose plugin
@@ -31,12 +38,12 @@ a public repository with clean, reusable definitions, and a private runtime repo
 ## File layout
 
 ```
-/opt/homelab-stacks/stacks/dozzle/
+${STACKS_DIR}/stacks/dozzle/
 ├── compose.yaml
 ├── .env.example
 └── README.md
 
-/opt/homelab-runtime/stacks/dozzle/
+${RUNTIME_DIR}/
 ├── compose.override.yml
 └── .env
 ```
@@ -48,8 +55,8 @@ a public repository with clean, reusable definitions, and a private runtime repo
 Copy the example environment file from the stacks repository into the runtime path:
 
 ```bash
-cp /opt/homelab-stacks/stacks/dozzle/.env.example \
-   /opt/homelab-runtime/stacks/dozzle/.env
+cp ${STACKS_DIR}/stacks/dozzle/.env.example \
+   ${RUNTIME_DIR}/.env
 ```
 
 Typical contents:
@@ -70,17 +77,19 @@ From the **runtime repository**:
 
 ```bash
 docker compose \
-  --env-file ./.env \
-  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
-  -f compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   up -d
 
 docker compose \
-  --env-file ./.env \
-  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
-  -f compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   ps
 ```
+
+Nota: usa el fichero real existente en runtime. Si tu override es `compose.override.yaml`, usa ese fichero.
 
 **Recommended `compose.override.yml`:**
 
@@ -185,14 +194,14 @@ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep dozzle
 
 # Update image and redeploy
 docker compose \
-  --env-file ./.env \
-  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
-  -f compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   pull
 docker compose \
-  --env-file ./.env \
-  -f /opt/homelab-stacks/stacks/dozzle/compose.yaml \
-  -f compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   up -d
 ```
 

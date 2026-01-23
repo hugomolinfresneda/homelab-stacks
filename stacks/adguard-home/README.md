@@ -14,15 +14,22 @@ It follows the **two-repository model** used across the homelab: a public base a
 
 ---
 
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/adguard-home"
+```
+
 ## File layout
 
 ```text
-/opt/homelab-stacks/stacks/adguard-home/
+${STACKS_DIR}/stacks/adguard-home/
 ├── compose.yaml
 ├── .env.example
 └── README.md
 
-/opt/homelab-runtime/stacks/adguard-home/
+${RUNTIME_DIR}/
 ├── compose.override.yml
 ├── .env
 ├── conf/AdGuardHome.yaml
@@ -67,8 +74,8 @@ It follows the **two-repository model** used across the homelab: a public base a
 Copy the example env file into the runtime:
 
 ```bash
-cp /opt/homelab-stacks/stacks/adguard-home/.env.example \
-   /opt/homelab-runtime/stacks/adguard-home/.env
+cp ${STACKS_DIR}/stacks/adguard-home/.env.example \
+   ${RUNTIME_DIR}/.env
 ```
 
 Typical contents:
@@ -115,11 +122,13 @@ Expected ports:
 
 ```bash
 docker compose \
-  --env-file /opt/homelab-runtime/stacks/adguard-home/.env \
-  -f /opt/homelab-stacks/stacks/adguard-home/compose.yaml \
-  -f /opt/homelab-runtime/stacks/adguard-home/compose.override.yml \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "${STACKS_DIR}/stacks/adguard-home/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
   up -d
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
@@ -199,7 +208,7 @@ dig @<HOST_LAN_IP> example.com A +short
 docker run --rm --network proxy curlimages/curl:8.10.1 -sSI http://adguard-home:3000 | head -n1
 
 # Exporter metrics reachable from Prometheus network
-docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
+docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
   exec -T prometheus wget -qO- http://adguard-exporter:9617/metrics | head
 ```
 
@@ -219,11 +228,11 @@ docker compose -f /opt/homelab-stacks/stacks/monitoring/compose.yaml \
 
 ```bash
 # Update image and redeploy
-docker compose -f /opt/homelab-stacks/stacks/adguard-home/compose.yaml \
-               -f /opt/homelab-runtime/stacks/adguard-home/compose.override.yml \
+docker compose -f "${STACKS_DIR}/stacks/adguard-home/compose.yaml" \
+               -f "${RUNTIME_DIR}/compose.override.yml" \
                pull && \
-docker compose -f /opt/homelab-stacks/stacks/adguard-home/compose.yaml \
-               -f /opt/homelab-runtime/stacks/adguard-home/compose.override.yml \
+docker compose -f "${STACKS_DIR}/stacks/adguard-home/compose.yaml" \
+               -f "${RUNTIME_DIR}/compose.override.yml" \
                up -d
 ```
 
@@ -237,9 +246,9 @@ awk -v d="$digest" '
   $0 ~ /^[[:space:]]*image:[[:space:]]*adguard\/adguardhome/ {
     sub(/image:[[:space:]]*adguard\/adguardhome[^ ]*/, "image: adguard/adguardhome@" d)
   } { print }
-' /opt/homelab-stacks/stacks/adguard-home/compose.yaml > "$tmp" \
-  && mv "$tmp" /opt/homelab-stacks/stacks/adguard-home/compose.yaml
-( cd /opt/homelab-stacks && make validate )
+' "${STACKS_DIR}/stacks/adguard-home/compose.yaml" > "$tmp" \
+  && mv "$tmp" "${STACKS_DIR}/stacks/adguard-home/compose.yaml"
+( cd "${STACKS_DIR}" && make validate )
 ```
 
 ---
@@ -252,7 +261,7 @@ awk -v d="$digest" '
 | Tunnel OK but UI no carga        | Access policy blocks (test with “Show block page” and your email in **Allow**).   |
 | `connection refused` from tunnel | `adguard-home` not reachable on `proxy` network; check `expose: "3000"` and nets. |
 | Port `53` busy on host           | Another DNS service bound to 53; free it or lower rootless port threshold.        |
-| Permission warning on `work`     | Set `chmod 700 /opt/homelab-runtime/stacks/adguard-home/work`.                    |
+| Permission warning on `work`     | Set `chmod 700 ${RUNTIME_DIR}/work`.                                               |
 | No AdGuard metrics in Prometheus | Check `adguard-exporter` logs and API credentials in runtime `.env`.              |
 | `blackbox-dns` target stays UP   | Blackbox alive; inspect `probe_success{job="blackbox-dns"}` for DNS failures.     |
 
@@ -263,8 +272,8 @@ awk -v d="$digest" '
 Include these runtime paths in your backup plan (e.g., restic):
 
 ```text
-/opt/homelab-runtime/stacks/adguard-home/conf/AdGuardHome.yaml
-/opt/homelab-runtime/stacks/adguard-home/work/
+${RUNTIME_DIR}/conf/AdGuardHome.yaml
+${RUNTIME_DIR}/work/
 ```
 
 ---

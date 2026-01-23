@@ -65,7 +65,14 @@ docker network: mon-net                         │                           �
 
 ## 2) Repos layout
 
-**Public repo** (e.g., `/opt/homelab-stacks`):
+Use the canonical variables for absolute paths:
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/monitoring"
+```
+
+**Public repo** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
 
 ```
 stacks/monitoring/
@@ -149,7 +156,7 @@ stacks/monitoring/
     └── mon
 ```
 
-**Private runtime** (e.g., `/opt/homelab-runtime`):
+**Private runtime** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`):
 
 ```
 stacks/monitoring/            # runtime overlay (environment-specific)
@@ -221,7 +228,8 @@ should adapt these mounts in your private runtime override (see
 - Docker Engine + **Docker Compose v2**
 - External docker networks created: `mon-net`, `proxy`
 - Runtime override for host mounts (copy `stacks/monitoring/compose.override.example.yaml`
-  to `/opt/homelab-runtime/stacks/monitoring/compose.override.yml` and edit)
+  to `${RUNTIME_DIR}/compose.override.yml` and edit; use the real override file in your
+  runtime—if it is `compose.override.yaml`, use that)
 - **Rootless-friendly binds** for Promtail + docker-socket-proxy in your runtime override:
   - `${DOCKER_SOCK}` → usually `/run/user/<UID>/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
   - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
@@ -235,7 +243,7 @@ The Promtail bind target stays `/var/lib/docker/containers`; only the host path
 
 ## 5) Compose files
 
-- **Base (public):** `/opt/homelab-stacks/stacks/monitoring/compose.yaml`
+- **Base (public):** `${STACKS_DIR}/stacks/monitoring/compose.yaml`
   Pinned digests, healthchecks, no host ports, networks `mon-net` (+ `proxy` for Grafana).
   Sensitive host mounts live in the runtime override.
 
@@ -253,8 +261,9 @@ The Promtail bind target stays `/var/lib/docker/containers`; only the host path
       name: mon-promtail-positions
   ```
 
-- **Runtime override (private):** `/opt/homelab-runtime/stacks/monitoring/compose.override.yml`
-  Copy `stacks/monitoring/compose.override.example.yaml` and edit.
+- **Runtime override (private):** `${RUNTIME_DIR}/compose.override.yml`
+  Copy `stacks/monitoring/compose.override.example.yaml` and edit. Use the real override
+  file present in your runtime (if it is `compose.override.yaml`, use that).
 
   ```yaml
   services:
@@ -291,7 +300,7 @@ The Promtail bind target stays `/var/lib/docker/containers`; only the host path
 
     prometheus:
       volumes:
-        - /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
+        - ${RUNTIME_DIR}/secrets/kuma_password:/etc/prometheus/secrets/kuma_password:ro
   ```
 
   The docker-socket-proxy service exposes a minimal read-only Docker API to Promtail,
@@ -330,10 +339,10 @@ The username is deliberately left empty; authentication is performed via the pas
 Create the password file in the runtime and make it world-readable (inside the container it is mounted read-only):
 
 ```bash
-mkdir -p /opt/homelab-runtime/stacks/monitoring/secrets
+mkdir -p ${RUNTIME_DIR}/secrets
 printf '%s
-' 'your-kuma-password' > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
-chmod 0444 /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
+' 'your-kuma-password' > ${RUNTIME_DIR}/secrets/kuma_password
+chmod 0444 ${RUNTIME_DIR}/secrets/kuma_password
 ```
 
 Prometheus job (present in the public repo):
@@ -376,8 +385,13 @@ make down stack=monitoring     # stop
 **Manual compose (portable)**
 
 ```bash
-docker compose   -f /opt/homelab-stacks/stacks/monitoring/compose.yaml   -f /opt/homelab-runtime/stacks/monitoring/compose.override.yml   up -d
+docker compose \
+  -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yml" \
+  up -d
 ```
+
+Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
@@ -610,10 +624,10 @@ docker network create mon-net || true
 docker network create proxy   || true
 
 # 1) Runtime password file for Uptime Kuma
-mkdir -p /opt/homelab-runtime/stacks/monitoring/secrets
+mkdir -p ${RUNTIME_DIR}/secrets
 printf '%s
-' 'your-kuma-password' > /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
-chmod 0444 /opt/homelab-runtime/stacks/monitoring/secrets/kuma_password
+' 'your-kuma-password' > ${RUNTIME_DIR}/secrets/kuma_password
+chmod 0444 ${RUNTIME_DIR}/secrets/kuma_password
 
 # 2) Up the monitoring stack
 make up stack=monitoring
@@ -752,18 +766,18 @@ intended to stay private (gitignored).
 ```bash
 # Main stack (project: monitoring, runtime targets map required)
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml \
   ls blackbox-http
 
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml \
   add blackbox-http https://example.org
 
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml \
   rm blackbox-http https://example.org
 ```
 
@@ -780,7 +794,7 @@ stacks/monitoring/scripts/blackbox-targets.sh --demo rm  blackbox-http https://e
 ```bash
 stacks/monitoring/scripts/blackbox-targets.sh \
   --file stacks/monitoring/prometheus/prometheus.yml \
-  --targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
   add blackbox-http https://example.com
 ```
 
@@ -803,16 +817,16 @@ These delegate to the script above and pick the right file automatically:
 
 ```bash
 # Main stack (project: monitoring)
-make bb-ls  BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-                            --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml" \
+make bb-ls  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+                            --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
            [JOB=blackbox-http]
 make bb-add TARGET=<url> \
-           BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-                           --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml" \
+           BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
            [JOB=blackbox-http]
 make bb-rm  TARGET=<url> \
-           BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-                           --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml" \
+           BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
            [JOB=blackbox-http]
 make reload-prom
 
@@ -826,11 +840,11 @@ make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PRO
 **Examples**
 
 ```bash
-make bb-ls BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-                           --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml"
+make bb-ls BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml"
 make bb-add TARGET=https://example.com \
-  BB_TARGETS_MAP="--targets-file blackbox-http=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-http.yml \
-                  --targets-file blackbox-icmp=/opt/homelab-runtime/stacks/monitoring/prometheus/targets/blackbox-icmp.yml"
+  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+                  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml"
 make reload-prom
 
 make -f stacks/monitoring/Makefile.demo bb-ls-demo
@@ -1198,7 +1212,7 @@ Layout summary (the dashboard lives in **10_Infra / Host – System overview**):
   pseudo-mounts and bind-mount noise.
 
 Note: the dashboard uses a textbox variable `backups_mountpoint` to include the backups
-filesystem in the panels. Set it to your backups mountpoint (e.g. `/path/to/backups`),
+filesystem in the panels. Set it to your backups mountpoint (e.g. `/mnt/backups`),
 or leave it empty to disable path filtering.
 
 **Second row – memory & swap**
