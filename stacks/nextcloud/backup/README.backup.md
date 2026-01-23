@@ -85,6 +85,22 @@ BACKUP_DIR=$HOME/Backups/nextcloud
 
 > **Do not** put secrets in git. This file stays in your **home** (or in a private runtime path if you override `ENV_FILE`).
 
+#### 2.1.1 Optional overrides and aliases (nc-backup.sh)
+
+You can set these as environment variables when invoking `nc-backup.sh` (or inside `nc-backup.env` if you want them to load automatically):
+
+
+- `ENV_FILE`: path to the backup env file (default is `~/.config/nextcloud/nc-backup.env`).
+- `COMPOSE_FILE`: base compose file path (defaults to the stack `compose.yaml` next to the script).
+- `RUNTIME_DIR`: runtime stack dir used to add overrides and runtime env (if used). If unset, nc-backup.sh uses its internal logic (see nc-backup.sh evidence). Example: `/opt/homelab-runtime/stacks/nextcloud`.
+- `BACKUP_TEXTFILE_DIR`: node_exporter textfile collector directory. If unset, nc-backup.sh uses its internal logic (see nc-backup.sh evidence). Example: `/var/lib/node_exporter/textfile_collector` (only used if the metrics helper is present).
+- `KUMA_RESOLVE_IP`: optional IP override for Uptime Kuma push (used only when `KUMA_PUSH_URL` is set).
+
+Aliases for compatibility:
+- `NC_APP` / `NC_DB` / `NC_WEB` / `NC_CRON` are accepted instead of `NC_*_CONT`.
+- `DB_NAME` / `DB_USER` / `DB_PASSWORD` are accepted instead of `NC_DB_*`.
+- `DB_HOST` is read into `NC_DB_HOST` but is not referenced elsewhere in `nc-backup.sh` (no effect today). If DB host selection is needed, wire it into the script in a follow-up PR (out of scope here).
+
 ### 2.2 Requirements on the host
 
 - Docker Engine + Docker Compose v2.
