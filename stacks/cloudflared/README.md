@@ -64,13 +64,14 @@ Runtime `.env` (see `.env.example`) defines the credential path and optional
 UID/GID:
 
 ```
-CLOUDFLARED_CRED_FILE=<PATH_TO_CREDENTIAL_JSON>
+CLOUDFLARED_CRED_FILE=/etc/cloudflared/<TUNNEL_UUID>.json
 CLOUDFLARED_UID=65532
 CLOUDFLARED_GID=65532
 ```
 
-The credential file lives in runtime storage and should be mounted 1:1 into the
-container at the same path as `CLOUDFLARED_CRED_FILE`.
+The credential file lives in runtime storage. Host credential JSON is mounted
+to that container path in `compose.override.yml`; do not put the host path in
+`CLOUDFLARED_CRED_FILE`.
 
 Set permissions once (with your runtime `.env` loaded):
 
