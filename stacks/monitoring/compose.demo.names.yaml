@@ -19,7 +19,7 @@ services:
 networks:
   demo-net:
     name: ${COMPOSE_PROJECT_NAME:-mon-demo}-net
-    # Recomendado: NO external. Que Compose lo cree.
+    # Recommended not to set external. Let Compose create it.
     # external: true
 
 volumes:
