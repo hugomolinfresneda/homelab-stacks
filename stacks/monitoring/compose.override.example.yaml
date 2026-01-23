@@ -1,7 +1,7 @@
 # homelab-stacks/stacks/monitoring/compose.override.example.yaml
 # -------------------------------------------------------------------
 # Example runtime override for sensitive host mounts.
-# Copy to /opt/homelab-runtime/stacks/monitoring/compose.override.yml and edit.
+# Copy to ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yml and edit.
 # -------------------------------------------------------------------
 
 services:
@@ -21,7 +21,9 @@ services:
   prometheus:
     volumes:
       # Runtime-only blackbox targets (file_sd_configs)
-      - /opt/homelab-runtime/stacks/monitoring/prometheus/targets:/etc/prometheus/targets:ro${SELINUX_SUFFIX}
+      # Copy to ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yml and edit.
+      # (RUNTIME_ROOT is required when using this override)
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/monitoring/prometheus/targets:/etc/prometheus/targets:ro${SELINUX_SUFFIX}
 
   promtail:
     environment:

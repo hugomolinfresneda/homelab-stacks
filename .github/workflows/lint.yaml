@@ -18,6 +18,9 @@ jobs:
       - name: Lint (YAML + shell)
         run: make lint
 
+      - name: Check for hardcoded /opt paths
+        run: make check-abs-paths
+
       - name: Validate compose (bases + demo bundle)
         run: make validate
 

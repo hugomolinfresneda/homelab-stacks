@@ -12,29 +12,42 @@ SHELL := /usr/bin/env bash
 STACK ?= $(stack)
 # Allow PROFILES=monitoring (or multiple: "monitoring debug"); also profiles=... alias
 PROFILES ?= $(profiles)
-STACKS_REPO := $(abspath $(CURDIR))
-RUNTIME_DIR ?= /opt/homelab-runtime/stacks/$(STACK)
-ENV_FILE     ?= $(RUNTIME_DIR)/.env
-DB_ENV_FILE  ?= $(RUNTIME_DIR)/db.env
-ENV_FILES    ?= $(ENV_FILE)
+MAKEFILE_PATH := $(abspath $(firstword $(MAKEFILE_LIST)))
+MAKEFILE_DIR  := $(patsubst %/,%,$(dir $(MAKEFILE_PATH)))
+STACKS_DIR ?= $(MAKEFILE_DIR)
+STACKS_REPO ?= $(STACKS_DIR)
+RUNTIME_ROOT ?=
+RUNTIME_DIR ?= $(if $(RUNTIME_ROOT),$(RUNTIME_ROOT)/stacks/$(STACK),)
+STACK_DIR := $(STACKS_REPO)/stacks/$(STACK)
+PROJECT_DIR := $(STACK_DIR)
+ENV_FILE     ?= $(if $(RUNTIME_DIR),$(RUNTIME_DIR)/.env,)
+DB_ENV_FILE  ?= $(if $(RUNTIME_DIR),$(RUNTIME_DIR)/db.env,)
+existing_files = $(foreach f,$(strip $(1)),$(if $(wildcard $(f)),$(f),))
+ENV_FILES ?= $(ENV_FILE)
 
 ifeq ($(STACK),nextcloud)
 ENV_FILES = $(ENV_FILE) $(DB_ENV_FILE)
 endif
 
-BASE_FILE     := $(STACKS_REPO)/stacks/$(STACK)/compose.yaml
-OVERRIDE_FILE := $(RUNTIME_DIR)/compose.override.yml
+ENV_FILES_EXISTING := $(call existing_files,$(ENV_FILES))
+
+BASE_FILE := $(STACK_DIR)/compose.yaml
+OVERRIDE_CANDIDATES := $(RUNTIME_DIR)/compose.override.yml $(RUNTIME_DIR)/compose.override.yaml
+OVERRIDE_FILE := $(firstword $(call existing_files,$(OVERRIDE_CANDIDATES)))
 
 # Docker Compose invocations (base vs base+override)
 # Inject --profile <name> for each item in $(PROFILES). No-op if empty.
-compose_base = docker compose --project-directory $(RUNTIME_DIR) $(foreach f,$(ENV_FILES),--env-file $(f)) $(foreach p,$(PROFILES),--profile $(p)) -f $(BASE_FILE)
-compose_all  = $(compose_base) -f $(OVERRIDE_FILE)
+compose_base = docker compose --project-directory $(PROJECT_DIR) \
+  -f $(BASE_FILE) \
+  $(foreach f,$(ENV_FILES_EXISTING),--env-file $(f)) \
+  $(foreach p,$(PROFILES),--profile $(p))
+compose_all = $(compose_base) $(if $(strip $(OVERRIDE_FILE)),-f $(OVERRIDE_FILE),)
 
 # Helper detection (e.g., stacks/nextcloud/tools/nc)
 STACK_HELPER := $(STACKS_REPO)/stacks/$(STACK)/tools/nc
 USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
 
-.PHONY: help lint validate         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon         check-prom-demo check-am-demo check-demo
+.PHONY: help lint validate check-abs-paths         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon         check-prom-demo check-am-demo check-demo
 
 # ------------------------------------------------------------
 # Human-friendly help
@@ -51,9 +64,9 @@ help:
 	@echo "  make logs stack=<name> [follow=true]- Show/follow logs (if helper present uses it)"
 	@echo "  make install|post|status|reset-db - Extra ops (only if the stack ships a helper)"
 	@echo "  make backup stack=restic          - Run Restic infra backup via systemd (root)"
-	@echo "  make backup stack=nextcloud BACKUP_DIR=...</path> [BACKUP_ENV=/opt/homelab-runtime/ops/backups/nc-backup.env]"
+	@echo "  make backup stack=nextcloud BACKUP_DIR=...</path> [BACKUP_ENV=\${RUNTIME_ROOT}/ops/backups/nc-backup.env]"
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=...</path>"
-	@echo "  make restore stack=nextcloud BACKUP_DIR=...</path> [RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud]"
+	@echo "  make restore stack=nextcloud BACKUP_DIR=...</path> [RUNTIME_DIR=\${RUNTIME_ROOT}/stacks/nextcloud]"
 	@echo ""
 	@echo "Shortcuts with monitoring profile:"
 	@echo "  make up-mon|down-mon|ps-mon stack=<name>  - Same as up/down/ps with PROFILES=monitoring"
@@ -88,6 +101,27 @@ lint:
 	@find stacks -type f -name "*.sh" -print0 | xargs -0 -r -n1 shellcheck || true
 
 # ------------------------------------------------------------
+# Guardrail: avoid hardcoded homelab paths under /opt in runtime
+# ------------------------------------------------------------
+check-abs-paths:
+	@echo "Checking for hardcoded /opt homelab paths..."
+	@pat="/opt/homelab"'-'; \
+	if command -v rg >/dev/null 2>&1; then \
+	  if rg -n --hidden --no-ignore-vcs "$$pat" Makefile ops stacks .github \
+	    -g "Makefile" -g "*.sh" -g "*.yml" -g "*.yaml"; then \
+	    echo "error: hardcoded /opt homelab paths found (see matches above)"; \
+	    exit 1; \
+	  fi; \
+	else \
+	  if grep -R -n -E "$$pat" Makefile ops stacks .github \
+	    --include "Makefile" --include "*.sh" --include "*.yml" --include "*.yaml"; then \
+	    echo "error: hardcoded /opt homelab paths found (see matches above)"; \
+	    exit 1; \
+	  fi; \
+	fi; \
+	echo "OK: no hardcoded /opt homelab paths found."
+
+# ------------------------------------------------------------
 # Validate all docker-compose files
 # ------------------------------------------------------------
 validate:
@@ -109,52 +143,58 @@ validate:
 require-stack:
 	@if [ -z "$(STACK)" ]; then echo "error: set stack=<name>"; exit 1; fi
 
+require-runtime-root:
+	@if [ -z "$(RUNTIME_ROOT)" ] && [ -z "$(RUNTIME_DIR)" ]; then \
+		echo "error: set RUNTIME_ROOT=/abs/path/to/homelab-runtime (required for runtime ops)"; \
+		exit 1; \
+	fi
+
 # -------- Delegated path (helper present) --------
 ifeq ($(USE_HELPER),$(STACK_HELPER))
 
-up: require-stack
+up: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" up
 
-down: require-stack
+down: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" down
 
-ps: require-stack
+ps: require-stack require-runtime-root
 	@$(compose_all) ps
 
-pull: require-stack
+pull: require-stack require-runtime-root
 	@$(compose_base) pull
 
-logs: require-stack
+logs: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" logs
 
-install: require-stack
+install: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" install
 
-post: require-stack
+post: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" post
 
-status: require-stack
+status: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" status
 
-reset-db: require-stack
+reset-db: require-stack require-runtime-root
 	@STACKS_REPO=$(STACKS_REPO) RUNTIME_DIR=$(RUNTIME_DIR) PROFILES="$(PROFILES)" ENV_FILES="$(ENV_FILES)" "$(STACK_HELPER)" reset-db
 
 # -------- Generic path (no helper) --------
 else
 
-up: require-stack
+up: require-stack require-runtime-root
 	@$(compose_all) up -d
 
-down: require-stack
+down: require-stack require-runtime-root
 	@$(compose_all) down
 
-ps: require-stack
+ps: require-stack require-runtime-root
 	@$(compose_all) ps
 
-pull: require-stack
+pull: require-stack require-runtime-root
 	@$(compose_base) pull
 
-logs: require-stack
+logs: require-stack require-runtime-root
 	@if [ "$(follow)" = "true" ]; then \
 		$(compose_all) logs -f; \
 	else \
@@ -162,7 +202,7 @@ logs: require-stack
 	fi
 
 # No-op extras when there is no helper
-install post status reset-db: require-stack
+install post status reset-db: require-stack require-runtime-root
 	@echo "info: '$(STACK)' has no helper; nothing to do."
 
 endif
@@ -241,7 +281,10 @@ restore: require-stack
 	script="$(STACKS_REPO)/stacks/nextcloud/backup/nc-restore.sh"; \
 	compose="$(BASE_FILE)"; \
 	rt="$(RUNTIME_DIR)"; \
-	[ -z "$$rt" ] && rt="/opt/homelab-runtime/stacks/$(STACK)"; \
+	if [ -z "$$rt" ]; then \
+	  echo "error: set RUNTIME_ROOT=/abs/path/to/homelab-runtime (required for runtime ops)"; \
+	  exit 1; \
+	fi; \
 	[ -n "$(BACKUP_TRACE)" ] && { \
 	  printf '→ Using script: %s\n' "$$script"; \
 	  printf '→ Using compose: %s\n' "$$compose"; \
@@ -256,30 +299,30 @@ restore: require-stack
 # ------------------------------------------------------------
 
 # restic — shared config for all restic targets
-RESTIC_ENV_FILE        ?= /opt/homelab-runtime/ops/backups/restic.env
+RESTIC_ENV_FILE        ?= $(if $(RUNTIME_ROOT),$(RUNTIME_ROOT)/ops/backups/restic.env,)
 RESTIC_SCRIPT          ?= $(STACKS_REPO)/ops/backups/restic-backup.sh
 RESTIC_SYSTEMD_SERVICE ?= homelab-restic-backup.service
 
 # restic — Run full backup via systemd as root (oneshot service)
-restic:
+restic: require-runtime-root
 	@test -f "$(RESTIC_ENV_FILE)" || { echo "error: missing RESTIC_ENV_FILE=$(RESTIC_ENV_FILE)"; exit 1; }
 	@echo "→ [restic] Launching backup via systemd as root: $(RESTIC_SYSTEMD_SERVICE)"
 	@sudo systemctl start "$(RESTIC_SYSTEMD_SERVICE)"
 
 # restic-list — List snapshots in the configured repository (root)
-restic-list:
+restic-list: require-runtime-root
 	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic snapshots'
 
 # restic-check — Verify repository integrity (root)
-restic-check:
+restic-check: require-runtime-root
 	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic check'
 
 # restic-stats — Show repository statistics (root)
-restic-stats:
+restic-stats: require-runtime-root
 	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; restic stats'
 
 # restic-forget — Apply retention policy (delete & prune) as defined in .env (root)
-restic-forget:
+restic-forget: require-runtime-root
 	@sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  args=(--prune); \
 	  [[ -n "$${RESTIC_GROUP_BY:-}"    ]] && args+=(--group-by "$$RESTIC_GROUP_BY"); \
@@ -290,7 +333,7 @@ restic-forget:
 	  restic forget "$${args[@]}"'
 
 # restic-forget-dry — Simulate retention (no deletions), for safety review (root)
-restic-forget-dry:
+restic-forget-dry: require-runtime-root
 	@sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  args=(--prune --dry-run); \
 	  [[ -n "$${RESTIC_GROUP_BY:-}"    ]] && args+=(--group-by "$$RESTIC_GROUP_BY"); \
@@ -301,7 +344,7 @@ restic-forget-dry:
 	  restic forget "$${args[@]}"'
 
 # restic-diff — Compare two snapshots (or last two if jq present) (root)
-restic-diff:
+restic-diff: require-runtime-root
 	@A="$(A)" B="$(B)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  A_ID="$${A:-}"; B_ID="$${B:-}"; \
 	  if command -v jq >/dev/null 2>&1 && [ -z "$$A_ID" ] && [ -z "$$B_ID" ]; then \
@@ -316,7 +359,7 @@ restic-diff:
 
 # restic-restore — Selective restore from latest snapshot into target dir (root)
 # Usage: make restic-restore INCLUDE="/path1 /path2" [TARGET=/path/to/dir]
-restic-restore:
+restic-restore: require-runtime-root
 	@INCLUDE="$(INCLUDE)" TARGET="$(TARGET)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  target="$${TARGET:-}"; includes="$${INCLUDE:-}"; \
 	  if [ -z "$$includes" ]; then echo "error: set INCLUDE=\"/path /path2 ...\""; exit 1; fi; \
@@ -329,7 +372,7 @@ restic-restore:
 
 # restic-mount — FUSE-mount repository for browsing (background) (root)
 # Usage: make restic-mount [MOUNTPOINT=~/mnt/restic]
-restic-mount:
+restic-mount: require-runtime-root
 	@MOUNTPOINT="$(MOUNTPOINT)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  mp="$${MOUNTPOINT:-$$HOME/mnt/restic}"; mkdir -p "$$mp"; \
 	  echo "→ Mounting repository on $$mp (background). Unmount with: fusermount -u $$mp"; \
@@ -340,7 +383,7 @@ restic-mount:
 restic-env: restic-show-env
 
 # restic-show-env — Print effective repo, policy and Kuma URL (root)
-restic-show-env:
+restic-show-env: require-runtime-root
 	@sudo bash -lc 'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; \
 	  ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; \
 	  printf "RESTIC_REPOSITORY=%s\n" "$$RESTIC_REPOSITORY"; \
@@ -350,7 +393,7 @@ restic-show-env:
 	  printf "EXCLUDE_FILE=%s\n" "$$ef"; '
 
 # restic-exclude-show — Print active exclude file contents (root)
-restic-exclude-show:
+restic-exclude-show: require-runtime-root
 	@sudo bash -lc 'ef="$${EXCLUDE_FILE:-$${RESTIC_EXCLUDE_FILE:-$${RESTIC_EXCLUDES_FILE:-$(STACKS_REPO)/ops/backups/exclude.txt}}}"; \
 	  if [ -f "$$ef" ]; then echo "→ Exclude file: $$ef"; cat "$$ef"; else echo "No exclude file found at: $$ef"; fi'
 
@@ -381,6 +424,7 @@ check-prom:
 
 # ---- reload via HUP (mon) ----
 reload-prom: STACK=monitoring
+reload-prom: require-runtime-root
 reload-prom:
 	@STACK=monitoring $(compose_all) exec -T prometheus kill -HUP 1 >/dev/null 2>&1 || \
 	  { echo "warn: could not send HUP to prometheus (is it running?)"; exit 1; }
@@ -431,9 +475,9 @@ nc-help:
 	@echo "  make nc-post            - Post configuration (cron, trusted_domains, etc.)"
 	@echo "  make nc-status          - Print Nextcloud status and HTTP checks"
 	@echo "  make nc-reset-db        - Drop DB volume only (app data remains)"
-	@echo "  make backup stack=nextcloud BACKUP_DIR=/path [BACKUP_ENV=/opt/homelab-runtime/ops/backups/nc-backup.env] - Backup (db + data) with checksum"
+	@echo "  make backup stack=nextcloud BACKUP_DIR=/path [BACKUP_ENV=\${RUNTIME_ROOT}/ops/backups/nc-backup.env] - Backup (db + data) with checksum"
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=/path - Verify last backup checksum"
-	@echo "  make restore stack=nextcloud BACKUP_DIR=/path [RUNTIME_DIR=/opt/homelab-runtime/stacks/nextcloud] - Restore latest backup"
+	@echo "  make restore stack=nextcloud BACKUP_DIR=/path [RUNTIME_DIR=\${RUNTIME_ROOT}/stacks/nextcloud] - Restore latest backup"
 
 # Core lifecycle
 nc-up:          ; @$(MAKE) up          stack=nextcloud
