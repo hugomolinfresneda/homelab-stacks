@@ -6,174 +6,193 @@ a public repository with clean, reusable definitions, and a private runtime repo
 
 ---
 
+## Repo contract (links)
+This stack follows the standard repo/runtime split. See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
+
+---
+
 ## Repository structure
 
 | Repository          | Purpose                                                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------- |
 | **homelab-stacks**  | Public base definitions (`compose.yaml`, `.env.example`, documentation). No local paths or secrets. |
-| **homelab-runtime** | Private runtime overrides (`compose.override.yml`, `.env`, secrets, systemd units, backups).        |
+| **homelab-runtime** | Private runtime overrides (`compose.override.yaml`, `.env`, secrets, systemd units, backups).       |
 
 ---
 
-Use the canonical variables for absolute paths:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/dozzle"
-```
+## Components
+- `dozzle`
+- `docker-socket-proxy` (runtime override)
+- Network: `proxy`
+
+---
 
 ## Requirements
 
-* Docker + Compose plugin
-* Shared network for reverse proxy / Cloudflare tunnel:
-  ```bash
-  docker network create proxy || true
-  ```
+### Software
+- Docker Engine + Docker Compose plugin
+- GNU Make (`make`)
 
-* Debian (rootless Docker) is the target environment.
-  For rootful setups, adjust `DOCKER_SOCK` in the `.env`.
+### Shared Docker network
+```bash
+docker network create proxy || true
+```
+
+### Networking / Ports
+| Service | Exposure | Host | Container | Protocol | Notes |
+|---|---|---|---:|---|---|
+| `dozzle` | Internal only (`expose`) | — | 8080 | tcp | Reachable on the `proxy` network. |
+| `dozzle` | Host-published (optional, runtime override) | `${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8081}` | 8080 | tcp | Optional local bind for debugging. |
+
+### Storage
+No persistent volumes are defined for this stack.
 
 ---
 
-## File layout
-
-```
-${STACKS_DIR}/stacks/dozzle/
-├── compose.yaml
-├── .env.example
-└── README.md
-
-${RUNTIME_DIR}/
-├── compose.override.yml
-└── .env
-```
-
----
-
-## Environment configuration
-
-Copy the example environment file from the stacks repository into the runtime path:
+## Quickstart (Makefile)
 
 ```bash
-cp ${STACKS_DIR}/stacks/dozzle/.env.example \
-   ${RUNTIME_DIR}/.env
-```
+# 1) Canonical variables (adjust to your host)
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/dozzle"
 
-Typical contents:
+# 2) Prepare runtime (overrides + environment variables)
+mkdir -p "${RUNTIME_DIR}"
+cp "stacks/dozzle/compose.override.example.yaml" \
+  "${RUNTIME_DIR}/compose.override.yaml"
+cp "stacks/dozzle/.env.example" "${RUNTIME_DIR}/.env"
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml and ${RUNTIME_DIR}/.env
 
-```dotenv
-TZ=<REGION/CITY>
-DOCKER_SOCK=<DOCKER_SOCK>   # rootless (e.g., /run/user/<UID>/docker.sock)
-# DOCKER_SOCK=/var/run/docker.sock       # rootful
-# BIND_LOCALHOST=127.0.0.1   # recommended if you need host access
-# HTTP_PORT=8081
+# 3) Bring up the stack
+cd "${STACKS_DIR}"
+make up stack=dozzle
+
+# 4) Status
+make ps stack=dozzle
 ```
 
 ---
 
-## Deployment workflow
+## Configuration
 
-From the **runtime repository**:
+### Variables (.env)
+- Example: `stacks/dozzle/.env.example`
+- Runtime: `${RUNTIME_DIR}/.env` (not versioned)
 
+| Variable | Required | Example | Description |
+|---|---|---|---|
+| `TZ` | No | `Etc/UTC` | Container timezone. |
+| `DOCKER_SOCK` | Yes | `/var/run/docker.sock` | Host Docker socket path (rootful or rootless). |
+| `BIND_LOCALHOST` | No | `127.0.0.1` | Optional host bind (runtime override). |
+| `HTTP_PORT` | No | `8081` | Optional host port (runtime override). |
+
+Rootful/rootless examples (comments only):
+- Rootful: `/var/run/docker.sock`
+- Rootless: `/run/user/<UID>/docker.sock`
+
+### Runtime files (not versioned)
+Expected files in `${RUNTIME_DIR}`:
+- `${RUNTIME_DIR}/.env`
+- `${RUNTIME_DIR}/compose.override.yaml`
+
+---
+
+## Runtime overrides
+Files:
+- Example: `stacks/dozzle/compose.override.example.yaml`
+- Runtime: `${RUNTIME_DIR}/compose.override.yaml`
+
+What goes into runtime overrides:
+- `docker-socket-proxy` service
+- Optional host `ports:` bind for the UI
+
+---
+
+## Operation (Makefile)
+
+### Logs
 ```bash
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  up -d
-
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  ps
+make logs stack=dozzle
 ```
 
-Nota: usa el fichero real existente en runtime. Si tu override es `compose.override.yaml`, usa ese fichero.
+### Update images
+```bash
+make pull stack=dozzle
+make up stack=dozzle
+```
 
-**Recommended `compose.override.yml`:**
-
-```yaml
-services:
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476
-    environment:
-      - CONTAINERS=1
-      # - EVENTS=1 # uncomment if you need live container start/stop updates
-    volumes:
-      # Rootless example: /run/user/<UID>/docker.sock
-      - ${DOCKER_SOCK:-<ROOTLESS_DOCKER_SOCK>}:/var/run/docker.sock:ro
-    networks:
-      - proxy
-    restart: unless-stopped
-
-  dozzle:
-    environment:
-      DOCKER_HOST: tcp://docker-socket-proxy:2375
-    # Optional: bind locally for debugging
-    # ports:
-    #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8081}:8080"
+### Stop / start
+```bash
+make down stack=dozzle
+make up stack=dozzle
 ```
 
 ---
 
-## Network exposure
+## Publishing (Cloudflare Tunnel)
 
-### Option A — Cloudflare Tunnel
-
-Add the ingress rule to your Cloudflare configuration:
+1. Add the ingress rule to your tunnel config:
 
 ```yaml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
 ingress:
   - hostname: dozzle.<your-domain>
     service: http://dozzle:8080
   - service: http_status:404
 ```
 
-Restart the tunnel container:
+2. Create the DNS record in Cloudflare (Dashboard  ^f^r DNS  ^f^r Records):
+
+- Type: **CNAME**
+- Name: `dozzle`
+- Target: `<TUNNEL_UUID>.cfargotunnel.com`
+- Proxy: **Proxied**
+
+
+3. Restart the tunnel container:
 
 ```bash
 make down stack=cloudflared
 make up   stack=cloudflared
 ```
 
-### Option B — Reverse proxy (Nginx)
+4. Verify externally:
 
-Include a virtual host configuration such as:
-
+```bash
+curl -I https://dozzle.<your-domain>/
+# HTTP/2 200
 ```
-server {
-    server_name dozzle.<your-domain>;
-    location / {
-        proxy_pass http://dozzle:8080;
-        include proxy_params;
-    }
-}
-```
-
-Ensure TLS (Let’s Encrypt) and proper access control (Basic Auth or Cloudflare Access).
 
 ---
 
 ## Observability
 
-* Dozzle has **no native Prometheus metrics**.
-* Recommended integrations:
-  * **Uptime Kuma** → HTTP check on the published domain.
-  * **Loki / Promtail** → central log aggregation.
-* Example alert conditions:
-  * `probe_failure{target="dozzle"}`
-  * `reverse_proxy_cert_expiry_days < 7`
+- Dozzle has **no native Prometheus metrics**.
+- Recommended integrations:
+  - **Uptime Kuma** → HTTP check on the published domain.
+  - **Loki / Promtail** → central log aggregation.
+
+Dozzle is monitored as part of the logging stack:
+- The container is labelled with `com.logging="true"` so Promtail picks up its logs and ships them to Loki.
+- The `service="dozzle"` label is used as the canonical selector in Grafana (Loki datasource).
+
+Example LogQL:
+
+```logql
+{service="dozzle"}
+```
 
 ---
 
 ## Security notes
 
-* Never expose Dozzle publicly without authentication.
-* Avoid mounting the Docker socket directly in Dozzle; use a socket proxy with minimal endpoints.
-* Keep the proxy internal (no published ports) and on a trusted network.
-* Keep it isolated within the shared `proxy` network.
-* When running rootless Docker, use `<ROOTLESS_DOCKER_SOCK>`.
+- Never expose Dozzle publicly without authentication.
+- Avoid mounting the Docker socket directly in Dozzle; use a socket proxy with minimal endpoints.
+- Keep the proxy internal (no published ports) and on a trusted network.
+- Consider Cloudflare Access in front of the hostname for SSO/MFA.
 
 ## Why socket proxy
 
@@ -186,37 +205,19 @@ endpoint in the proxy. Add other endpoints only when you can justify the need.
 
 ---
 
-## Maintenance
-
-```bash
-# Status
-docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep dozzle
-
-# Update image and redeploy
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  pull
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/dozzle/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  up -d
-```
-
-Dozzle does not persist application data — backups are not required.
+## Persistence / Backups
+No persistent data in this stack.
 
 ---
 
-## Observability
+## Escape hatch (debug)
+> Use only if you need to inspect the raw compose setup.
 
-Dozzle is also monitored as part of the logging stack:
-
-- The container is labelled with `com.logging="true"` so that Promtail
-  picks up its logs and ships them to Loki.
-- The `service="dozzle"` label is used as the canonical selector in
-  Grafana (Loki datasource), for example:
-
-```logql
-{service="dozzle"}
+```bash
+cd "${STACKS_DIR}"
+docker compose \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "stacks/dozzle/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  ps
+```

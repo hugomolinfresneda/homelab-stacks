@@ -1,161 +1,144 @@
 # CouchDB — Self-hosted database (Obsidian LiveSync ready)
 
 This stack deploys **CouchDB 3** using a two-repo model (public **homelab-stacks** + private **homelab-runtime**).
-It is intended to be published via **Cloudflare Tunnel** (no host ports exposed).
+It is intended to be published via **Cloudflare Tunnel** (no host ports exposed by default).
+
+---
+
+## Repo contract (links)
+This stack follows the standard repo/runtime split. See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
 
 ---
 
 ## Architecture
 
-| Repository          | Purpose                                                                 |
-| ------------------- | ----------------------------------------------------------------------- |
-| **homelab-stacks**  | Public base definition: `compose.yaml`, `.env.example`, docs, examples. |
-| **homelab-runtime** | Private overrides: `compose.override.yml`, `.env`, `data/`, `local.d/`. |
+| Repository          | Purpose                                                                  |
+| ------------------- | ------------------------------------------------------------------------ |
+| **homelab-stacks**  | Public base definition: `compose.yaml`, `.env.example`, docs, examples.  |
+| **homelab-runtime** | Private overrides: `compose.override.yaml`, `.env`, `data/`, `local.d/`. |
 
 ---
 
-Use the canonical variables for absolute paths:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/couchdb"
-```
-
-## File layout
-
-```
-${STACKS_DIR}/stacks/couchdb/
-├── compose.yaml
-├── .env.example
-├── local.d/
-│   ├── 00-local.ini.example
-│   ├── 10-cors.ini.example
-│   └── 30-auth.ini.example
-└── README.md
-
-${RUNTIME_DIR}/
-├── compose.override.yml
-├── .env
-├── data/
-└── local.d/
-    ├── 00-local.ini
-    ├── 10-cors.ini
-    └── 30-auth.ini
-```
+## Components
+- `couchdb`
+- `couchdb-exporter`
+- Networks: `proxy`, `mon-net`
 
 ---
 
 ## Requirements
 
-* Docker + Docker Compose available to your user.
-* External Docker network shared by published services:
+### Software
+- Docker Engine + Docker Compose plugin
+- GNU Make (`make`)
 
-  ```bash
-  docker network create proxy || true
-  ```
-
-* External Docker network shared with the monitoring stack:
-
-  ```bash
-  docker network create mon-net || true
-  ```
-
-* Cloudflared Tunnel running on the same `proxy` network (see the `cloudflared` stack).
-
-
----
-
-## Runtime configuration
-
-### `.env` (copied from `.env.example`)
-
-```dotenv
-# Copy to homelab-runtime/stacks/couchdb/.env and CHANGE the password
-COUCHDB_USER=<COUCHDB_ADMIN_USER>
-COUCHDB_PASSWORD=<COUCHDB_ADMIN_PASSWORD>
-
-# Optional: CORS origins for local.d/10-cors.ini (comma-separated).
-# COUCHDB_CORS_ORIGINS=<CORS_ORIGINS>
-
-# Local bind for testing and troubleshooting
-# BIND_LOCALHOST=<BIND_LOCALHOST>
-# HTTP_PORT=<HTTP_PORT>
+### Shared Docker networks
+```bash
+docker network create proxy || true
+docker network create mon-net || true
 ```
 
-### `local.d/` (runtime config)
+### Networking / Ports
+| Service | Exposure | Host | Container | Protocol | Notes |
+|---|---|---|---:|---|---|
+| `couchdb` | Internal only (`expose`) | — | 5984 | tcp | Accessible on `proxy` network. |
+| `couchdb` | Host-published (optional, runtime override) | `${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-5984}` | 5984 | tcp | Optional local bind for testing. |
+| `couchdb-exporter` | Internal only (`expose`) | — | 9984 | tcp | Scraped by Prometheus at `couchdb-exporter:9984` (monitoring example). |
 
-Templates live in `homelab-stacks/stacks/couchdb/local.d/*.ini.example` and contain placeholders only.
+### Storage
+> Host paths are **runtime-only** (no hardcoded paths in the repo).
 
-* **Required:** `00-local.ini` (single-node + bind)
-
-  ```ini
-  [couchdb]
-  single_node = true
-
-  [chttpd]
-  bind_address = 0.0.0.0
-````
-
-* **Required:** `30-auth.ini` (auth cookie secret)
-
-  ```ini
-  [chttpd_auth]
-  secret = <HEX_64>  ; openssl rand -hex 32
-  ```
-
-  Template: `local.d/30-auth.ini.example` in `homelab-stacks`.
-  Real file: `${RUNTIME_DIR}/local.d/30-auth.ini` (mode `600`, not versioned; e.g. `/opt/homelab-runtime/stacks/couchdb/local.d/30-auth.ini`).
-
-* **Optional:** `10-cors.ini` (CORS for LiveSync / web frontends)
-
-  ```ini
-  [cors]
-  origins = ${COUCHDB_CORS_ORIGINS}
-  credentials = true
-  methods = GET, PUT, POST, HEAD, DELETE
-  headers = accept, authorization, content-type, origin, referer, user-agent
-
-  [chttpd]
-  enable_cors = true
-  ```
-
-  Template: `local.d/10-cors.ini.example` in `homelab-stacks`.
-  Replace `${COUCHDB_CORS_ORIGINS}` with a comma-separated list of allowed origins
-  (no trailing slash), or render the template with `envsubst` after setting
-  `COUCHDB_CORS_ORIGINS` in `.env`.
+| Purpose | Host (runtime) | Container | RW | Notes |
+|---|---|---|---:|---|
+| Data | `${RUNTIME_ROOT}/stacks/couchdb/data` | `/opt/couchdb/data` | Yes | CouchDB database files. |
+| Config | `${RUNTIME_ROOT}/stacks/couchdb/local.d` | `/opt/couchdb/etc/local.d` | No | INI snippets (runtime). |
 
 ---
 
-## Deployment (Makefile shortcuts)
-
-From the runtime repository:
+## Quickstart (Makefile)
 
 ```bash
+# 1) Canonical variables (adjust to your host)
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/couchdb"
+
+# 2) Prepare runtime (overrides + environment variables)
+mkdir -p "${RUNTIME_DIR}"
+cp "stacks/couchdb/compose.override.example.yaml" \
+  "${RUNTIME_DIR}/compose.override.yaml"
+cp "stacks/couchdb/.env.example" "${RUNTIME_DIR}/.env"
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml and ${RUNTIME_DIR}/.env
+
+# 3) Prepare local.d (runtime)
+mkdir -p "${RUNTIME_DIR}/local.d"
+cp stacks/couchdb/local.d/*.example "${RUNTIME_DIR}/local.d/"
+# Edit the .ini files in runtime according to your needs.
+
+# 4) Bring up the stack
+cd "${STACKS_DIR}"
 make up stack=couchdb
+
+# 5) Status
 make ps stack=couchdb
+```
+
+---
+
+## Configuration
+
+### Variables (.env)
+- Example: `stacks/couchdb/.env.example`
+- Runtime: `${RUNTIME_DIR}/.env` (not versioned)
+
+| Variable | Required | Example | Description |
+|---|---|---|---|
+| `COUCHDB_USER` | Yes | `<user>` | Admin username for bootstrap. |
+| `COUCHDB_PASSWORD` | Yes | `<secret>` | Admin password for bootstrap. |
+| `COUCHDB_CORS_ORIGINS` | No | `https://app.example` | CORS origins for `local.d/10-cors.ini`. |
+| `BIND_LOCALHOST` | No | `127.0.0.1` | Optional host bind (runtime override). |
+| `HTTP_PORT` | No | `5984` | Optional host port (runtime override). |
+
+### Runtime files (not versioned)
+Expected paths in `${RUNTIME_DIR}` (from override example):
+- `${RUNTIME_DIR}/data/`
+- `${RUNTIME_DIR}/local.d/`
+
+Templates are in `stacks/couchdb/local.d/*.ini.example`.
+
+---
+
+## Runtime overrides
+Files:
+- Example: `stacks/couchdb/compose.override.example.yaml`
+- Runtime: `${RUNTIME_DIR}/compose.override.yaml`
+
+What goes into runtime overrides:
+- `volumes:` for host persistence paths
+- Optional host `ports:` bind for local testing
+
+---
+
+## Operation (Makefile)
+
+### Logs
+```bash
 make logs stack=couchdb
 ```
 
-Expected internal health:
-
+### Update images
 ```bash
-docker run --rm --network=proxy curlimages/curl -sS http://couchdb:5984/_up
-# {"status":"ok"}
+make pull stack=couchdb
+make up stack=couchdb
 ```
 
----
-
-## Manual deploy (portable)
-
+### Stop / start
 ```bash
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/couchdb/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  up -d
+make down stack=couchdb
+make up stack=couchdb
 ```
-
-Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
@@ -164,7 +147,7 @@ Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/cloudflared/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
 ingress:
   - hostname: couchdb.<your-domain>
     service: http://couchdb:5984
@@ -173,12 +156,19 @@ ingress:
 
 2. Create the DNS record in Cloudflare (Dashboard → DNS → Records):
 
-* Type: **CNAME**
-* Name: `couchdb`
-* Target: `<TUNNEL_UUID>.cfargotunnel.com`
-* Proxy: **Proxied**
+- Type: **CNAME**
+- Name: `couchdb`
+- Target: `<TUNNEL_UUID>.cfargotunnel.com`
+- Proxy: **Proxied**
 
-3. Verify externally:
+3. Restart the tunnel container:
+
+```bash
+make down stack=cloudflared
+make up   stack=cloudflared
+```
+
+4. Verify externally:
 
 ```bash
 curl -I https://couchdb.<your-domain>/_up
@@ -187,29 +177,18 @@ curl -I https://couchdb.<your-domain>/_up
 
 ---
 
-## Maintenance
+## Security notes
 
-Update image and redeploy:
-
-```bash
-make pull stack=couchdb
-make up stack=couchdb
-```
-
-Backups (include in your restic policy):
-
-```
-${RUNTIME_DIR}/data/
-```
+- Change the default password in `.env`.
+- Keep runtime `local.d` out of version control.
+- Do not expose port 5984 on the host; publish only via the tunnel.
+- Consider Cloudflare Access in front of the hostname for SSO/MFA.
 
 ---
 
-## Security notes
-
-* Change the default password in `.env`.
-* Keep `30-auth.ini` out of version control.
-* Do not expose port 5984 on the host; publish only via the tunnel.
-* Consider Cloudflare Access in front of the hostname for SSO/MFA.
+## Persistence / Backups
+Persistence lives under `${RUNTIME_ROOT}/stacks/couchdb/...`.
+Backups: see `ops/backups/README.md`.
 
 ---
 
@@ -220,94 +199,25 @@ ${RUNTIME_DIR}/data/
 | `Unable to reach origin service` in tunnel | CouchDB not on `proxy` network or wrong service/port in ingress.  |
 | `{"error":"unauthorized"}` on requests     | Wrong `COUCHDB_USER`/`COUCHDB_PASSWORD` or missing CORS settings. |
 | `_up` fails internally                     | Container not healthy; check `make logs stack=couchdb`.           |
-| Data not persisted                         | Missing `./data:/opt/couchdb/data` bind in runtime override.      |
+| Data not persisted                         | Missing bind in runtime override for `${RUNTIME_DIR}/data`.       |
 
 ---
 
-## Monitoring
+## Observability
 
-This stack ships with a Prometheus exporter for CouchDB metrics.
-
-### Exporter container
-
-A `couchdb-exporter` container based on
-[`gesellix/couchdb-prometheus-exporter`](https://hub.docker.com/r/gesellix/couchdb-prometheus-exporter)
-is started alongside the main `couchdb` service.
-
-The exporter is attached to two Docker networks:
-
-- `proxy`: used to reach the `couchdb` container at `http://couchdb:5984`.
-- `mon-net`: shared with the monitoring stack so that Prometheus can
-  scrape the exporter.
-
-The exporter exposes Prometheus metrics on:
-
-```text
-http://couchdb-exporter:9984/metrics
-```
-
-### Authentication
-
-For simplicity in this homelab setup, the exporter reuses the CouchDB
-admin credentials defined in the `.env` file:
-
-```env
-COUCHDB_USER=
-COUCHDB_PASSWORD=
-```
-
-These are passed to the exporter via:
-
-```yaml
-environment:
-  COUCHDB_USERNAME: ${COUCHDB_USER}
-  COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
-```
-
-No additional CouchDB user is created for monitoring. If you need
-separate credentials in the future, you can introduce a dedicated
-`COUCHDB_MON_USER` / `COUCHDB_MON_PASSWORD` pair and adjust the
-exporter configuration accordingly.
-
-### Prometheus integration
-
-The `couchdb` scrape job is defined in the monitoring stack and targets
-the exporter on `mon-net`. An example scrape config is provided in:
-
-```text
-stacks/monitoring/prometheus/couchdb.yml.example
-```
-
-For details on alerting rules and dashboards that consume these
-metrics, refer to the `stacks/monitoring/README.md` document.
-
-### Grafana dashboard
-
-The monitoring stack ships a dedicated Grafana dashboard for CouchDB:
-
-- `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/couchdb-service-overview.json`
-
-Dashboard scope:
-
-- **Health (last 5m):** exporter scrape status and public endpoint status (Blackbox probe).
-- **Traffic & errors:** request throughput and HTTP status distribution (req/s), plus 5xx share (%, last 5m) and 5xx rate (req/s).
-- **Capacity:** internal counters such as open databases and open OS files to surface resource pressure.
-
-Security: CouchDB is published via the tunnel; treat hostnames and endpoint metadata as operationally sensitive when sharing screenshots or exports.
-
-
+This stack includes a `couchdb-exporter` service (see `compose.yaml`).
+Prometheus scrapes the exporter at `couchdb-exporter:9984`.
 
 ---
 
-## Useful commands
+## Escape hatch (debug)
+> Use only if you need to inspect the raw compose setup.
 
 ```bash
-# Effective compose (debug)
+cd "${STACKS_DIR}"
 docker compose \
-  -f "${STACKS_DIR}/stacks/couchdb/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  config
-
-# Quick version check
-docker run --rm --network=proxy curlimages/curl -s http://couchdb:5984/ | jq .
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "stacks/couchdb/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  ps
 ```

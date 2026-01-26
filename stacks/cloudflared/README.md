@@ -6,56 +6,92 @@ It runs a minimal container (`cloudflare/cloudflared`) that maintains outbound c
 
 ---
 
-## Architecture
-
-| Repository          | Purpose                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| **homelab-stacks**  | Public base definition (`compose.yaml`, `.env.example`, documentation).                  |
-| **homelab-runtime** | Private overrides (`compose.override.yml`, `.env`, real `config.yml`, credentials JSON). |
+## Repo contract (links)
+This stack follows the standard repo/runtime split. See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
 
 ---
 
-Use the canonical variables for absolute paths:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/cloudflared"
-```
+## Architecture
 
-## File layout
+| Repository          | Purpose                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| **homelab-stacks**  | Public base definition (`compose.yaml`, `.env.example`, documentation).                   |
+| **homelab-runtime** | Private overrides (`compose.override.yaml`, `.env`, real `config.yml`, credentials JSON). |
 
-```
-${STACKS_DIR}/stacks/cloudflared/
-├── compose.yaml
-├── .env.example
-├── cloudflared/config.yml.example
-└── README.md
+---
 
-${RUNTIME_DIR}/
-├── compose.override.yml
-├── .env
-└── cloudflared/config.yml
-<CLOUDFLARED_CRED_FILE>  # JSON credential file (runtime only)
-```
+## Components
+- `cloudflared` (Cloudflare Tunnel client)
+- Networks: `proxy`, `mon-net`
 
 ---
 
 ## Requirements
 
-* A **Cloudflare account** with a domain already added to Cloudflare.
-* One created **Tunnel ID (UUID)** and its **JSON credential** file.
-* Shared Docker network:
+### Software
+- Docker Engine + Docker Compose plugin
+- GNU Make (`make`)
 
-  ```bash
-  docker network create proxy || true
-  ```
-* Debian host (rootless Docker supported).
+### Shared Docker network
+```bash
+docker network create proxy || true
+docker network create mon-net || true
+```
+
+### Cloudflare prerequisites
+- A **Cloudflare account** with a domain already added to Cloudflare.
+- One created **Tunnel ID (UUID)** and its **JSON credential** file.
+
+### Networking / Ports
+| Service | Exposure | Host | Container | Protocol | Notes |
+|---|---|---|---:|---|---|
+| `cloudflared` metrics | Internal only (`expose` via metrics flag) | — | 8081 | tcp | `--metrics 0.0.0.0:8081` in compose. No host ports published. |
+
+### Storage
+> Host paths are **runtime-only** (no hardcoded paths in the repo).
+
+| Purpose | Host (runtime) | Container | RW | Notes |
+|---|---|---|---:|---|
+| Tunnel config | `${RUNTIME_ROOT}/stacks/cloudflared/config.yml` | `/etc/cloudflared/config.yml` | No | Mounted from runtime. |
+| Credentials | `${RUNTIME_ROOT}/stacks/cloudflared/credentials.json` | `${CLOUDFLARED_CRED_FILE}` | No | Container path set in `.env`. |
 
 ---
 
-## Runtime configuration
+## Quickstart (Makefile)
 
-Example `${RUNTIME_DIR}/cloudflared/config.yml` (e.g. `/opt/homelab-runtime/stacks/cloudflared/cloudflared/config.yml`; see `stacks/cloudflared/cloudflared/config.yml.example`):
+```bash
+# 1) Canonical variables (adjust to your host)
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/cloudflared"
+
+# 2) Prepare runtime (overrides + environment variables)
+mkdir -p "${RUNTIME_DIR}"
+cp "stacks/cloudflared/compose.override.example.yaml" \
+  "${RUNTIME_DIR}/compose.override.yaml"
+cp "stacks/cloudflared/.env.example" "${RUNTIME_DIR}/.env"
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml and ${RUNTIME_DIR}/.env
+
+# 3) Configure tunnel (runtime)
+# - ${RUNTIME_DIR}/config.yml
+# - ${RUNTIME_DIR}/credentials.json
+
+# 4) Bring up the stack
+cd "${STACKS_DIR}"
+make up stack=cloudflared
+
+# 5) Status
+make ps stack=cloudflared
+```
+
+---
+
+## Configuration
+
+### Runtime `config.yml`
+Example `${RUNTIME_DIR}/config.yml` (see `stacks/cloudflared/cloudflared/config.yml.example`):
 
 ```yaml
 tunnel: <TUNNEL_UUID>
@@ -67,60 +103,52 @@ ingress:
   - service: http_status:404
 ```
 
-Runtime `.env` (see `.env.example`) defines the credential path and optional
-UID/GID:
+### Variables (.env)
+- Example: `stacks/cloudflared/.env.example`
+- Runtime: `${RUNTIME_DIR}/.env` (not versioned)
 
-```
-CLOUDFLARED_CRED_FILE=/etc/cloudflared/<TUNNEL_UUID>.json
-CLOUDFLARED_UID=65532
-CLOUDFLARED_GID=65532
-```
+| Variable | Required | Example | Description |
+|---|---|---|---|
+| `TZ` | No | `Etc/UTC` | Container timezone. |
+| `CLOUDFLARED_UID` | No | `65532` | UID to run the container. |
+| `CLOUDFLARED_GID` | No | `65532` | GID to run the container. |
+| `CLOUDFLARED_CRED_FILE` | Yes | `/etc/cloudflared/<TUNNEL_UUID>.json` | Container path for credentials JSON. |
 
-The credential file lives in runtime storage. Host credential JSON is mounted
-to that container path in `compose.override.yml`; do not put the host path in
-`CLOUDFLARED_CRED_FILE`.
-
-Set permissions once (with your runtime `.env` loaded):
-
-```bash
-sudo install -d -m 700 "$(dirname "$CLOUDFLARED_CRED_FILE")"
-sudo mv ~/.cloudflared/<TUNNEL_UUID>.json "$CLOUDFLARED_CRED_FILE"
-sudo chmod 600 "$CLOUDFLARED_CRED_FILE"
-sudo chown "${CLOUDFLARED_UID}:${CLOUDFLARED_GID}" "$CLOUDFLARED_CRED_FILE"
-```
+### Runtime files (not versioned)
+Expected paths in `${RUNTIME_DIR}` (from override example):
+- `${RUNTIME_DIR}/config.yml`
+- `${RUNTIME_DIR}/credentials.json`
 
 ---
 
-## Deployment (Makefile shortcuts)
+## Runtime overrides
+Files:
+- Example: `stacks/cloudflared/compose.override.example.yaml`
+- Runtime: `${RUNTIME_DIR}/compose.override.yaml`
 
-From the runtime repository:
-
-```bash
-make up stack=cloudflared     # deploy tunnel
-make ps stack=cloudflared     # show status
-make logs stack=cloudflared   # view tunnel logs
-```
-
-Expected log output:
-
-```
-Connected to Cloudflare edge
-Registered tunnel connection
-```
+What goes into runtime overrides:
+- Mounts for `config.yml` and credentials JSON
 
 ---
 
-## Manual deploy (portable method)
+## Operation (Makefile)
 
+### Logs
 ```bash
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/cloudflared/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  up -d
+make logs stack=cloudflared
 ```
 
-Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
+### Update images
+```bash
+make pull stack=cloudflared
+make up stack=cloudflared
+```
+
+### Stop / start
+```bash
+make down stack=cloudflared
+make up stack=cloudflared
+```
 
 ---
 
@@ -128,15 +156,14 @@ Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 Each `hostname:` in your `config.yml` must have a **DNS CNAME** record in Cloudflare pointing to the tunnel.
 
-1. Open [dash.cloudflare.com](https://dash.cloudflare.com) → your domain → **DNS → Records**
+1. Open your domain in Cloudflare → **DNS → Records**
 2. Create one CNAME per service:
 
-| Type  | Name          | Target                                                  | Proxy Status |
-| ----- | ------------- | ------------------------------------------------------- | ------------ |
-| CNAME | `<SERVICE_SUBDOMAIN>` | `<TUNNEL_UUID>.cfargotunnel.com` | ☁️ Proxied   |
+| Type  | Name                | Target                          | Proxy Status |
+| ----- | ------------------- | ------------------------------- | ------------ |
+| CNAME | `<SERVICE_SUBDOMAIN>` | `<TUNNEL_UUID>.cfargotunnel.com` | Proxied      |
 
-3. Save changes.
-   No TTL or proxy tweaks needed — Cloudflare handles routing automatically.
+3. Save changes. No TTL or proxy tweaks needed — Cloudflare handles routing automatically.
 
 To verify:
 
@@ -156,18 +183,34 @@ Should return:
 
 1. Add the rule in your `config.yml`:
 
-   ```yaml
-   - hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>
-     service: http://<SERVICE_NAME>:<SERVICE_PORT>
-   ```
+```yaml
+- hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>
+  service: http://<SERVICE_NAME>:<SERVICE_PORT>
+```
+
 2. Create the CNAME in Cloudflare’s **DNS → Records**,
    pointing to your `<TUNNEL_UUID>.cfargotunnel.com`.
 3. Restart the tunnel:
 
-   ```bash
-   make down stack=cloudflared
-   make up   stack=cloudflared
-   ```
+```bash
+make down stack=cloudflared
+make up   stack=cloudflared
+```
+
+---
+
+## Security notes
+
+- Never version the JSON credential file.
+- Do **not** expose ports 80/443.
+- Keep the `proxy` network shared among your web services.
+- Cloudflare handles TLS and authentication at the edge.
+
+---
+
+## Persistence / Backups
+Persistence lives under `${RUNTIME_ROOT}/stacks/cloudflared/...`.
+Backups: see `ops/backups/README.md`.
 
 ---
 
@@ -182,127 +225,28 @@ Should return:
 
 ---
 
-## Security notes
+## Observability
 
-* Never version the JSON credential file.
-* Do **not** expose ports 80/443.
-* Keep the `proxy` network shared among your web services.
-* Cloudflare handles TLS and authentication at the edge.
-
----
-
-## Maintenance
-
-```bash
-# Update image and redeploy
-make pull stack=cloudflared
-make up stack=cloudflared
-
-# View logs
-make logs stack=cloudflared
-```
-
----
-
-## Metrics & monitoring integration
-
-This tunnel stack is designed to integrate tightly with the monitoring stack
+This tunnel stack is designed to integrate with the monitoring stack
 (`stacks/monitoring`). The `cloudflared` container exposes Prometheus metrics
 on an internal port and joins the monitoring network so that Prometheus can
 scrape it directly.
 
-### Container wiring
+Key points from `compose.yaml`:
+- `--metrics 0.0.0.0:8081` enables the `/metrics` endpoint inside the container.
+- The service joins both `proxy` and `mon-net` networks.
+- No host ports are published; metrics are only reachable from Docker networks.
 
-The base compose (`stacks/cloudflared/compose.yaml`) starts the tunnel with:
+---
 
-```yaml
-services:
-  cloudflared:
-    command: >
-      tunnel --config /etc/cloudflared/config.yml --metrics 0.0.0.0:8081 run
-    networks:
-      - proxy
-      - mon-net
+## Escape hatch (debug)
+> Use only if you need to inspect the raw compose setup.
+
+```bash
+cd "${STACKS_DIR}"
+docker compose \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "stacks/cloudflared/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  ps
 ```
-
-Key points:
-
-- The `--metrics 0.0.0.0:8081` flag enables the `/metrics` endpoint inside
-  the container. **No host port is published**; metrics are only reachable
-  from Docker networks.
-- The service joins both `proxy` (for talking to internal apps such as
-  Dozzle, Uptime Kuma, Nextcloud…) and `mon-net` (so Prometheus can reach
-  `cloudflared:8081`). Both networks are created as external networks, so
-  they can be shared across stacks.
-
-In the runtime override (`homelab-runtime/stacks/cloudflared/compose.override.yml`)
-you still mount your real `config.yml` and the JSON credential referenced by
-`CLOUDFLARED_CRED_FILE`; the metrics wiring remains unchanged.
-
-### Prometheus job (monitoring stack)
-
-The monitoring stack defines a dedicated job to scrape the tunnel metrics
-from `mon-net`:
-
-```yaml
-# stacks/monitoring/prometheus/prometheus.yml
-
-- job_name: 'cloudflared'
-  scrape_interval: 30s
-  metrics_path: /metrics
-  static_configs:
-    - targets:
-        - 'cloudflared:8081'
-      labels:
-        stack: proxy
-        service: cloudflared
-        env: home
-```
-
-This follows the same labelling model as the rest of the homelab:
-
-- `stack="proxy"` — this tunnel belongs to the reverse-proxy / ingress layer.
-- `service="cloudflared"` — used in Grafana dashboards and alerts.
-- `env="home"` — environment tag; adjust if you run multiple environments.
-
-### Alerting rules
-
-Prometheus alert rules for the tunnel live in:
-
-- `stacks/monitoring/prometheus/rules/cloudflared.rules.yml`
-
-Current rules:
-
-- **CloudflaredDown** — fires when `up{job="cloudflared"} == 0` for more than 2 minutes.
-- **CloudflaredHighErrorRate** — fires when the percentage of failed requests
-  through the tunnel stays above 5% for 10 minutes, based on the
-  `cloudflared_tunnel_request_errors` and `cloudflared_tunnel_total_requests`
-  counters exported by the container.
-
-These rules are labelled with `stack="proxy"`, `service="cloudflared"` and
-`env="home"` for consistent routing and dashboard filtering.
-
-### Grafana dashboards & logs
-
-The monitoring stack provides a dedicated Grafana dashboard:
-
-- **Cloudflared – Tunnel Overview**
-
-It is intended to give a single-screen view of tunnel health and behaviour:
-
-- **Near-real-time health (last 5m)**: tunnel scrape status, HA connections to the edge, and QUIC RTT.
-- **SLO-style view (last 24h)**: request success rate.
-- **Traffic & failures**: proxied requests per second and request error rate (req/s and %).
-- **L4 sessions**: *WARP routing – Active TCP/UDP sessions* (may remain at 0 for pure HTTP(S) ingress tunnels).
-- **Logs (last 30m)**: error-only log lines from the `cloudflared` container for fast triage.
-
-Panel descriptions follow the standard `Context / Focus / Implementation / Security` format used across the monitoring dashboards.
-
-Logs are ingested by Promtail from the Docker JSON logs for the
-`cloudflared` container. The container is labelled with `com.logging="true"`
-and `service="cloudflared"`, so log streams arrive in Loki with
-`job="dockerlogs", service="cloudflared"` and can be joined conceptually
-with the metrics above in Grafana.
-
-In practice, this gives you a full observability loop for the tunnel:
-**status → SLO → error spikes → logs** in a single place.

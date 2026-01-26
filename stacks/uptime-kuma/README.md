@@ -9,183 +9,167 @@ This stack follows the **two-repository architecture** of the homelab:
 
 ---
 
+## Repo contract (links)
+This stack follows the standard repo/runtime split. See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
+
+---
+
 ## Repository structure
 
 | Repository          | Purpose                                                                 |
 | ------------------- | ----------------------------------------------------------------------- |
 | **homelab-stacks**  | Public base definition (`compose.yaml`, `.env.example`, documentation). |
-| **homelab-runtime** | Private overrides (`compose.override.yml`, `.env`, persistent data).    |
+| **homelab-runtime** | Private overrides (`compose.override.yaml`, `.env`, persistent data).   |
 
 ---
 
-Use the canonical variables for absolute paths:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/uptime-kuma"
-```
+## Components
+- `uptime-kuma`
+- Networks: `proxy`, `mon-net`
+
+---
 
 ## Requirements
 
-- Docker + Compose plugin
-- Shared external networks:
+### Software
+- Docker Engine + Docker Compose plugin
+- GNU Make (`make`)
 
-  ```bash
-  docker network create proxy   || true
-  docker network create mon-net || true
-  ```
+### Shared Docker networks
+```bash
+docker network create proxy   || true
+docker network create mon-net || true
+```
 
-- Target environment: **Debian rootless Docker**
-  Adjust volume paths if you use rootful mode.
+### Networking / Ports
+| Service | Exposure | Host | Container | Protocol | Notes |
+|---|---|---|---:|---|---|
+| `uptime-kuma` | Internal only (`expose`) | — | 3001 | tcp | Reachable on `proxy` and `mon-net`. |
+| `uptime-kuma` | Host-published (optional, runtime override) | `${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-3001}` | 3001 | tcp | Optional local bind for direct access. |
 
-Uptime Kuma attaches to both `proxy` (for HTTP ingress through your reverse proxy or tunnel) and `mon-net` so that the monitoring stack (Prometheus) can reach its `/metrics` endpoint.
+### Storage
+> Host paths are **runtime-only** (no hardcoded paths in the repo).
+
+| Purpose | Host (runtime) | Container | RW | Notes |
+|---|---|---|---:|---|
+| Data | `${RUNTIME_ROOT}/stacks/uptime-kuma/data` | `/app/data` | Yes | Application data. |
 
 ---
 
-## File layout
-
-```
-${STACKS_DIR}/stacks/uptime-kuma/
-├── compose.yaml
-├── .env.example
-└── README.md
-
-${RUNTIME_DIR}/
-├── compose.override.yml
-├── .env
-└── data/
-```
-
----
-
-## Environment configuration
-
-Copy the environment file to the runtime path:
+## Quickstart (Makefile)
 
 ```bash
-cp ${STACKS_DIR}/stacks/uptime-kuma/.env.example    ${RUNTIME_DIR}/.env
+# 1) Canonical variables (adjust to your host)
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/uptime-kuma"
+
+# 2) Prepare runtime (overrides + environment variables)
+mkdir -p "${RUNTIME_DIR}"
+cp "stacks/uptime-kuma/compose.override.example.yaml" \
+  "${RUNTIME_DIR}/compose.override.yaml"
+cp "stacks/uptime-kuma/.env.example" "${RUNTIME_DIR}/.env"
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml and ${RUNTIME_DIR}/.env
+
+# 3) Bring up the stack
+cd "${STACKS_DIR}"
+make up stack=uptime-kuma
+
+# 4) Status
+make ps stack=uptime-kuma
 ```
-
-Example:
-
-```dotenv
-TZ=<REGION/CITY>
-RUNTIME_DIR="/abs/path/homelab-runtime/stacks/uptime-kuma"  # e.g. /opt/homelab-runtime/stacks/uptime-kuma
-
-# Optional: local UI bind (recommended if you need host access)
-BIND_LOCALHOST=127.0.0.1
-HTTP_PORT=3001
-```
-
-Set `RUNTIME_DIR` to your runtime stack directory so the bind mount examples resolve correctly.
 
 ---
 
-## Deployment (Makefile shortcuts)
+## Configuration
 
-From the runtime repository root:
+### Variables (.env)
+- Example: `stacks/uptime-kuma/.env.example`
+- Runtime: `${RUNTIME_DIR}/.env` (not versioned)
 
+| Variable | Required | Example | Description |
+|---|---|---|---|
+| `TZ` | No | `Etc/UTC` | Container timezone. |
+| `RUNTIME_DIR` | No (informational) | `/abs/path/to/runtime/stacks/uptime-kuma` | Optional reference path used in examples. |
+| `BIND_LOCALHOST` | No | `127.0.0.1` | Optional host bind (runtime override). |
+| `HTTP_PORT` | No | `3001` | Optional host port (runtime override). |
+
+### Runtime files (not versioned)
+Expected paths in `${RUNTIME_DIR}` (from override example):
+- `${RUNTIME_DIR}/data/`
+
+---
+
+## Runtime overrides
+Files:
+- Example: `stacks/uptime-kuma/compose.override.example.yaml`
+- Runtime: `${RUNTIME_DIR}/compose.override.yaml`
+
+What goes into runtime overrides:
+- `volumes:` for host persistence paths
+- Optional host `ports:` bind for local UI access
+
+---
+
+## Operation (Makefile)
+
+### Logs
 ```bash
-make up   stack=uptime-kuma    # deploy the stack
-make ps   stack=uptime-kuma    # show container status
-make down stack=uptime-kuma    # stop and remove the stack
+make logs stack=uptime-kuma
 ```
 
-Example output:
-
-```text
-🚀 Starting runtime stack 'uptime-kuma'...
-[+] Running 1/1
- ✔ Container uptime-kuma  Started
-
-NAME          STATUS                   PORTS
-uptime-kuma   Up (healthy)             3001/tcp
-```
-
----
-
-## Manual deployment (portable method)
-
-If you’re not using the Makefile helper:
-
+### Update images
 ```bash
-docker compose \
-  --env-file "${RUNTIME_DIR}/.env" \
-  -f "${STACKS_DIR}/stacks/uptime-kuma/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  up -d
+make pull stack=uptime-kuma
+make up stack=uptime-kuma
 ```
 
-Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
+### Stop / start
+```bash
+make down stack=uptime-kuma
+make up stack=uptime-kuma
+```
 
 ---
 
-## Runtime override
+## Publishing (Cloudflare Tunnel)
+
+1. Add the ingress rule to your tunnel config:
 
 ```yaml
-services:
-  uptime-kuma:
-    volumes:
-      - ${RUNTIME_DIR}/data:/app/data
-    # Optional bind for local access (recommended: loopback only)
-    # ports:
-    #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-3001}:3001"
-```
-
-The runtime override is responsible for:
-
-- Persisting application data on the host.
-- Optionally binding the HTTP port to localhost only for direct browser access.
-
----
-
-## Network exposure
-
-### Option A — Cloudflare Tunnel
-
-Add the rule in `${RUNTIME_ROOT}/stacks/cloudflared/cloudflared/config.yml`:
-
-```yaml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
 ingress:
   - hostname: uptime-kuma.<your-domain>
     service: http://uptime-kuma:3001
   - service: http_status:404
 ```
 
-Restart:
+2. Create the DNS record in Cloudflare (Dashboard  ^f^r DNS  ^f^r Records):
+
+- Type: **CNAME**
+- Name: `uptime-kuma`
+- Target: `<TUNNEL_UUID>.cfargotunnel.com`
+- Proxy: **Proxied**
+
+3. Restart the tunnel container:
 
 ```bash
 make down stack=cloudflared
 make up   stack=cloudflared
 ```
 
-### Option B — Reverse proxy (Nginx)
+4. Verify externally:
 
-```nginx
-server {
-    server_name uptime-kuma.<your-domain>;
-    location / {
-        proxy_pass http://uptime-kuma:3001;
-        include proxy_params;
-    }
-}
+```bash
+curl -I https://uptime-kuma.<your-domain>/dashboard
+# HTTP/2 200
 ```
 
 ---
 
-## Data persistence
-
-Application data is stored under:
-
-```text
-${RUNTIME_DIR}/data/
-```
-
-Include this path in your backup rotation.
-
----
-
-## Prometheus metrics integration
+## Observability
 
 Uptime Kuma can expose a Prometheus-compatible `/metrics` endpoint, protected with HTTP basic auth.
 The monitoring stack scrapes this endpoint and feeds Grafana dashboards.
@@ -209,7 +193,7 @@ from within the `mon-net` network.
 
 ### 2) Runtime password file (used by Prometheus)
 
-On the monitoring side, the password is stored in a simple file in the runtime repo:
+On the monitoring side, the password is stored in a file in the runtime repo:
 
 ```bash
 mkdir -p "${RUNTIME_ROOT}/stacks/monitoring/secrets"
@@ -229,8 +213,6 @@ services:
 
 ### 3) Prometheus scrape job (defined in the monitoring stack)
 
-The corresponding Prometheus job lives in the monitoring stack:
-
 ```yaml
 - job_name: 'uptime-kuma'
   scrape_interval: 30s
@@ -247,42 +229,30 @@ The corresponding Prometheus job lives in the monitoring stack:
     password_file: /etc/prometheus/secrets/kuma_password
 ```
 
-Once this is in place and the monitoring stack is running, you should see:
-
-- Target `uptime-kuma` **UP** in Prometheus (`Status → Targets`).
-- Metrics such as `monitor_status` and `monitor_response_time` available in the Prometheus UI and Grafana.
-
----
-
-## Observability
-
-Once Uptime Kuma is online and metrics are exposed:
-
-- Add monitors for key services:
-
-  - Nextcloud
-  - CouchDB
-  - Dozzle
-  - Uptime Kuma itself
-  - Gateway / Internet reachability (ICMP)
-  - Backup jobs (Push monitors for Nextcloud and Restic)
-
-- The monitoring stack’s Grafana dashboard:
-
-  - `Uptime Kuma – Service and Backup Status`
-
-  consumes `monitor_status` and `monitor_response_time` to provide:
-
-  - A high-level view of monitor UP vs DOWN.
-  - HTTP response time per monitored service.
-  - Tables for public-facing services, infrastructure checks, and backup monitors.
-
-This keeps **health, latency and backup status** in a single place, while leaving Uptime Kuma as the source of truth for availability and alerts.
-
 ---
 
 ## Security notes
 
 - Keep the service within the `proxy` and `mon-net` networks; avoid exposing container ports directly to the Internet.
-- Protect external access to the Uptime Kuma UI with Cloudflare Access, HTTP authentication, or a VPN.
 - Restrict Prometheus metrics access to internal networks only (no direct Internet exposure of `/metrics`).
+- Consider Cloudflare Access in front of the hostname for SSO/MFA.
+
+---
+
+## Persistence / Backups
+Persistence lives under `${RUNTIME_ROOT}/stacks/uptime-kuma/...`.
+Backups: see `ops/backups/README.md`.
+
+---
+
+## Escape hatch (debug)
+> Use only if you need to inspect the raw compose setup.
+
+```bash
+cd "${STACKS_DIR}"
+docker compose \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "stacks/uptime-kuma/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  ps
+```
