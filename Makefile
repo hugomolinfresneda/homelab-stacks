@@ -373,9 +373,12 @@ restic-restore: require-runtime-root
 # restic-mount — FUSE-mount repository for browsing (background) (root)
 # Usage: make restic-mount [MOUNTPOINT=~/mnt/restic]
 restic-mount: require-runtime-root
-	@MOUNTPOINT="$(MOUNTPOINT)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
-	  mp="$${MOUNTPOINT:-$$HOME/mnt/restic}"; mkdir -p "$$mp"; \
-	  echo "→ Mounting repository on $$mp (background). Unmount with: fusermount -u $$mp"; \
+	@set -euo pipefail; \
+	mp="$${MOUNTPOINT:-$$HOME/mnt/restic}"; \
+	mkdir -p "$$mp"; \
+	echo "Mounting repository on $$mp (background). Unmount with: sudo fusermount -u $$mp"; \
+	sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  mp='"'"'"$$mp"'"'"'; \
 	  nohup bash -lc '"'"'set -ae; . "$(RESTIC_ENV_FILE)"; set +a; exec restic mount "'"'"'"$$mp"'"'"'"'"'"' >/dev/null 2>&1 & \
 	  echo "PID=$$!"'
 
