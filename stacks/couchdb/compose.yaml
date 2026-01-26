@@ -47,6 +47,8 @@ services:
         condition: service_healthy
     command:
       - --couchdb.uri=http://couchdb:5984
+    expose:
+      - "9984"
     environment:
       COUCHDB_USERNAME: ${COUCHDB_USER}
       COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
