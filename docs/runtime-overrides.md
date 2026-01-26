@@ -1,78 +1,186 @@
 # Runtime Overrides
 
-## What is a runtime override?
-A runtime override is a local Compose file (often `compose.override.yml`, or an equivalent
-name) that is merged with the public `compose.yaml` at deploy time. It injects
-host-specific settings and sensitive runtime inputs without changing the public repo.
+## Purpose
+This document explains how to define runtime overrides for stacks without modifying
+public repo files. It shows the recommended layout, the Makefile requirements (when
+using it), and a step-by-step flow with copiable examples.
 
-## Why it exists
-- Keeps the public repo safe and shareable by excluding secrets and host paths.
-- Lets each host provide its own mounts, ports, and env files without forking.
-- Preserves a portable base definition while allowing local adjustments.
+**In scope**
+- How overrides are structured and applied.
+- Naming and location conventions for overrides.
+- Safe, portable examples using placeholders.
 
-## Operational model (public repo vs runtime)
-Public repo:
-- `compose.yaml` per stack.
-- Env templates such as `.env.example`.
-- Documentation (this `docs/` tree).
+**Out of scope**
+- Stack-specific runtime behavior (see each stack README).
+- Global contract rules (see `docs/contract.md`).
 
-Runtime:
-- `compose.override.yml` (or equivalent) kept outside the repo.
-- Real env files with values (not templates).
-- `secrets` as files outside the repo.
-- Host-specific paths and runtime state.
+---
 
-If a stack needs extra details, consult that stack's README under `stacks/`.
+## Contract (rules and guarantees)
+> This section inherits the public-to-runtime contract; it adds override specifics.
 
-## How to apply
-1) Keep the base `compose.yaml` in the public repo.
-2) Create a runtime directory anywhere you want.
-3) Place the override file, real env files, and secret files in that runtime directory.
-4) Run Compose with both files so the override is merged at runtime.
+### Contract linkage
+- The public-to-runtime boundary is defined in `docs/contract.md` and applies here.
 
-## Canonical paths (setup for examples)
-Use the canonical variables in docs and examples:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+### Override-specific rules
+- The override file lives in runtime, not in the repo.
+- Use canonical variables (`STACKS_DIR`, `RUNTIME_ROOT`, `RUNTIME_DIR`) and placeholders.
+- Avoid relative paths (`./`) in overrides; prefer `${RUNTIME_DIR}/...`.
+
+### Makefile requirement vs recommendation
+- **Makefile requirement**: if you use `make up` (or similar targets), the Makefile
+  derives `RUNTIME_DIR` from `RUNTIME_ROOT` and `STACK` (or from an explicit
+  `RUNTIME_DIR`) and auto-includes the first existing override at:
+  - `${RUNTIME_DIR}/compose.override.yml`
+  - `${RUNTIME_DIR}/compose.override.yaml`
+- **Recommendation**: standardize on `${RUNTIME_DIR}/compose.override.yaml` for
+  consistency; `.yml` remains supported by the Makefile.
+
+### Canonical variables
+- `STACKS_DIR="/abs/path/to/homelab-stacks"`
+- `RUNTIME_ROOT="/abs/path/to/homelab-runtime"`
+- `RUNTIME_DIR="${RUNTIME_ROOT}/stacks/<stack>"`
+
+---
+
+## Disk layout (mental model)
+- Public repo (versioned): `${STACKS_DIR}/...`
+- Private runtime (not versioned): `${RUNTIME_ROOT}/...`
+
+Example tree (illustrative):
+```text
+${RUNTIME_ROOT}/
+  stacks/<stack>/
+    compose.override.yaml
+    .env
+    data/
+    secrets/
 ```
 
-If you want a stack-specific shortcut in examples:
-```sh
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/<stack>"
-```
+---
 
-## Example override (generic, safe)
+## How to use (full flow)
+
+### 1) Define canonical variables
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+```
+Why: keeps examples portable and avoids hardcoded host paths.
+
+### 2) Create the runtime directory for the stack
+```sh
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/<stack>"
+mkdir -p "${RUNTIME_DIR}"
+```
+Why: all runtime-only files live outside the repo.
+
+### 3) Install the override file in runtime
+```sh
+example="${STACKS_DIR}/stacks/<stack>/compose.override.example.yaml"
+target="${RUNTIME_DIR}/compose.override.yaml"
+
+if [ -f "$example" ]; then
+  cp "$example" "$target"
+else
+  cat >"$target" <<'YAML'
+# Runtime override (created because no example was shipped by the stack).
+# TODO: add host-specific mounts/env/secrets for this stack.
+services: {}
+YAML
+fi
+```
+Why: host-specific mounts and secrets must not be committed.
+
+### 4) Create runtime env files (if applicable)
+```sh
+cp "${STACKS_DIR}/stacks/<stack>/.env.example" "${RUNTIME_DIR}/.env"
+# edit: ${RUNTIME_DIR}/.env
+```
+Why: real values and secrets belong in runtime.
+
+### 5) Run with Makefile (recommended) or Compose
+```sh
+cd "${STACKS_DIR}"
+make up stack=<stack>
+make ps stack=<stack>
+```
+Why: the Makefile auto-adds the runtime override when present.
+
+If you do not use the Makefile, run Compose with both files:
+```sh
+docker compose \
+  -f "${STACKS_DIR}/stacks/<stack>/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  up -d
+```
+Why: Compose only merges overrides when both files are provided.
+
+---
+
+## Examples (copiable)
+
+### Example A: override for persistence (bind mounts)
 ```yaml
+# ${RUNTIME_DIR}/compose.override.yaml
 services:
-  app:
-    ports:
-      - "127.0.0.1:8080:80"
-    env_file:
-      - ${RUNTIME_DIR}/.env
+  app: # TODO: rename "app" to the actual service name
     volumes:
-      - ${RUNTIME_DIR}/data:/var/lib/app
-    secrets:
-      - app_password
-
-secrets:
-  app_password:
-    file: ${RUNTIME_DIR}/secrets/app_password
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT}/stacks/<stack>/data:/var/lib/app/data # TODO: rename "app" to the actual service name
 ```
 
-## Relative paths are risky
-Using `./` in overrides can break when the override is copied or stored outside the repo,
-because Compose resolves `./` relative to the override file's location, not the repo.
-Prefer absolute paths or clear placeholders like `${RUNTIME_DIR}/...`.
+### Example B: secrets as files in runtime
+```text
+${RUNTIME_DIR}/secrets/<file>  # mode 600
+```
 
-## Default layout (if you use the Makefile)
-The root `Makefile` assumes a runtime layout per stack:
-- Set `RUNTIME_DIR` to the runtime stack directory (e.g.,
-  `${RUNTIME_ROOT}/stacks/<stack>`; e.g. `/opt/homelab-runtime/stacks/<stack>`).
-- The override file is expected at `${RUNTIME_DIR}/compose.override.yml`
-  (use the real override file present in your runtime; if it is
-  `compose.override.yaml`, use that).
-- Env files are expected at `${RUNTIME_DIR}/.env` (plus `db.env` for the Nextcloud stack).
+---
 
-This is a configurable convention, not a requirement. If you do not use the Makefile,
-use any layout that matches your runtime.
+## Common cases
+
+### Case 1: override not applied with Makefile
+- **Situation**: containers start but changes in override do not apply.
+- **Solution**: ensure the override file exists at `${RUNTIME_DIR}/compose.override.yaml`
+  (or `.yml`) and that `RUNTIME_DIR` is set.
+- **Verification**: `make -n up stack=<stack>` shows wether the override is present or not.
+
+### Case 2: relative paths break after moving runtime
+- **Situation**: using `./data:/var/lib/app` stops working after relocation.
+- **Solution**: use `${RUNTIME_DIR}/data:/var/lib/app`.
+- **Verification**: stack starts regardless of runtime directory location.
+
+---
+
+## Anti-patterns (what NOT to do)
+- Do not keep overrides or real `.env` files inside the repo.
+- Do not hardcode host paths in overrides; use `${RUNTIME_DIR}`.
+- Do not rely on relative paths (`./`) in runtime overrides.
+
+---
+
+## Migration (paths to placeholders)
+Examples that previously used real host paths must be updated to placeholders and
+canonical variables (`/abs/path/...`, `RUNTIME_ROOT`, `RUNTIME_DIR`). Keep runtime
+values local and out of version control.
+
+---
+
+## Troubleshooting
+
+### Error: override not detected
+- **Cause**: `RUNTIME_DIR` not set or override file name does not match Makefile
+  candidates (`compose.override.yml` / `compose.override.yaml`).
+- **Check**: `make echo-vars stack=<stack>` and verify `RUNTIME_DIR`.
+- **Fix**: set `RUNTIME_ROOT` or `RUNTIME_DIR`, and ensure the override file exists.
+
+### Error: "permission denied" on runtime files
+- **Cause**: owner/mode mismatch in runtime directory.
+- **Check**: `ls -l "${RUNTIME_DIR}"`.
+- **Fix**: correct ownership/permissions for runtime files.
+
+---
+
+## References
+- `docs/contract.md`
+- `Makefile`
+- `stacks/<stack>/README.md` (if present)
