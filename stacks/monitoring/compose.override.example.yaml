@@ -35,6 +35,11 @@ services:
     volumes:
       # Example secret mount (bot_token_file in alertmanager.yml)
       - /srv/secrets/alertmanager/TG_BOT_TOKEN:/run/secrets/telegram_bot_token:ro
+    # Runtime-only external URL for Alert/Silence links in Telegram.
+    # Note: overriding command replaces the full list, so keep --config.file.
+    # command:
+    #   - "--config.file=/etc/alertmanager/alertmanager.yml"
+    #   - "--web.external-url=https://alertmanager.<your-domain>"
 
   node-exporter:
     volumes:
