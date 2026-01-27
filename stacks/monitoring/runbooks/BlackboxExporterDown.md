@@ -1,170 +1,182 @@
-# BlackboxExporterDown Runbook
+# BlackboxExporterDown — Blackbox exporter not scraped
 
-**Alert:** `BlackboxExporterDown`
-**Severity:** `critical`
-**Service:** `blackbox`
-**Component:** `exporter`
-**Scope:** `infra`
-**Signal:** `up{job="blackbox"} == 0` (for 5m)
+## Summary
+Prometheus cannot scrape the blackbox exporter (`job="blackbox"`), so probe-based alerts become unreliable.
 
----
-
-## Purpose
-
-Detect when Prometheus cannot scrape the Blackbox Exporter. This breaks synthetic endpoint monitoring and makes any alert based on `probe_*` metrics unreliable.
+## Severity / Urgency
+- `severity`: `critical`
+- Urgency:
+  - **critical**: external checks are blind; endpoint alerts may be suppressed or stale.
 
 ## Impact
+- Synthetic availability/latency monitoring is unavailable.
+- Any alert that depends on `probe_*` metrics may stop firing.
 
-- Synthetic availability/latency monitoring is unavailable (false negatives likely).
-- Endpoint-based alerts (e.g., `*EndpointDown`, `*EndpointSlow`) may stop firing even if services are down.
-- Troubleshooting becomes harder because outside-in signal is missing.
+## Context / Scope
+- `stack`: `monitoring`
+- `service`: `blackbox`
+- `job`: `blackbox` (exporter scrape job)
+- `instance/target`: `<BLACKBOX_INSTANCE>` (from Alertmanager labels or Prometheus target label)
+- Links:
+  - Prometheus rule file: `stacks/monitoring/prometheus/rules/infra.rules.yml`
+  - Runbook source: `stacks/monitoring/runbooks/BlackboxExporterDown.md`
+
+## Placeholders / Endpoints
+- `STACKS_DIR=<STACKS_DIR>` (path to this repo; set to repo root)
+- `PROMETHEUS_URL=<PROMETHEUS_URL>` (get from `stacks/monitoring/compose.yaml` service `prometheus` or stack docs)
+- `BLACKBOX_URL=<BLACKBOX_URL>` (get from `stacks/monitoring/compose.yaml` service `blackbox` or stack docs)
+- `BB_TARGETS_MAP=<BB_TARGETS_MAP>` (runtime targets mapping; see `stacks/monitoring/README.md` "Makefile wrappers")
 
 ---
 
-Use the canonical variables for absolute paths:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
+## Quick confirmation (30–60s)
+> Goal: confirm it is the exporter target that is down.
+
+### 1) PromQL checks (source of truth)
+```bash
+PROMETHEUS_URL=<PROMETHEUS_URL>
+curl -fsS "${PROMETHEUS_URL}/api/v1/query" \
+  --data-urlencode 'query=up{job="blackbox"} == 0'
 ```
-
-## Triage (2-3 minutes)
-
-### 1) Confirm this is a scrape/availability problem (not just a noisy target)
-
-In Prometheus Targets, check the `blackbox` job is **DOWN** and capture the error message (timeout, connection refused, DNS, etc.).
-
-### 2) Confirm the exporter is reachable from the Prometheus network
-
-From the Prometheus container (preferred, same network path as scraping):
+**Success criteria:**
+- Alerting: vector returns `1` for the blackbox target.
+- Healthy: vector empty or `up == 1`.
 
 ```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
+PROMETHEUS_URL=<PROMETHEUS_URL>
+curl -fsS "${PROMETHEUS_URL}/api/v1/query" \
+  --data-urlencode 'query=up{job="blackbox"}'
+```
+**Success criteria:**
+- Healthy: `up` is `1` for the blackbox target.
+
+### 2) Stack health
+```bash
+cd "${STACKS_DIR}"
+make ps stack=monitoring
+make logs stack=monitoring
+```
+**Success criteria:**
+- `blackbox` and `prometheus` are `running/healthy`.
+- Logs do not show repeated scrape failures or crash loops.
+
+---
+
+## What metric triggers this alert
+From `stacks/monitoring/prometheus/rules/infra.rules.yml`:
+```promql
+up{job="blackbox"} == 0
+```
+Labels:
+- `alertname`: `BlackboxExporterDown`
+- `severity`: `critical`
+- `service`: `blackbox`
+- `component`: `exporter`
+- `scope`: `infra`
+
+Related jobs (not part of this alert): `blackbox-http`, `blackbox-icmp`, `blackbox-dns`.
+
+---
+
+## Diagnosis (5–15 min)
+
+### 1) Confirm exporter endpoint is reachable
+```bash
+BLACKBOX_URL=<BLACKBOX_URL>
+curl -fsS "${BLACKBOX_URL}/metrics" | head -n 5
+```
+**Success criteria:**
+- A small set of metrics is returned (non-empty output).
+
+### 2) Validate runtime targets helpers (if needed)
+```bash
+cd "${STACKS_DIR}"
+make bb-ls JOB=blackbox-http BB_TARGETS_MAP="${BB_TARGETS_MAP}"
+```
+**Success criteria:**
+- Target list prints successfully for the selected job.
+
+---
+
+## Likely causes (ordered)
+1) Blackbox container is down or crash-looping.
+2) Prometheus cannot resolve or reach the blackbox service.
+3) Misconfigured scrape target (job name/target mismatch).
+
+---
+
+## Mitigation / Remediation
+
+### Plan A — Minimal impact
+1) **Action:** Reconcile the monitoring stack (ensure exporter is up).
+   ```bash
+   cd "${STACKS_DIR}"
+   make up stack=monitoring
+   ```
+   **Success criteria:**
+   - `make ps stack=monitoring` shows `blackbox` running.
+
+2) **Action:** Watch logs briefly for errors.
+   ```bash
+   cd "${STACKS_DIR}"
+   make logs stack=monitoring follow=true
+   ```
+   **Success criteria:**
+   - No repeated crash loop or fatal config errors.
+
+3) **Action:** Re-check `up{job="blackbox"}`.
+   ```bash
+   PROMETHEUS_URL=<PROMETHEUS_URL>
+   curl -fsS "${PROMETHEUS_URL}/api/v1/query" \
+     --data-urlencode 'query=up{job="blackbox"}'
+   ```
+   **Success criteria:**
+   - `up` becomes `1` for the blackbox target.
+
+### Plan B — Fix runtime target issues
+1) **Action:** Review targets and reload Prometheus if changed.
+   ```bash
+   cd "${STACKS_DIR}"
+   make bb-ls JOB=blackbox-http BB_TARGETS_MAP="${BB_TARGETS_MAP}"
+   make reload-prom
+   ```
+   **Success criteria:**
+   - Targets list is correct, and `up{job="blackbox"}` returns `1`.
+
+### Plan C — Escalate
+- If the exporter is up but scrape still fails, collect logs and config, then escalate to stack config review.
+
+---
+
+## Final verification
+- [ ] `up{job="blackbox"}` is `1`.
+- [ ] Prometheus target `blackbox` shows **UP**.
+- [ ] Probe metrics (`probe_success`, `probe_duration_seconds`) update again.
+- [ ] Alert resolves in Alertmanager.
+
+---
+
+## Post-mortem / Prevention
+- Keep blackbox config changes small and validated.
+- Ensure runtime targets are managed via helpers (`bb-ls`/`bb-add`/`bb-rm`).
+- Add a lightweight self-probe only if it does not create alert loops.
+
+---
+
+## Appendix / Escape hatch
+> Use only if `make` is not available or you need container-level details.
+
+```bash
+# Container status
+cd "${STACKS_DIR}"
+docker compose -f stacks/monitoring/compose.yaml ps blackbox
+
+# Logs
+cd "${STACKS_DIR}"
+docker compose -f stacks/monitoring/compose.yaml logs --tail=200 blackbox
+
+# Prometheus network reachability
+cd "${STACKS_DIR}"
+docker compose -f stacks/monitoring/compose.yaml \
   exec -T prometheus sh -lc 'getent hosts blackbox && wget -qO- http://blackbox:9115/metrics | head -n 5'
 ```
-
-If this succeeds, the issue is likely Prometheus configuration or target label mismatch rather than the exporter itself.
-
-### 3) Check container state and recent logs
-
-```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" ps blackbox
-docker inspect $(docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" ps -q blackbox) \
-  --format '{{.State.Status}} restarting={{.State.Restarting}} restarts={{.RestartCount}}' 2>/dev/null || true
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" logs --tail=200 blackbox 2>/dev/null || true
-```
-
----
-
-## Diagnosis
-
-### A) Container is not running / restart loop
-
-Common causes:
-- invalid `blackbox.yml`
-- wrong volume mount path/permissions
-- image update/regression
-- failing DNS inside container
-
-Actions:
-- Inspect logs for configuration parsing errors.
-- Inspect the mounted config exists inside the container:
-
-```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
-  exec -T blackbox sh -lc 'ls -la /etc/blackbox_exporter/ && sed -n "1,120p" /etc/blackbox_exporter/blackbox.yml 2>/dev/null || true'
-```
-
-*(Adjust path if your container uses a different config location.)*
-
-### B) Networking / DNS issues inside Docker network
-
-If Prometheus cannot resolve `blackbox` or connect:
-- Confirm both containers are on the same Docker network (e.g., `mon-net`).
-- Check name resolution from Prometheus:
-
-```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
-  exec -T prometheus sh -lc 'getent hosts blackbox || (echo "DNS failed" && exit 1)'
-```
-
-If DNS fails intermittently, check Docker DNS (`127.0.0.11`) and network health.
-
-### C) Exporter is up but Prometheus target is misconfigured
-
-If you can curl `/metrics` but Prometheus shows DOWN:
-- Validate Prometheus `scrape_config` for blackbox.
-- Confirm port/host match the running container.
-- Confirm any relabeling does not drop the target.
-
-Fast check of Prometheus current config (inside container, if available):
-
-```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
-  exec -T prometheus sh -lc 'wget -qO- http://localhost:9090/api/v1/status/config | head -n 40'
-```
-
-### D) Resource exhaustion / host-level issues
-
-If multiple services start failing:
-- Check host CPU/memory pressure.
-- Check Docker daemon health.
-
-```bash
-docker stats --no-stream | head
-```
-
----
-
-## Remediation
-
-### 1) Restart blackbox exporter
-
-```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" restart blackbox
-```
-
-### 2) Fix configuration errors
-
-If logs indicate config parsing issues:
-- Revert last change to `blackbox.yml`.
-- Validate YAML and module definitions.
-- Restart the container and re-test `/metrics`.
-
-### 3) Fix networking issues
-
-- Ensure `blackbox` and `prometheus` share the same network.
-- If you changed service names, align scrape target names accordingly.
-- If Docker DNS is unstable, restart the Docker network stack (last resort).
-
----
-
-## Verification
-
-1) Exporter endpoint responds:
-
-```bash
-docker compose -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
-  exec -T prometheus sh -lc 'wget -qO- http://blackbox:9115/metrics | head -n 5'
-```
-
-2) Prometheus target `blackbox` is **UP**.
-
-3) Synthetic probe metrics update again (`probe_success`, `probe_duration_seconds`, etc.).
-
-4) Alert clears in Alertmanager and a **RESOLVED** notification is received (if enabled).
-
----
-
-## Follow-ups / Hardening
-
-- Keep blackbox config changes small and validated.
-- Pin images by digest (already done).
-- Consider adding a lightweight “self-probe” (blackbox probing itself) only if it provides signal without creating alert loops.
-- Ensure endpoint alerts are designed so that blackbox outages are explicit (this alert) and do not masquerade as endpoint health.
-
----
-
-## Ownership
-
-- **Primary:** homelab operator
-- **Escalation:** none (local infra)
