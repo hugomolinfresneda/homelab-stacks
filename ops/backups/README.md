@@ -122,10 +122,10 @@ Below is a minimal map of variables (from `.env.example`).
 Example `BACKUP_PATHS` (from `.env.example`):
 ```bash
 BACKUP_PATHS=(
-  "${STACKS_DIR}/ops"
-  "${RUNTIME_ROOT}/stacks/couchdb/data"
-  "${BACKUPS_DIR}/nextcloud"
-  "${RUNTIME_ROOT}/stacks/uptime-kuma/data"
+  /abs/path/to/homelab-stacks/ops
+  /abs/path/to/homelab-runtime/stacks/couchdb/data
+  /abs/path/to/homelab-runtime/backups/nextcloud
+  /abs/path/to/homelab-runtime/stacks/uptime-kuma/data
 )
 ```
 
@@ -146,6 +146,7 @@ make restic-forget                            - Apply retention now (delete & pr
 make restic-forget-dry                        - Preview retention (no changes)
 make restic-diff A=<id> B=<id>                - Diff between two snapshots
 make restic-restore INCLUDE="/path ..."       - Selective restore (latest snapshot)
+make restic-restore-full                      - Restore exactly BACKUP_PATHS to TARGET (default staging dir)
 make restic-mount [MOUNTPOINT=/path/to/mount] - Mount repository (background)
 make restic-show-env                          - Show effective repo/policy/Kuma URL
 ```
@@ -172,6 +173,10 @@ make backup stack=restic
 - `make restic-restore INCLUDE="/path ..." [TARGET=dir]`:
   - If `TARGET` is not set, the target prints a temp dir and restores there.
   - Success: restored files exist under the target dir.
+- `make restic-restore-full [SNAPSHOT=latest] [TARGET=dir] [ALLOW_INPLACE=1]`:
+  - Restores **exactly** the items listed in `BACKUP_PATHS` from `restic.env`.
+  - If `TARGET` is not set, the target prints a temp dir and restores there.
+  - `TARGET=/` is destructive and **requires** `ALLOW_INPLACE=1`.
 - `make restic-mount [MOUNTPOINT=dir]`:
   - Success: mountpoint is accessible; unmount with `sudo fusermount -u <mountpoint>`.
 - `make restic-show-env`: prints effective repo/policy/Kuma URL and exclude file.
@@ -214,7 +219,7 @@ cat "${BACKUP_TEXTFILE_DIR}/restic_backup.prom"
 
 ---
 
-## Restore
+## Restore / Recovery
 
 ### Selective restore (file or path)
 ```bash
@@ -226,8 +231,48 @@ make restic-restore INCLUDE="/path/in/backup ..." [TARGET=/abs/path/to/restore-t
 - Files appear under the target directory.
 - The command exits 0.
 
-### Complete restore (everything included in BACKUP_PATHS)
-TODO: document a full-restore procedure.
+### Full restore (everything included in BACKUP_PATHS)
+```bash
+cd "${STACKS_DIR}"
+make restic-restore-full
+make restic-restore-full TARGET=/abs/path/to/restore-target
+make restic-restore-full SNAPSHOT=<id> TARGET=/abs/path/to/restore-target
+make restic-restore-full TARGET=/ ALLOW_INPLACE=1
+```
+
+**What it does**
+- Restores **exactly** the items listed in `BACKUP_PATHS` from `restic.env`.
+- Defaults to a safe staging directory if `TARGET` is not set.
+- Requires an explicit opt-in for in-place restore: `TARGET=/` with `ALLOW_INPLACE=1`.
+
+**Guardrails**
+- `TARGET=/` is destructive and requires `ALLOW_INPLACE=1` or the command hard-fails.
+- `BACKUP_PATHS` must exist and be non-empty in `restic.env` or the command hard-fails.
+- The target prints the snapshot, target, and include list before running `restic restore`.
+
+**Snapshot selection**
+- Default: `SNAPSHOT=latest`
+- Set `SNAPSHOT=<id>` to restore a specific snapshot.
+
+**BACKUP_PATHS format (repo-verified)**
+- `BACKUP_PATHS` is a **bash array** (the env file is sourced by bash, not parsed as dotenv; see `ops/backups/.env.example` and `ops/backups/restic-backup.sh`).
+- Example:
+```bash
+BACKUP_PATHS=(
+  "/abs/path/to/homelab-stacks/ops"
+  "/abs/path/to/homelab-runtime/stacks/couchdb/data"
+  "/abs/path/to/backups/nextcloud"
+  "/abs/path/to/homelab-runtime/stacks/uptime-kuma/data"
+)
+```
+- `BACKUP_PATHS` represents host paths to include in the backup (normally absolute).
+  `restic-restore-full` strips any leading `/` when building `--include` because Restic typically stores
+  absolute paths without the leading slash. You do not need to remove the `/` in `BACKUP_PATHS`.
+
+**Success criteria**
+- Exit code 0.
+- Under `TARGET`, the restored paths exist with the expected layout.
+- If `TARGET=/`, files land in their real locations on the host.
 
 ---
 
