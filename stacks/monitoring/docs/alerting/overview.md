@@ -1,54 +1,65 @@
 # Alerting Overview
 
 ## Purpose
+Provide a predictable, low-noise alerting flow for the monitoring stack. This doc explains how alerts move through the system, which files are the source of truth, and the minimum conventions you must follow. Details about rules, receivers, and runbooks live in their dedicated docs.
 
-Provide a predictable and low-noise alerting layer for a single-node homelab:
-- **Critical** = infrastructure failure that must page.
-- **Warning** = service degradation / lab signals that should not wake you up.
-- Prefer **one "symptom" alert per service**, with secondary "diagnostic" alerts inhibited by that symptom.
+## End-to-end flow
+1) **Prometheus rules** evaluate signals and raise alerts. See `prometheus-rules.md`.
+2) **Alertmanager** routes and groups alerts based on labels. Config lives in `stacks/monitoring/alertmanager/alertmanager.yml`.
+3) **Receiver integration** delivers notifications (Telegram). See `alertmanager-telegram.md`.
+4) **Runbooks** provide the operational response. See `runbooks.md`.
+
+Note: Alert/Silence links in Telegram require `--web.external-url` to be set in a runtime override; see `alertmanager-telegram.md`.
+
+## Map of files
+- Prometheus rules: `stacks/monitoring/prometheus/rules/*.yml`
+- Prometheus config: `stacks/monitoring/prometheus/prometheus.yml` (demo: `stacks/monitoring/prometheus/prometheus.demo.yml`)
+- Alertmanager config: `stacks/monitoring/alertmanager/alertmanager.yml`
+- Alertmanager templates: `stacks/monitoring/alertmanager/templates/telegram.tmpl`
+- Runbooks: `stacks/monitoring/runbooks/*.md`
+- Alerting docs: `stacks/monitoring/docs/alerting/*.md`
+
+Runtime/private: `${RUNTIME_ROOT}/stacks/monitoring/...` for secrets and environment-specific overrides.
 
 ## Severity model
+- `critical`
+  - 24/7 notification (oncall).
+  - Used for infra-tier incidents and hard RPO breaches.
+- `warning`
+  - Notifies during daytime; muted during quiet hours.
+  - Used for service health signals and lab degradation.
 
-- `severity="critical"`
-  - Must notify 24/7.
-  - Reserved for infra-tier incidents: exporters down, storage unavailable, backups breaching hard RPO, etc.
+## Labels (summary)
+Minimum required labels:
+- `severity`
+- `service` (sometimes derived in the expression, e.g. via `label_replace`)
 
-- `severity="warning"`
-  - Notifies during daytime, muted during quiet hours (see Alertmanager config).
-  - Used for service health signals (Nextcloud endpoint down, Cloudflared tunnel down, CouchDB endpoint down, etc.).
+Strongly recommended labels:
+- `component`
+- `scope`
 
-## Label standard
+These improve context and silence filters in Telegram, but are not strictly required by the contract. For the full contract and examples, see `prometheus-rules.md`.
 
-All alerts are expected to carry these labels:
+## Routing & inhibition (summary)
+Alertmanager routes primarily by `severity`, and uses `service` (plus other labels) for grouping and inhibition. The source of truth is `stacks/monitoring/alertmanager/alertmanager.yml`.
 
-- `severity`: `critical | warning`
-- `service`: a stable service identifier (e.g., `monitoring`, `backup`, `restic`, `nextcloud`, `cloudflared`, `couchdb`, `adguard`)
-- `component`: what failed (e.g., `exporter`, `endpoint`, `host`, `container`, `backup`, `db`, `redis`, `tunnel`)
-- `scope`: `infra | service | lab`
+## Runbooks and `runbook_url`
+Runbooks live under `stacks/monitoring/runbooks/`. When available, rules include a `runbook_url` annotation that should point to the runbook for that alert. Conventions and the index live in `runbooks.md`.
 
-Recommended optional labels (used for better Telegram rendering and filtering):
-- `target` (Blackbox endpoint target)
-- `via` (probe path, e.g., `blackbox-exporter:9115`)
-- `mountpoint`, `device` (filesystem-related alerts)
-- `container` (container-related alerts)
+## Testing minimum
+Repository-level validation (safe, read-only):
+```bash
+cd "${STACKS_DIR}"
+make validate
+make check-prom
+```
 
-## Routing
-Alertmanager routes based primarily on `severity`:
-- `critical` → `oncall` receiver (Telegram)
-- `warning` → `notify` receiver (Telegram), but muted during quiet hours
+Receiver tests and cleanup (Telegram) are documented in `alertmanager-telegram.md`.
 
-Grouping is designed to reduce spam while keeping incidents actionable.
-
-## Inhibition (signal hygiene)
-
-The inhibition policy follows the "symptom > diagnostics" model:
-
-- **Critical inhibits warning** for the same incident family (same `alertname` / `instance`, depending on the rule).
-- **Service symptom alerts** (e.g., endpoint down) inhibit secondary warnings for that service (e.g., redis down).
-
-This keeps notifications focused on the top-level failure, while still preserving diagnostic alerts in Alertmanager/Grafana for triage.
+## Related docs
+- `prometheus-rules.md` — alert rule contract, labels, and `runbook_url`
+- `alertmanager-telegram.md` — Telegram receiver setup, tests, and silences
+- `runbooks.md` — runbook index and conventions
 
 ## Out-of-band monitoring
-
-Some failures are not self-detectable from inside Prometheus (e.g., "Prometheus is dead").
-Those are covered externally via Uptime Kuma health checks (internal monitor).
+Some failures (e.g., “Prometheus is dead”) are not observable from inside Prometheus. Those are covered externally via Uptime Kuma health checks.

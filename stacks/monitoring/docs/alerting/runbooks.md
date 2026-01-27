@@ -1,38 +1,46 @@
 # Runbooks
 
-## Convention
+## What is a runbook in this repo?
+A runbook is the **operational response** for a specific alert: what it means, how to confirm it quickly, and how to recover safely. This file is the **index of runbooks** and the source of truth for alert-to-runbook mapping.
 
-Runbooks live under:
+---
 
-- `stacks/monitoring/runbooks/`
+## Where runbooks live
+- Runbooks: `stacks/monitoring/runbooks/*.md`
+- Alert rules: `stacks/monitoring/prometheus/rules/*.yml`
+- Alerting docs: `stacks/monitoring/docs/alerting/*.md`
 
-Naming rule:
+---
 
-- `<Alertname>.md` (must match the Prometheus `alert:` name)
-
-## Minimum runbook structure
-
-Recommended sections:
-
-- Summary
+## Minimum content (short contract)
+A runbook should include, at minimum:
+- Summary / purpose
 - Impact
-- Preconditions / dependencies
+- Quick confirmation (fast checks)
 - Diagnosis
-- Mitigation / remediation
+- Mitigation / remediation steps
 - Verification
-- Follow-ups / prevention
+
+(Use the existing runbook files as the format reference.)
+
+---
 
 ## Linking runbooks to alerts
+- When a rule includes `runbook_url`, it should point to the runbook for that alert.
+- The table below is the **canonical index** and must stay in sync with the rules.
 
-Use the `runbook_url` annotation on the Prometheus alert rule:
+---
 
-- `runbook_url: "<stable URL>"`
+## Alert → Runbook index
+| alertname | severity | service (or component) | runbook_url | owner |
+|---|---|---|---|---|
+| `BlackboxExporterDown` | `critical` | `blackbox` | `stacks/monitoring/runbooks/BlackboxExporterDown.md` | `TBD` |
+| `ResticBackupStaleHard` | `critical` | `restic` | `stacks/monitoring/runbooks/ResticBackupStaleHard.md` | `TBD` |
+| `BackupDiskNotMounted` | `critical` | `backup` | `stacks/monitoring/runbooks/BackupDiskNotMounted.md` | `TBD` |
 
-Portability note:
-- If you do not have a stable URL that is safe to publish in the public repo, keep `runbook_url` empty in public and override rules in runtime.
-- Alternatively, publish runbooks via a docs site (GitHub Pages or an internal static site) and point `runbook_url` there from runtime.
+---
 
-## Dashboards
-
-Similarly, use `dashboard_url` for first-click triage.
-This is typically runtime-owned because Grafana URLs are environment-specific.
+## Maintenance
+- If an alert changes meaning, update its runbook in the same PR.
+- If a new alert is added, add it to the index here.
+- If a runbook is missing, add a TODO in the table and document why.

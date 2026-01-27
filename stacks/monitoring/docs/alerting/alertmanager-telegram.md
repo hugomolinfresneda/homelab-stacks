@@ -1,68 +1,115 @@
 # Alertmanager → Telegram
 
 ## Goals
-
 - Route alerts to Telegram with a consistent, low-noise presentation.
 - Support quiet hours for warning-level signals.
 - Surface incident links (Runbook / Dashboard / Alert / Silence) in notifications.
 - Keep the public repo portable by pushing environment-specific values into runtime.
 
-## Receivers and routing
+## Scope
+This doc covers **configuration, testing, and cleanup** of the Telegram receiver. It does not define alert rules (see `prometheus-rules.md`).
 
-Two Telegram receivers are used:
+---
 
-- `oncall` — receives `severity="critical"` alerts (24/7).
-- `notify` — receives `severity="warning"` alerts (muted during quiet hours).
+## Where things live (repo vs runtime)
+**Repo:**
+- Alertmanager config: `stacks/monitoring/alertmanager/alertmanager.yml`
+- Telegram template: `stacks/monitoring/alertmanager/templates/telegram.tmpl`
 
-Routing and inhibition rules live in `alertmanager/alertmanager.yml`.
+**Runtime:**
+- Secrets and environment-specific overrides under `${RUNTIME_ROOT}/stacks/monitoring/...`
 
-## Quiet hours
+---
 
-Warning notifications are muted during quiet hours via `time_intervals` + `mute_time_intervals`.
-Critical alerts are not muted.
+## Prerequisites
+- Telegram bot token (secret)
+- Telegram chat/group ID (not a secret, but environment-specific)
+- Access to the `monitoring` stack runtime to mount secrets/overrides
 
-## Templates
+---
 
-Telegram messages are rendered via a custom template:
+## Runtime secrets and permissions
+Alertmanager expects the bot token at `/run/secrets/telegram_bot_token` (see `alertmanager.yml`).
+- Store the secret in runtime and mount it into the container.
+- Recommended permissions: mode `600`, owner `<user>:<group>`.
 
-- `alertmanager/templates/telegram.tmpl`
+Chat IDs are **not secrets**, but should be kept environment-specific (do not commit real IDs in the repo). The repo config ships with a placeholder chat ID; override it in runtime if needed.
 
-The template uses HTML formatting and short, clickable hyperlinks.
+---
 
-## External URL
+## Configuration touchpoints (repo)
+- `stacks/monitoring/alertmanager/alertmanager.yml`
+  - Receivers: `notify` (warning) and `oncall` (critical)
+  - Routing: `severity`-based
+  - Templates: `stacks/monitoring/alertmanager/templates/telegram.tmpl`
 
-To generate correct "Alert" and "Silence" links, Alertmanager must know its external URL.
+If you need to override `chat_id` or other env-specific values, do it in runtime (do not edit the repo file with real IDs or tokens).
 
-Set it via the container command:
+---
 
-- `--web.external-url=https://alertmanager.<your-domain>`
 
-This is environment-specific and should live in the runtime overlay.
+## External URL (runtime-only)
+Alertmanager templates use `.ExternalURL` to build Alert/Silence links. Set the public URL in a runtime override (do not hardcode it in the repo):
 
-## Secrets and runtime/public split
+```yaml
+# ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yml
+services:
+  alertmanager:
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--web.external-url=https://alertmanager.<your-domain>"
+```
+## Testing (end-to-end)
+The simplest test is an injected alert from inside the Alertmanager container:
 
-Telegram bot tokens are secrets and must not be committed.
+```bash
+docker compose -f stacks/monitoring/compose.yaml exec -T alertmanager \
+  amtool --alertmanager.url=http://localhost:9093 \
+  alert add TestTelegram \
+  severity=warning service=monitoring \
+  --annotation=summary="Test alert" \
+  --annotation=description="Telegram receiver test" \
+  --annotation=runbook_url="stacks/monitoring/runbooks/BlackboxExporterDown.md"
+```
 
-Recommended pattern:
+**Success criteria**
+- The notification arrives in Telegram.
+- Alertmanager logs show no receiver errors.
 
-- Public repo:
-  - ships Alertmanager config + template
-  - may keep chat IDs as placeholders
-- Runtime:
-  - mounts secrets (Telegram bot token)
-  - overrides chat IDs and any environment URLs as needed
+---
 
-## Operational commands
+## Cleanup (silences)
+Alerts resolve automatically when the condition clears.
 
-Validate configuration inside the container:
+Create a short silence for the test alert:
+```bash
+docker compose -f stacks/monitoring/compose.yaml exec -T alertmanager \
+  amtool --alertmanager.url=http://localhost:9093 \
+  silence add alertname="TestTelegram" --duration=10m --comment="telegram test"
+```
 
-- `amtool check-config /etc/alertmanager/alertmanager.yml`
+List silences:
+```bash
+docker compose -f stacks/monitoring/compose.yaml exec -T alertmanager \
+  amtool --alertmanager.url=http://localhost:9093 silence query
+```
 
-Health endpoints:
+Expire a test silence (use the silence ID from the query):
+```bash
+docker compose -f stacks/monitoring/compose.yaml exec -T alertmanager \
+  amtool --alertmanager.url=http://localhost:9093 silence expire <SILENCE_ID>
+```
 
-- `GET http://localhost:9093/-/ready`
-- `GET http://localhost:9093/api/v2/status`
+---
 
-Synthetic alert injection for testing (example):
+## Rollback
+1) Remove or disable Telegram receivers/routes in runtime overrides.
+2) Reload/restart Alertmanager.
+3) Confirm no Telegram deliveries are happening.
 
-- `amtool --alertmanager.url=http://localhost:9093 alert add <AlertName> ...`
+---
+
+## References
+- `overview.md`
+- `prometheus-rules.md`
+- `runbooks.md`
