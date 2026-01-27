@@ -1,198 +1,247 @@
-# Restic — Dual-repo infrastructure backups
+# Restic — dual-repo infrastructure backups
 
 Backs up your **public stacks definition** and **private runtime state** with [restic], integrated with:
 
-- a dual-repo layout (`homelab-stacks` + `homelab-runtime`),
-- a root-owned systemd service for scheduled runs,
-- a unified `make backup stack=restic` entrypoint,
+- a dual-repo layout (`STACKS_DIR` + `RUNTIME_ROOT`),
+- a Makefile-first entrypoint (`make backup stack=restic`),
+- an optional root-owned systemd service for scheduling,
 - optional health pushes to **Uptime Kuma**,
-- and optional **Prometheus/Grafana** metrics via node_exporter’s textfile collector.
+- optional **Prometheus** metrics via node_exporter’s textfile collector.
 
-- **homelab-stacks** (public): backup script + exclude file + Makefile integration.
-- **homelab-runtime** (private): your `restic.env` with repo/password/paths/policy.
+What this does **not** do:
+- It does **not** back up the Nextcloud data volume (use the dedicated Nextcloud backup flow).
+- It does **not** store host-specific paths or secrets in the repo (see the contract below).
 
 [restic]: https://restic.net
 
 ---
 
-## Canonical paths (setup)
-Use these variables in commands and file paths:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-```
-
-## Architecture
-
-| Repository          | Purpose                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| **homelab-stacks**  | Public base (`ops/backups/restic-backup.sh`, `exclude.txt`, Make targets).                      |
-| **homelab-runtime** | Private config (`ops/backups/restic.env` with credentials, policy and the paths to back up).    |
-
-At runtime:
-
-- A **root-owned systemd service** (`homelab-restic-backup.service`) runs the backup via `restic-backup.sh`.
-- The **Makefile** in `homelab-stacks` exposes a single coherent entrypoint:
-
-  ```bash
-  make backup stack=restic
-  ```
-
-- Optionally, the script:
-  - pushes status to **Uptime Kuma** (Push monitor),
-  - writes backup metrics for **Prometheus** (textfile collector).
-
----
-
 ## Requirements
 
-On the **host** (Proxmox node / VM):
-
-- `restic` installed.
-- `systemd` available (the backup runs as a root oneshot service).
-- A backup repository (local directory, S3/B2, rclone remote, …).
-- A dual layout on disk (`STACKS_DIR` + `RUNTIME_ROOT`; e.g. `/opt/homelab-stacks` y `/opt/homelab-runtime`).
-
-For observability (optional):
-
-- `node_exporter` with the **textfile collector** enabled and pointing to your
-  textfile directory (default shown below):
-
-  ```text
-  /var/lib/node_exporter/textfile_collector
-  ```
-
-  (already wired by the `monitoring` stack).
+- `restic` installed on the host.
+- `systemd` + `sudo` **if** you use Makefile targets that call systemd.
+- `curl` **if** you enable Uptime Kuma pushes (`KUMA_PUSH_URL`).
+- `jq` **optional** (used by `make restic-diff` auto-detection and stats in the backup script).
+- `node_exporter` textfile collector **if** you want Prometheus metrics.
 
 ---
 
-## File layout
+## Contract (repo vs runtime)
 
-```text
-${STACKS_DIR}/
-└── ops/backups/
-    ├── restic-backup.sh
-    └── exclude.txt
+This tool follows the public-to-runtime contract:
 
-${RUNTIME_ROOT}/
-└── ops/backups/
-    └── restic.env        # repo/password/policy/paths (not in git)
+- Public repo: `${STACKS_DIR}` (versioned scripts, templates, examples)
+- Private runtime: `${RUNTIME_ROOT}` (real env files, credentials, runtime data)
+
+See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
+
+---
+
+## Layout on disk
+
+### Repo (versioned)
+- `${STACKS_DIR}/ops/backups/`
+  - `README.md`
+  - `.env.example`
+  - `exclude.txt`
+  - `restic-backup.sh`
+  - `lib/backup-metrics.sh`
+
+### Runtime (not versioned)
+- `${RUNTIME_ROOT}/ops/backups/restic.env` (default path **for this repo**; see below)
+
+> Note: system paths like `/etc/systemd/system` or `/var/lib/node_exporter/textfile_collector`
+> are **defaults/typical examples** and may vary by distro/installation.
+
+---
+
+## Setup
+
+### 1) Define canonical variables.
+```sh
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
 ```
 
+### 2) Create runtime directory for backups
+```sh
+mkdir -p "${RUNTIME_ROOT}/ops/backups"
+```
+
+### 3) Copy environment file
+The repo ships an example env file:
+- Repo: `${STACKS_DIR}/ops/backups/.env.example`
+
+Default path **in this repo**:
+- Runtime: `${RUNTIME_ROOT}/ops/backups/restic.env`
+
+```sh
+cp "${STACKS_DIR}/ops/backups/.env.example" \
+  "${RUNTIME_ROOT}/ops/backups/restic.env"
+# EDIT: ${RUNTIME_ROOT}/ops/backups/restic.env (read next section below)
+```
+
+If your environment uses a different env path:
+- **Makefile**: set `RESTIC_ENV_FILE=/abs/path/to/restic.env`
+- **Script**: set `ENV_FILE=/abs/path/to/restic.env`
+
+### 4) Adjust the exclude file (if applicable)
+`exclude.txt` lives in the repo:
+- `${STACKS_DIR}/ops/backups/exclude.txt`
+
+Edit it in the repo if you need to exclude additional paths.
+
 ---
 
-## Runtime configuration (`${RUNTIME_ROOT}/ops/backups/restic.env`)
-Example path: e.g. `/opt/homelab-runtime/ops/backups/restic.env`.
+## Configuration (restic.env)
 
-Minimal example (aligns with the example env file shipped next to it):
+The backup script reads `restic.env` and exports its values.
+Below is a minimal map of variables (from `.env.example`).
 
-```dotenv
-# --- Restic ---
-export BACKUPS_DIR="/abs/path/backups"                  # base mount for local backup storage
-export RESTIC_REPOSITORY="${BACKUPS_DIR}/homelab-restic" # or s3:..., b2:..., rclone:...
-export RESTIC_PASSWORD="CHANGE_ME"
+| Variable | Required | Example | Description |
+|---|---:|---|---|
+| `BACKUPS_DIR` | ✅ | `/abs/path/to/backups` | Base path for local backup storage. |
+| `RESTIC_REPOSITORY` | ✅ | `${BACKUPS_DIR}/homelab-restic` or `s3:...` | Restic repo location. |
+| `RESTIC_PASSWORD` | ✅ | `CHANGE_ME` | Repo password (do not commit). |
+| `RESTIC_KEEP_DAILY` | ❌ | `7` | Retention: keep daily snapshots. |
+| `RESTIC_KEEP_WEEKLY` | ❌ | `4` | Retention: keep weekly snapshots. |
+| `RESTIC_KEEP_MONTHLY` | ❌ | `6` | Retention: keep monthly snapshots. |
+| `RESTIC_GROUP_BY` | ❌ | `host` | Grouping for retention. |
+| `RUN_FORGET` | ❌ | `1` | Apply retention after each backup. |
+| `RESTIC_EXCLUDE_FILE` | ❌ | `${STACKS_DIR}/ops/backups/exclude.txt` | Exclude file (preferred name). |
+| `BACKUP_TEXTFILE_DIR` | ❌ | `/abs/path/textfile_collector` | Prometheus textfile dir (overrides default). |
+| `KUMA_PUSH_URL` | ❌ | `https://uptime-kuma.<YOUR_DOMAIN>/api/push/<YOUR_TOKEN>` | Kuma push URL (placeholder only). |
+| `KUMA_RESOLVE_IP` | ❌ | `<KUMA_LAN_IP>` | Optional DNS override for Kuma. |
+| `BACKUP_PATHS` | ✅ | see array below | List of host paths to back up. Missing paths are skipped. |
 
-# Retention policy
-export RESTIC_KEEP_DAILY=7
-export RESTIC_KEEP_WEEKLY=4
-export RESTIC_KEEP_MONTHLY=6
+`RESTIC_EXCLUDE_FILE` is preferred; the script also accepts `EXCLUDE_FILE` and legacy
+`RESTIC_EXCLUDES_FILE` (precedence: `EXCLUDE_FILE` > `RESTIC_EXCLUDE_FILE` > `RESTIC_EXCLUDES_FILE`).
 
-# Grouping for retention (optional; e.g. "host" or "host,tags")
-# export RESTIC_GROUP_BY="host"
-
-# Apply retention after each backup? (1=yes, 0=no)
-export RUN_FORGET=1
-
-# Exclusions
-# Prefer this var name (singular). The script also accepts EXCLUDE_FILE and legacy RESTIC_EXCLUDES_FILE.
-export RESTIC_EXCLUDE_FILE="${STACKS_DIR}/ops/backups/exclude.txt"
-
-# Prometheus textfile collector (optional)
-# Default is /var/lib/node_exporter/textfile_collector
-# export BACKUP_TEXTFILE_DIR="/abs/path/textfile_collector"
-
-# Uptime Kuma (Push monitor)
-export KUMA_PUSH_URL="https://uptime-kuma.<YOUR_DOMAIN>/api/push/<YOUR_TOKEN>"
-# Optional DNS override for Kuma push (hairpin NAT/DNS issues)
-# export KUMA_RESOLVE_IP="<KUMA_LAN_IP>"
-
-# What to back up (paths may be absent; the script will skip them cleanly)
-# NOTE: do NOT put the Nextcloud data volume here; use the dedicated nc-backup.sh flow.
+Example `BACKUP_PATHS` (from `.env.example`):
+```bash
 BACKUP_PATHS=(
-  # Public infra (scripts, ops, etc.)
   "${STACKS_DIR}/ops"
-
-  # CouchDB (bind)
   "${RUNTIME_ROOT}/stacks/couchdb/data"
-
-  # Nextcloud backup artifacts (sql+tar+.sha256), not the data volume
   "${BACKUPS_DIR}/nextcloud"
-
-  # Uptime Kuma data (bind)
   "${RUNTIME_ROOT}/stacks/uptime-kuma/data"
 )
 ```
 
-> The script tolerates missing paths and skips them safely.
+> NOTE: do **not** put the Nextcloud data volume here; use the dedicated Nextcloud backup flow.
 
 ---
 
-## Prometheus & Grafana integration (optional)
+## Daily operation (Makefile-first)
 
-The backup script sources a shared helper:
-
-```text
-${STACKS_DIR}/ops/backups/lib/backup-metrics.sh
-```
-
-When the backup runs as **root** and node_exporter’s textfile collector is configured, it writes:
+Targets (from `Makefile`):
 
 ```text
-${BACKUP_TEXTFILE_DIR}/restic_backup.prom
+make backup stack=restic                      - Run Restic backup via systemd (root)
+make restic-list                              - Show snapshots
+make restic-check                             - Check repository integrity
+make restic-stats                             - Show repository stats
+make restic-forget                            - Apply retention now (delete & prune)
+make restic-forget-dry                        - Preview retention (no changes)
+make restic-diff A=<id> B=<id>                - Diff between two snapshots
+make restic-restore INCLUDE="/path ..."       - Selective restore (latest snapshot)
+make restic-mount [MOUNTPOINT=/path/to/mount] - Mount repository (background)
+make restic-show-env                          - Show effective repo/policy/Kuma URL
 ```
 
-(`BACKUP_TEXTFILE_DIR` defaults to `/var/lib/node_exporter/textfile_collector` and can be
-overridden via the environment, e.g. in `restic.env`.)
-
-with the following gauges:
-
-- `restic_last_success_timestamp` — Unix timestamp of the last successful backup.
-- `restic_last_duration_seconds` — Duration in seconds of the last backup run.
-- `restic_last_added_bytes` — Bytes added by the last successful backup (approx., via `restic stats`).
-- `restic_last_status` — Exit code of the last run (0=success, non-zero=failure).
-
-These metrics feed into:
-
-- the alert rules in `stacks/monitoring/prometheus/rules/backups.rules.yml`, and
-- the `Backups – Overview` dashboard under `40_Backups` in Grafana.
-
-If the script runs as a **non-root** user and cannot write into the textfile collector directory, the helper **fails soft**: it simply skips writing the `.prom` file and the backup still completes.
-
----
-
-## Deployment (Makefile integration)
-
-From the **stacks** repo (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
-
+### Recommended route
 ```bash
+cd "${STACKS_DIR}"
 make backup stack=restic
 ```
 
-This target:
+**Success criteria**
+- `systemctl start` returns exit code 0 (Makefile target succeeds).
+- Logs show `Backup completed successfully` (or `no-op` if no paths exist).
+- `make restic-list` shows a new snapshot.
 
-- triggers the backup via the `homelab-restic-backup.service` systemd unit (root),
-- uses `${RUNTIME_ROOT}/ops/backups/restic.env` as its configuration source
-  (e.g. `/opt/homelab-runtime/ops/backups/restic.env`),
-- and honours `BACKUP_PATHS`, `RESTIC_KEEP_*`, `RESTIC_GROUP_BY`, etc.
-
-For advanced operations (`restic snapshots`, `restic check`, …) you can call `restic` directly after loading `restic.env` into your environment.
+### Notes per target (minimum criteria)
+- `make restic-list`: output includes snapshot IDs and timestamps.
+- `make restic-check`: exits 0 with repository integrity OK.
+- `make restic-stats`: prints repository statistics.
+- `make restic-forget-dry`: prints the retention command with `--dry-run`.
+- `make restic-forget`: exits 0 and prunes per policy.
+- `make restic-diff A=.. B=..`: prints a diff between snapshots.
+  - If `A`/`B` are not set, the target auto-detects the last two snapshots **only if** `jq` is installed.
+- `make restic-restore INCLUDE="/path ..." [TARGET=dir]`:
+  - If `TARGET` is not set, the target prints a temp dir and restores there.
+  - Success: restored files exist under the target dir.
+- `make restic-mount [MOUNTPOINT=dir]`:
+  - Success: mountpoint is accessible; unmount with `sudo fusermount -u <mountpoint>`.
+- `make restic-show-env`: prints effective repo/policy/Kuma URL and exclude file.
 
 ---
 
-## Systemd integration
+## Direct Restic usage (advanced operations)
 
-The backup is executed by a root-owned oneshot service, for example:
+Use a **single canonical pattern** to load the env and call restic directly:
 
+```bash
+set -a; . "<ENV_FILE>"; set +a; restic snapshots
+```
+
+Choose `<ENV_FILE>` as follows:
+- If you set `RESTIC_ENV_FILE` for Makefile targets, use that same path.
+- Otherwise, use the repo default: `${RUNTIME_ROOT}/ops/backups/restic.env`.
+
+(If you need a different path for the backup script itself, set `ENV_FILE=/abs/path/to/restic.env`.)
+
+---
+
+## Verification
+
+```bash
+cd "${STACKS_DIR}"
+make restic-list
+make restic-check
+```
+
+**Success criteria**
+- `restic-list` shows snapshots with recent timestamps.
+- `restic-check` exits 0.
+
+If Prometheus metrics are enabled, validate the textfile output:
+```bash
+cat "${BACKUP_TEXTFILE_DIR}/restic_backup.prom"
+```
+`BACKUP_TEXTFILE_DIR` defaults to `/var/lib/node_exporter/textfile_collector` (typical default; may vary by distro).
+
+---
+
+## Restore
+
+### Selective restore (file or path)
+```bash
+cd "${STACKS_DIR}"
+make restic-restore INCLUDE="/path/in/backup ..." [TARGET=/abs/path/to/restore-target]
+```
+
+**Success criteria**
+- Files appear under the target directory.
+- The command exits 0.
+
+### Complete restore (everything included in BACKUP_PATHS)
+TODO: document a full-restore procedure.
+
+---
+
+## Scheduling (systemd)
+
+**Repo delivery vs recommendation**
+- This repo **does not** ship systemd unit/timer files.
+- If you want scheduling, create units on the host. Paths like `/etc/systemd/system`
+  or `/lib/systemd/system` are **typical defaults** and may vary by distro.
+
+The Makefile uses `RESTIC_SYSTEMD_SERVICE` (default: `homelab-restic-backup.service`).
+If your unit name differs, set `RESTIC_SYSTEMD_SERVICE` accordingly.
+
+### Example unit (not provided by the repo)
 ```ini
 # /etc/systemd/system/homelab-restic-backup.service
 [Unit]
@@ -214,8 +263,7 @@ IOSchedulingPriority=7
 WantedBy=multi-user.target
 ```
 
-Optional daily timer:
-
+### Example timer (not provided by the repo)
 ```ini
 # /etc/systemd/system/homelab-restic-backup.timer
 [Unit]
@@ -230,72 +278,77 @@ Unit=homelab-restic-backup.service
 WantedBy=timers.target
 ```
 
-You can then:
-
+### Status and logs
 ```bash
-sudo systemctl start homelab-restic-backup.service      # manual run
-sudo systemctl enable --now homelab-restic-backup.timer # enable daily backup
+systemctl status homelab-restic-backup.service
+systemctl list-timers | rg restic
+journalctl -u homelab-restic-backup.service -n 200 --no-pager
 ```
-
-`make backup stack=restic` is simply a convenient wrapper around this service.
 
 ---
 
-## Manual run (portable / debug)
+## Observability
 
-To run the backup script directly (bypassing Makefile and systemd), execute **as root**:
-
-```bash
-sudo ENV_FILE=${RUNTIME_ROOT}/ops/backups/restic.env   ${STACKS_DIR}/ops/backups/restic-backup.sh
-```
-
-This matches what the systemd service does and is useful for first-time validation or debugging.
-
----
-
-## Optional sudoers integration
-
-To allow user `foo` to launch the backup without typing the sudo password, you can add:
-
+The backup script sources:
 ```text
-# /etc/sudoers.d/homelab-restic (edit with visudo)
-foo ALL=(root) NOPASSWD: /usr/bin/systemctl start homelab-restic-backup.service
+${STACKS_DIR}/ops/backups/lib/backup-metrics.sh
 ```
 
----
+If enabled and writable, it writes:
+```text
+${BACKUP_TEXTFILE_DIR}/restic_backup.prom
+```
 
-## Uptime Kuma
+Notes:
+- `BACKUP_TEXTFILE_DIR` can be overridden in `restic.env`.
+- Default is `/var/lib/node_exporter/textfile_collector` (typical; may vary by distro).
+- If the directory is not writable, the helper **fails soft** and the backup still completes.
 
-If `KUMA_PUSH_URL` is set, the script pushes **up/down** with a short message:
-
-- `up` on success (or `no-op` if there is nothing to back up),
-- `down` with a reason on preflight errors.
-
-This appears as a dedicated monitor in **Uptime Kuma** and, indirectly, in the global status dashboard in Grafana.
-
-Use `KUMA_RESOLVE_IP` when `KUMA_PUSH_URL` points to public DNS but the host needs to reach Kuma over a LAN IP (hairpin NAT/DNS issues). It forces the push to resolve the Kuma hostname to the supplied IP.
+Validate metrics:
+```bash
+cat "${BACKUP_TEXTFILE_DIR}/restic_backup.prom"
+```
 
 ---
 
 ## Troubleshooting
 
-| Symptom                            | Likely cause / fix                                            |
-| ---------------------------------- | ------------------------------------------------------------- |
-| `restic: command not found`        | Install restic on the host.                                   |
-| `RESTIC_REPOSITORY is empty`       | Missing values in `restic.env`.                               |
-| No changes despite edits           | Check `exclude.txt` and `BACKUP_PATHS`.                       |
-| Retention keeps too many snapshots | Verify `RESTIC_GROUP_BY` and `KEEP_*` in `restic.env`.        |
-| Kuma does not flip to OK           | Check `KUMA_PUSH_URL` and host DNS/hairpin issues.            |
-| `permission denied` on some paths  | Ensure the backup runs as root and `restic.env` lists them.   |
-| No Prometheus metrics for Restic   | Check node_exporter textfile dir and that the backup runs as root. |
+### Env file missing or unreadable
+- **Confirmation**: log shows `ENV_FILE not found or not readable`.
+- **Solution**: copy `.env.example` to runtime and set `RESTIC_ENV_FILE`/`ENV_FILE` if needed.
+
+### `RESTIC_REPOSITORY` / `RESTIC_PASSWORD` empty
+- **Confirmation**: log shows `RESTIC_REPOSITORY is empty` or `RESTIC_PASSWORD is empty`.
+- **Solution**: fill values in `restic.env` (runtime, not versioned).
+
+### `restic: command not found`
+- **Confirmation**: log shows `restic not found in PATH`.
+- **Solution**: install `restic` on the host.
+
+### No existing paths in `BACKUP_PATHS`
+- **Confirmation**: log shows `No existing paths in BACKUP_PATHS; skipping backup run`.
+- **Solution**: ensure paths exist in `BACKUP_PATHS`.
+
+### Permission denied in runtime or textfile dir
+- **Confirmation**: `ls -l ${RUNTIME_ROOT}/ops/backups` or the textfile dir shows wrong owner/mode.
+- **Solution**: fix ownership/permissions; use `600` for secrets/env files.
+
+### `BACKUP_TEXTFILE_DIR` incorrect
+- **Confirmation**: `.prom` file missing in expected dir.
+- **Solution**: set `BACKUP_TEXTFILE_DIR` to the correct textfile collector path.
 
 ---
 
-## Security notes
+## Security
 
-- `restic.env` lives in the **runtime** repo, is **not versioned**, and should be owned by root (`chown root:root`, mode `600`).
-- The restic repository is encrypted, but you should still:
-  - Keep it on a dedicated backups disk (e.g. `${BACKUPS_DIR}/homelab-restic` for local repos).
-  - Restrict permissions to root (`chown -R root:root`, mode `700`).
-- All repository operations should run as root (via systemd or `sudo`).
-- For offsite copies, combine this with `rclone`/object storage lifecycle (S3/B2/etc.).
+- `restic.env` lives in runtime and must not be committed.
+- Recommended permissions: `chmod 600` on env/secrets; restrict repo access to root where needed.
+- See `docs/contract.md` for the repo/runtime boundary.
+
+---
+
+## References
+
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
+- [Restic docs](https://restic.readthedocs.io/en/latest/manual_rest.html)
