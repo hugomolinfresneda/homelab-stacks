@@ -9,6 +9,6 @@
 **/.idea
 **/lost+found
 
-# temporales
+# tmp
 /tmp
 /var/tmp
