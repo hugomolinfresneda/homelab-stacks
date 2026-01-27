@@ -1,218 +1,236 @@
-# ResticBackupStaleHard Runbook
+# ResticBackupStaleHard — Restic backup stale (>48h)
 
-**Alert:** `ResticBackupStaleHard`
-**Severity:** `critical`
-**Service:** `restic`
-**Component:** `backup`
-**Scope:** `infra`
-**Policy:** RPO hard limit = **48 hours**
-**Signal:** `time() - restic_last_success_timestamp > 48h`
+## Summary
+The last successful Restic backup is older than the RPO hard limit (48h). Data recovery would miss recent changes.
 
-> This runbook also applies to `NextcloudBackupStaleHard`. See **Scope** below.
-
-**Note:** Replace `<BACKUPS_MOUNTPOINT>` with the mountpoint configured in your
-backup disk alert rule.
-
----
-
-## Purpose
-
-Detect when the last successful backup is older than the defined RPO hard limit (48h). This is a service continuity risk: if a failure occurs now, recent data may be unrecoverable.
+## Severity / Urgency
+- `severity`: `critical`
+- Urgency:
+  - **critical**: RPO breach; fix backup pipeline immediately.
 
 ## Impact
+- Data loss window exceeds 48 hours.
+- Backup repository may be stale or inaccessible.
 
-- RPO is breached: you may lose more than 48h of data if recovery is required.
-- Backup repository may be out of date, incomplete, or unavailable.
-- Secondary risk: if backups are still running but not succeeding, logs and temporary data may accumulate.
+## Context / Scope
+- `stack`: `monitoring`
+- `service`: `restic`
+- `job`: `node` (textfile collector metrics scraped by node-exporter)
+- `instance/target`: `<NODE_INSTANCE>` (from Alertmanager labels or Prometheus target label)
+- Links:
+  - Prometheus rule file: `stacks/monitoring/prometheus/rules/backups.rules.yml`
+  - Runbook source: `stacks/monitoring/runbooks/ResticBackupStaleHard.md`
 
-## Scope
-
-### Primary
-- `ResticBackupStaleHard` (general system backups via Restic).
-
-### Also covered
-- `NextcloudBackupStaleHard` (application-level Nextcloud backups).
-
-The workflow is the same: identify why the job did not succeed and restore successful runs. Metrics names differ; see **Verification**.
+## Placeholders / Endpoints
+- `STACKS_DIR=<STACKS_DIR>` (path to this repo; set to repo root)
+- `PROMETHEUS_URL=<PROMETHEUS_URL>` (get from `stacks/monitoring/compose.yaml` service `prometheus` or stack docs)
+- `NODE_EXPORTER_URL=<NODE_EXPORTER_URL>` (get from `stacks/monitoring/compose.yaml` service `node-exporter`)
+- `BACKUP_TEXTFILE_DIR=<BACKUP_TEXTFILE_DIR>` (only if your textfile collector dir is non-default)
+- `RESTIC_TIMER=<RESTIC_TIMER>` (systemd timer name; identify via `systemctl list-timers --all | rg -n "restic"`)
+- `RESTIC_SERVICE=<RESTIC_SERVICE>` (systemd service name; identify via `systemctl list-units --type=service | rg -n "restic"`)
+- `<BACKUPS_MOUNTPOINT>` (mountpoint defined in backups config)
+- `<BACKUP_DEVICE>` (block device from `lsblk -f`)
 
 ---
 
-## Triage (2-5 minutes)
+## Quick confirmation (30–60s)
+> Goal: confirm the metric is stale (not missing) and the stack is up.
 
-### 1) Confirm this is not a monitoring/metrics issue
-
-If you also have `ResticBackupNeverSucceeded` firing or the metric is missing entirely, handle that first.
-
-Check current metric value (host / node-exporter):
+### 1) PromQL checks (source of truth)
+```bash
+PROMETHEUS_URL=<PROMETHEUS_URL>
+curl -fsS "${PROMETHEUS_URL}/api/v1/query" \
+  --data-urlencode 'query=(time() - restic_last_success_timestamp) > 48 * 60 * 60'
+```
+**Success criteria:**
+- Alerting: query returns `1`.
+- Healthy: query returns empty or `0`.
 
 ```bash
-curl -fsS http://localhost:9100/metrics | grep -E '^restic_last_success_timestamp' || echo "metric missing"
+PROMETHEUS_URL=<PROMETHEUS_URL>
+curl -fsS "${PROMETHEUS_URL}/api/v1/query" \
+  --data-urlencode 'query=restic_last_success_timestamp'
 ```
+**Success criteria:**
+- A recent timestamp is present.
 
-Optional: check companion metrics if present:
-
+### 2) Stack health
 ```bash
-curl -fsS http://localhost:9100/metrics | grep -E '^(restic_last_status|restic_last_duration_seconds|restic_last_success_timestamp)' | head -n 50
+cd "${STACKS_DIR}"
+make ps stack=monitoring
+make logs stack=monitoring
 ```
+**Success criteria:**
+- Prometheus and node-exporter are `running/healthy`.
+- No repeated scrape errors for node-exporter in recent logs.
 
-### 2) Confirm storage prerequisites (fast sanity checks)
+---
 
+## What metric triggers this alert
+From `stacks/monitoring/prometheus/rules/backups.rules.yml`:
+```promql
+(time() - restic_last_success_timestamp) > 48 * 60 * 60
+```
+Labels:
+- `alertname`: `ResticBackupStaleHard`
+- `severity`: `critical`
+- `service`: `restic`
+- `component`: `backup`
+- `scope`: `infra`
+
+### Variant (Nextcloud)
+```promql
+(time() - nextcloud_backup_last_success_timestamp) > 48 * 60 * 60
+```
+Labels:
+- `alertname`: `NextcloudBackupStaleHard`
+- `severity`: `critical`
+- `service`: `nextcloud`
+- `component`: `backup`
+- `scope`: `infra`
+
+---
+
+## Textfile collector (metric source)
+- Default typical path: `/var/lib/node_exporter/textfile_collector` (may vary by distro/installation).
+- If your setup uses a different path, identify it in your node-exporter configuration or stack documentation and replace the placeholder accordingly.
+
+---
+
+## Diagnosis (5–15 min)
+
+### 1) Confirm metric presence at node-exporter
+```bash
+NODE_EXPORTER_URL=<NODE_EXPORTER_URL>
+curl -fsS "${NODE_EXPORTER_URL}/metrics" | rg -n '^restic_last_success_timestamp'
+```
+**Success criteria:**
+- Metric line exists; value should be recent when healthy.
+
+### 2) Confirm backups mount is available
 ```bash
 findmnt <BACKUPS_MOUNTPOINT> || true
 df -hT <BACKUPS_MOUNTPOINT> || true
 ```
+**Success criteria:**
+- Mountpoint is present and has free space.
 
-If `<BACKUPS_MOUNTPOINT>` is not mounted, address **BackupDiskNotMounted** first.
-
-### 3) Confirm last successful run time
-
-If you have the timestamp metric, convert it:
-
-```bash
-TS="$(curl -fsS http://localhost:9100/metrics | awk '/^restic_last_success_timestamp/ {print $2; exit}')"
-date -d "@${TS}" || true
-```
-
----
-
-## Diagnosis
-
-### A) The backup job did not run (scheduler problem)
-
-Identify how the backup is scheduled.
+### 3) Check scheduler
 
 #### Cron
 ```bash
-sudo grep -R "restic" /etc/cron* 2>/dev/null || true
-sudo journalctl -u cron -S "72 hours ago" --no-pager | tail -n 200
+# /etc/cron* is a default typical location; may vary by distro/installation.
+rg -n "restic" /etc/cron* 2>/dev/null || true
 ```
+**Success criteria:**
+- A scheduled job exists for restic backups.
 
-#### systemd timer (recommended)
+#### systemd
 ```bash
-systemctl list-timers --all | grep -i restic || true
-sudo journalctl -u restic -S "72 hours ago" --no-pager | tail -n 200
+# systemd timers (default on many distros)
+systemctl list-timers --all | rg -n "restic" || true
+systemctl status <RESTIC_TIMER> <RESTIC_SERVICE> --no-pager || true
+sudo journalctl -u <RESTIC_SERVICE> -S "72 hours ago" --no-pager | tail -n 200
 ```
+**Success criteria:**
+- The timer is active and the last run completed without repeated errors.
 
-Common causes:
-- timer disabled
-- service failing early
-- environment/secrets missing (paths changed, permissions)
-
-### B) The job ran but failed (execution error)
-
-Locate the backup logs for the last run (adapt paths to your setup). Typical checks:
-
+### 4) Check backup logs for failure
 ```bash
-# If you log via journald
-sudo journalctl -S "72 hours ago" --no-pager | grep -iE 'restic|backup' | tail -n 300
+sudo journalctl -S "72 hours ago" --no-pager | rg -n "restic|backup" | tail -n 200
 ```
+**Success criteria:**
+- Logs show successful runs or clear, actionable errors.
 
-If you use a dedicated script, run it with verbose output (dry-run if supported).
-
-### C) Storage/destination issues
-
-Check for:
-- disk full / low space
-- repository not reachable
-- repository locked
-- filesystem errors
-
+### 5) Validate repository health
 ```bash
-df -hT <BACKUPS_MOUNTPOINT>
-dmesg -T | tail -n 200
-```
-
-If you can safely run restic commands, validate repository health:
-
-```bash
-# Adjust RESTIC_REPOSITORY / credentials in your environment
 restic snapshots
 restic check
 ```
-
-### D) Credentials / secrets / permissions
-
-Typical symptoms:
-- repo password missing
-- backend credentials invalid
-- permissions changed on backup destination
-
-Check secret files and environment used by your backup runner. Ensure the job can read them.
+**Success criteria:**
+- Commands succeed without repository errors.
 
 ---
 
-## Remediation
-
-### 1) Run the backup manually (capture the real failure)
-
-Run the same command the scheduler uses (preferred), e.g.:
-
-```bash
-sudo /ops/backups/restic-backup.sh
-```
-
-If the job is systemd-managed:
-
-```bash
-sudo systemctl start homelab-restic-backup
-sudo journalctl -u homelab-restic-backup -n 200 --no-pager
-```
-
-### 2) Fix root cause
-
-Examples:
-- Re-mount backup disk (`BackupDiskNotMounted`)
-- Free space on `<BACKUPS_MOUNTPOINT>`
-- Restore repository credentials
-- Clear stale locks (only if you understand why they exist)
-
-### 3) Ensure metrics are updated (textfile collector)
-
-If your metrics come from node-exporter textfile collector, verify the `.prom` file updates:
-
-```bash
-sudo ls -la /var/lib/node_exporter/textfile_collector/ | grep -i restic || true
-sudo sed -n '1,120p' /var/lib/node_exporter/textfile_collector/restic.prom 2>/dev/null || true
-```
+## Likely causes (ordered)
+1) Backup job did not run (scheduler disabled, service failed early).
+2) Backup ran but failed (auth, repo lock, permissions).
+3) Backup destination is missing or full.
+4) Textfile collector not updating metrics.
 
 ---
 
-## Verification
+## Mitigation / Remediation
 
-### Restic (primary)
-- `restic_last_success_timestamp` updated to a recent time:
-```bash
-curl -fsS http://localhost:9100/metrics | grep -E '^restic_last_success_timestamp'
-```
+### Plan A — Minimal impact
+1) **Action:** Run the repo script manually to capture the real failure.
+   ```bash
+   cd "${STACKS_DIR}"
+   ops/backups/restic-backup.sh
+   ```
+   **Success criteria:**
+   - Script completes successfully and updates metrics.
 
-- Optional sanity:
-```bash
-curl -fsS http://localhost:9100/metrics | grep -E '^restic_last_status'
-```
+2) **Action:** Re-check the PromQL condition.
+   ```bash
+   PROMETHEUS_URL=<PROMETHEUS_URL>
+   curl -fsS "${PROMETHEUS_URL}/api/v1/query" \
+     --data-urlencode 'query=(time() - restic_last_success_timestamp) > 48 * 60 * 60'
+   ```
+   **Success criteria:**
+   - Query returns empty or `0`.
 
-### Nextcloud (also covered)
-- `nextcloud_backup_last_success_timestamp` updated:
-```bash
-curl -fsS http://localhost:9100/metrics | grep -E '^nextcloud_backup_last_success_timestamp'
-```
+### Plan B — Fix scheduler/metrics
+1) **Action:** Ensure the textfile collector output is updating.
+   ```bash
+   # Default typical path; may vary by distro/installation.
+   ls -la /var/lib/node_exporter/textfile_collector | rg -n "restic" || true
+   ```
+   **Success criteria:**
+   - A `restic.prom` (or similar) file is present and updated recently.
 
-### Alerting
-- Alert clears in Alertmanager.
-- A **RESOLVED** notification is received (if enabled).
+2) **Action:** If using a non-default collector dir, check it directly.
+   ```bash
+   BACKUP_TEXTFILE_DIR=<BACKUP_TEXTFILE_DIR>
+   ls -la "${BACKUP_TEXTFILE_DIR}" | rg -n "restic" || true
+   ```
+   **Success criteria:**
+   - The metrics file exists and updates after a run.
+
+### Plan C — Restore mount or disk health
+1) **Action:** Fix mount or free space issues on `<BACKUPS_MOUNTPOINT>`.
+   ```bash
+   df -hT <BACKUPS_MOUNTPOINT>
+   ```
+   **Success criteria:**
+   - Sufficient free space and healthy mount.
 
 ---
 
-## Prevention / Hardening
+## Final verification
+- [ ] `restic_last_success_timestamp` is recent.
+- [ ] `(time() - restic_last_success_timestamp) > 48 * 60 * 60` is false.
+- [ ] Alert resolves in Alertmanager.
+- [ ] No repeated errors in backup logs.
 
-- Keep backup jobs fail-fast if `<BACKUPS_MOUNTPOINT>` is not mounted.
+---
+
+## Post-mortem / Prevention
+- Fail fast if `<BACKUPS_MOUNTPOINT>` is not mounted.
 - Add explicit logging for start/end status and exit code.
-- Keep repository credentials and configuration in runtime-only storage.
-- Consider a "backup smoke test" on a schedule (e.g., `restic snapshots`).
-- Review retention policies to avoid disk growth surprises.
+- Review retention to avoid disk growth surprises.
 
 ---
 
-## Ownership
+## Appendix / Escape hatch
+> Use only if `make` is not available or you need container-level details.
 
-- **Primary:** homelab operator
-- **Escalation:** none (local infra)
+```bash
+# Container status
+cd "${STACKS_DIR}"
+docker compose -f stacks/monitoring/compose.yaml ps
+
+# Logs
+cd "${STACKS_DIR}"
+docker compose -f stacks/monitoring/compose.yaml logs --tail=200
+```
