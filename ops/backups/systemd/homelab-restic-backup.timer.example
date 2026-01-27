@@ -1,0 +1,11 @@
+# Example schedule; adjust to your environment.
+[Unit]
+Description=Daily homelab restic backup
+
+[Timer]
+OnCalendar=*-*-* 03:30
+Persistent=true
+Unit=homelab-restic-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -233,57 +233,50 @@ TODO: document a full-restore procedure.
 
 ## Scheduling (systemd)
 
-**Repo delivery vs recommendation**
-- This repo **does not** ship systemd unit/timer files.
-- If you want scheduling, create units on the host. Paths like `/etc/systemd/system`
-  or `/lib/systemd/system` are **typical defaults** and may vary by distro.
+**Repo delivery vs host install**
+- This repo ships **examples**: `ops/backups/systemd/homelab-restic-backup.service.example` and
+  `ops/backups/systemd/homelab-restic-backup.timer.example`.
+- Host installation is distro-dependent. `/etc/systemd/system` is a **typical default**.
 
-The Makefile uses `RESTIC_SYSTEMD_SERVICE` (default: `homelab-restic-backup.service`).
-If your unit name differs, set `RESTIC_SYSTEMD_SERVICE` accordingly.
+### Install (typical flow)
+Systemd unit files do **not** expand `${VARS}` at runtime. Replace example paths with absolute paths.
 
-### Example unit (not provided by the repo)
-```ini
-# /etc/systemd/system/homelab-restic-backup.service
-[Unit]
-Description=Homelab restic backup (stacks + runtime)
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-User=root
-Group=root
-Environment=ENV_FILE=${RUNTIME_ROOT}/ops/backups/restic.env
-ExecStart=${STACKS_DIR}/ops/backups/restic-backup.sh
-Nice=10
-IOSchedulingClass=best-effort
-IOSchedulingPriority=7
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Example timer (not provided by the repo)
-```ini
-# /etc/systemd/system/homelab-restic-backup.timer
-[Unit]
-Description=Daily homelab restic backup
-
-[Timer]
-OnCalendar=*-*-* 03:30
-Persistent=true
-Unit=homelab-restic-backup.service
-
-[Install]
-WantedBy=timers.target
-```
-
-### Status and logs
 ```bash
+STACKS_DIR="/abs/path/to/homelab-stacks"
+RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/<stack>"
+
+sudo cp "${STACKS_DIR}/ops/backups/systemd/homelab-restic-backup.service.example" \
+  /etc/systemd/system/homelab-restic-backup.service
+sudo cp "${STACKS_DIR}/ops/backups/systemd/homelab-restic-backup.timer.example" \
+  /etc/systemd/system/homelab-restic-backup.timer
+sudo $EDITOR /etc/systemd/system/homelab-restic-backup.service
+sudo $EDITOR /etc/systemd/system/homelab-restic-backup.timer
+```
+
+Update the unit files so `/abs/path/to/homelab-stacks` and `/abs/path/to/homelab-runtime`
+match your host. The service uses `EnvironmentFile=` and **fails hard** if the env file
+is missing; this is intentional to avoid running without credentials.
+
+The backup script resolves `STACKS_DIR` from its own location, so `WorkingDirectory=`
+is not required unless you customize the script.
+
+### Enable and validate
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now homelab-restic-backup.timer
 systemctl status homelab-restic-backup.service
 systemctl list-timers | rg restic
 journalctl -u homelab-restic-backup.service -n 200 --no-pager
+systemd-analyze verify /etc/systemd/system/homelab-restic-backup.service # if available
 ```
+
+The Makefile uses `RESTIC_SYSTEMD_SERVICE` (default: `homelab-restic-backup.service`).
+See `Makefile:304`. If your unit name differs, set `RESTIC_SYSTEMD_SERVICE` accordingly.
+
+**Notes**
+- Variables defined with `Environment=` in the unit file override values from `EnvironmentFile=`.
+- If your backups depend on remote mounts, consider systemd's `RequiresMountsFor=` (advanced).
 
 ---
 
