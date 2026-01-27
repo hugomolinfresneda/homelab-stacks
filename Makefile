@@ -47,7 +47,7 @@ compose_all = $(compose_base) $(if $(strip $(OVERRIDE_FILE)),-f $(OVERRIDE_FILE)
 STACK_HELPER := $(STACKS_REPO)/stacks/$(STACK)/tools/nc
 USE_HELPER   := $(and $(STACK),$(wildcard $(STACK_HELPER)))
 
-.PHONY: help lint validate check-abs-paths         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon         check-prom-demo check-am-demo check-demo
+.PHONY: help lint validate check-abs-paths         up down ps pull logs install post status reset-db echo-vars         backup backup-verify restore         up-mon down-mon ps-mon         restic restic-list restic-check restic-stats restic-forget-dry restic-forget restic-diff restic-restore restic-restore-full restic-mount restic-env restic-show-env restic-exclude-show         check-prom reload-prom         bb-ls bb-add bb-rm print-mon         nc-help nc-up nc-down nc-ps nc-logs nc-install nc-post nc-status nc-reset-db nc-up-mon nc-down-mon nc-ps-mon         check-prom-demo check-am-demo check-demo
 
 # ------------------------------------------------------------
 # Human-friendly help
@@ -90,6 +90,7 @@ help:
 	@echo "  make restic-forget-dry            - Preview retention (no changes)"
 	@echo "  make restic-diff [A=.. B=..]      - Diff between two snapshots"
 	@echo "  make restic-restore INCLUDE=\"/path ...\" [TARGET=dir] - Selective restore"
+	@echo "  make restic-restore-full          - Restore exactly BACKUP_PATHS to TARGET (default staging dir); TARGET=/ requires ALLOW_INPLACE=1"
 	@echo "  make restic-mount [MOUNTPOINT=dir]- Mount repository via FUSE"
 
 # ------------------------------------------------------------
@@ -368,6 +369,47 @@ restic-restore: require-runtime-root
 	  args=(); for p in "$${arr[@]}"; do args+=(--include "$$p"); done; \
 	  echo "→ Restoring from latest into: $$target"; \
 	  restic restore latest --target "$$target" "$${args[@]}"; \
+	  echo "→ Done. Restored to: $$target"'
+
+# restic-restore-full — Restore all paths in BACKUP_PATHS into a target dir (root)
+# Usage: make restic-restore-full [SNAPSHOT=latest] [TARGET=/path/to/dir] [ALLOW_INPLACE=1]
+restic-restore-full: require-runtime-root
+	@SNAPSHOT="$(SNAPSHOT)" TARGET="$(TARGET)" ALLOW_INPLACE="$(ALLOW_INPLACE)" sudo bash -lc 'set -euo pipefail; set -a; . "$(RESTIC_ENV_FILE)"; set +a; \
+	  snap="$${SNAPSHOT:-latest}"; \
+	  target="$${TARGET:-}"; \
+	  if ! declare -p BACKUP_PATHS >/dev/null 2>&1; then \
+	    echo "error: BACKUP_PATHS not defined in $$RESTIC_ENV_FILE"; exit 1; \
+	  fi; \
+	  if ! declare -p BACKUP_PATHS 2>/dev/null | grep -q "declare -a"; then \
+	    echo "error: BACKUP_PATHS must be a bash array in $$RESTIC_ENV_FILE"; exit 1; \
+	  fi; \
+	  if [ -z "$$target" ]; then \
+	    target=$$(mktemp -d -t restic-restore-full.XXXXXX); \
+	    echo "→ TARGET not set; using $$target"; \
+	  fi; \
+	  if [ "$$target" = "/" ] && [ "$${ALLOW_INPLACE:-}" != "1" ]; then \
+	    echo "error: TARGET=/ requires ALLOW_INPLACE=1"; exit 1; \
+	  fi; \
+	  args=(); includes=(); \
+	  for p in "$${BACKUP_PATHS[@]}"; do \
+	    [ -n "$$p" ] || continue; \
+	    orig="$$p"; \
+	    p="$${p#/}"; \
+	    if [ "$$orig" != "$$p" ]; then \
+	      echo "→ warn: stripped leading slash: $$orig -> $$p"; \
+	    fi; \
+	    includes+=("$$p"); \
+	    args+=(--include "$$p"); \
+	  done; \
+	  if [ "$${#includes[@]}" -eq 0 ]; then \
+	    echo "error: BACKUP_PATHS is empty"; exit 1; \
+	  fi; \
+	  echo "→ restic restore plan:"; \
+	  echo "  snapshot: $$snap"; \
+	  echo "  target: $$target"; \
+	  echo "  includes:"; \
+	  printf "    - %s\n" "$${includes[@]}"; \
+	  restic restore "$$snap" --target "$$target" "$${args[@]}"; \
 	  echo "→ Done. Restored to: $$target"'
 
 # restic-mount — FUSE-mount repository for browsing (background) (root)
