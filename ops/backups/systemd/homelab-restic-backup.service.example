@@ -1,0 +1,18 @@
+# Replace the example paths with your absolute paths.
+[Unit]
+Description=Homelab restic backup (stacks + runtime)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/abs/path/to/homelab-runtime/ops/backups/restic.env
+ExecStart=/abs/path/to/homelab-stacks/ops/backups/restic-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target
