@@ -40,7 +40,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 6
-    networks: *net_mon_proxy
+    networks: *net_mon_only
     restart: *restart_policy
     labels: *labels_stack
 
