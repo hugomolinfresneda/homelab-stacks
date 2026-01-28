@@ -1,57 +1,67 @@
-# Monitoring Stack (Prometheus · Grafana · Loki · Promtail · Blackbox)
+# Monitoring Stack (Alertmanager · Blackbox · cAdvisor · Grafana · Loki · Node Exporter · Prometheus · Promtail)
 
-This stack provides **metrics + logs + probes** with Docker, split between the **public stacks repo** and your **private runtime**. Images are pinned by **digest**, containers include **healthchecks**, and the base compose keeps things **portable** (no host ports; you only publish what you need via your reverse proxy / tunnel).
+## 1) Overview
+This stack provides **metrics + logs + probes** with Docker, split between the **public stacks repo** and your **private runtime**.
+Images are pinned by **digest**, containers include **healthchecks**, and the base compose keeps things **portable** (no host ports; you only publish what you need via your reverse proxy / tunnel).
 
-**Includes:**
+## 2) Components
 
-- **Prometheus** — metrics TSDB + scraping
+- **Prometheus** — metrics time series database + scraping
 - **Alertmanager** — alert routing to Telegram (critical vs warning), quiet hours, inhibition, and incident links (runbook/dashboard/alert/silence)
 - **Grafana** — dashboards (pre-provisioned datasources; dashboards provisioned from JSON files)
 - **Loki** — log store (boltdb-shipper + filesystem chunks)
 - **Promtail** — log shipper (Docker service discovery + stable labels)
 - **Blackbox Exporter** — HTTP(S) / ICMP / DNS probing
 - **Node Exporter** — basic host metrics
+- **cAdvisor** — container metrics (cgroups, per-container resource usage)
 
 ---
 
-## 1) Architecture
+## 3) Architecture
 
 ```
-(HTTPS)                           docker network: proxy
-Client ──▶ Reverse Proxy / Tunnel ────────────────┐
-                                                  │
-                                                  ▼
-                                            ┌─────────┐
-                                            │ Grafana │   (UI; publish if needed)
-                                            └───┬─────┘
-                                                │
-                    ┌───────────────────────────┼───────────────────────────┐
-                    │                           │                           │
-                    │   datasource → Prometheus │   datasource → Loki       │
-                    │                           │                           │
-docker network: mon-net                         │                           │
-                                                │                           │
-   ┌───────────────────┐                        │                           │
-   │    Prometheus     │                        │                    ┌──────▼──────┐
-   │      (:9090)      │                        │                    │    Loki     │
-   └─────────┬─────────┘                        │                    │   (:3100)   │
-             │                                  │                    └─────────────┘
-             │ scrapes                          │
-             │                                  │
-   ┌─────────▼─────────┐           ┌────────────┴─┐
-   │   Alertmanager    │           │ Blackbox Exp.│ ── /probe
-   │     (:9093)       │           │   (:9115)    │
-   └───────────────────┘           └───────┬──────┘
-                                           │
-                                   ┌───────▼───────┐
-                                   │ Node Exporter │
-                                   │    (:9100)    │
-                                   └───────────────┘
-
-   ┌───────────┐
-   │ Promtail  │   (Docker SD; labels: job, container, container_name, compose_service, repo, stack, env, service)
-   │  (:9080)  │ ───────────────────────────────────────────────────────────────▶ Loki
-   └───────────┘
+                        (HTTPS)                                                                                      
+Client  ─────►  Tunnel  ────────────────────────────────────────┐                                                    
+                                                                │                                                    
+                                                                │                                                    
+                                                                │ docker network: proxy                              
+                                                                ▼                                                    
+                                                          ┌───────────┐                                              
+                                                          │  Grafana  │                                              
+                                                          │   :3000   │                                              
+                                                          └─────┬─────┘                                              
+                                            ┌───────────────────┴──────────────────────┐                             
+                                            │              datasources                 │                             
+                                            │                                          │                             
+                                            │                                          │                             
+                                 ┌──────────┼──────────────────────────────────────────┼────────────────────────┐    
+                                 ▼          │          docker network: mon-net         │                        ▼    
+                                            ▼                                          ▼                             
+                                       ┌─────────┐                               ┌────────────┐                      
+                                       │  Loki   │                               │ Prometheus │                      
+                                       │  :3100  │        ┌──────────────────────┤   :9090    │                      
+                                       └─────────┘        │send alerts           └─────┬──────┘                      
+                                            ▲             │                            │                             
+                                            │             │                            │scrapes                      
+                                            │push logs    │                            │                             
+                                            │             │                            │                             
+                                       ┌────┴─────┐       │          ┌─────────────────┼────────────────────┐        
+                                       │ Promtail │       │          │                 │                    │        
+                                       │  :9080   │       │          │/metrics         │/probe?target=...   │/metrics
+                                       └──────────┘       │          │                 │                    │        
+                                                          │          ▼                 ▼                    ▼        
+                                              ┌───────────┘     ┌──────────┐     ┌──────────┐         ┌──────────┐   
+                                              ▼                 │ Node     │     │ Blackbox │         │ cAdvisor │   
+                                        ┌──────────────┐        │ Exporter │     │ Exporter │         │  :8080   │   
+                                        │ Alertmanager │        │  :9100   │     │  :9115   │         └──────────┘   
+                                        │  :9093       │        └──────────┘     └─────┬────┘                        
+                                        └─────┬────────┘                               │probes                       
+                                              │route + notify                          │(HTTP/ICMP)                  
+                                              ▼                                        ▼                             
+                                         ┌────────────┐                           ┌─────────┐                        
+                                         │ Receivers  │                           │ Targets │                        
+                                         │ (Telegram) │                           │ (URLs)  │                        
+                                         └────────────┘                           └─────────┘                        
 ```
 
 > **Networks**: `mon-net` (internal monitoring network) and `proxy` (reverse proxy / tunnel network). Create them if missing:
@@ -63,20 +73,26 @@ docker network: mon-net                         │                           �
 
 ---
 
-## 2) Repos layout
+## 4) Repo contract and file layout
+This stack follows the standard repo/runtime split. See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
 
 Use the canonical variables for absolute paths:
 ```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/monitoring"
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/monitoring"
 ```
 
-**Public repo** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
+**Public repo** (`${STACKS_DIR}`):
 
 ```
 stacks/monitoring/
+├── .env.demo.example
+├── .env.example
 ├── alertmanager
+│   ├── alertmanager.demo.yml
 │   ├── alertmanager.yml
 │   └── templates
 │       └── telegram.tmpl
@@ -85,6 +101,7 @@ stacks/monitoring/
 ├── compose.demo.logs.yaml
 ├── compose.demo.names.yaml
 ├── compose.demo.yaml
+├── compose.override.example.yaml
 ├── compose.yaml
 ├── docs
 │   └── alerting
@@ -121,7 +138,9 @@ stacks/monitoring/
 │   │       └── datasources.yml
 │   └── provisioning.mon
 │       ├── dashboards
-│       │   └── dashboards.yml
+│       │   ├── dashboards.yml
+│       │   └── exported-mon
+│       │       └── .gitkeep
 │       └── datasources
 │           └── datasources.yml
 ├── loki
@@ -133,15 +152,19 @@ stacks/monitoring/
 │   ├── nextcloud-exporters.yml.example
 │   ├── prometheus.demo.yml
 │   ├── prometheus.yml
-│   └── rules
-│       ├── adguard.rules.yml
-│       ├── backups.rules.yml
-│       ├── cloudflared.rules.yml
-│       ├── containers.rules.yml
-│       ├── couchdb.rules.yml
-│       ├── endpoints.rules.yml
-│       ├── infra.rules.yml
-│       └── nextcloud.rules.yml
+│   ├── rules
+│   │   ├── adguard.rules.yml
+│   │   ├── backups.rules.yml
+│   │   ├── cloudflared.rules.yml
+│   │   ├── containers.rules.yml
+│   │   ├── couchdb.rules.yml
+│   │   ├── endpoints.rules.yml
+│   │   ├── infra.backups.rules.yml.example
+│   │   ├── infra.rules.yml
+│   │   └── nextcloud.rules.yml
+│   └── targets
+│       ├── blackbox-http.example.yml
+│       └── blackbox-icmp.example.yml
 ├── promtail
 │   ├── config.demo.yaml
 │   └── config.yaml
@@ -156,98 +179,125 @@ stacks/monitoring/
     └── mon
 ```
 
-**Private runtime** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`):
+**Private runtime** (`${RUNTIME_ROOT}`):
 
 ```
 stacks/monitoring/            # runtime overlay (environment-specific)
+├── .env
+├── compose.override.yaml     # host mounts, secrets, external URLs, environment wiring
 ├── alertmanager
-│   └── alertmanager.yml      # overrides (e.g., real chat_id / env-specific routing)
-├── blackbox                  # runtime-only additions (targets, overrides if needed)
-├── compose.override.yml      # mounts, secrets, external URLs, environment wiring
+│   └── alertmanager.yml      # runtime routing (e.g., real chat_id / receivers)
+├── blackbox
+│   └── blackbox.yml          # runtime probe target definitions
 ├── grafana
 │   ├── dashboards
 │   │   └── exported
-│   │       └── mon           # optional runtime dashboard overrides (if any)
+│   │       └── mon
+│   │           └── <custom-dashboard>.json
 │   └── provisioning.mon
-│       ├── dashboards        # provisioning overrides
-│       └── datasources       # datasource overrides (URLs, auth, etc.)
-├── loki                       # runtime overrides (paths, retention, storage)
-├── prometheus                 # runtime overlay (config/secrets/overrides)
-│   └── rules                  # (intentionally omitted from README; local patching only)
-├── promtail                   # runtime overrides (labels, endpoints, positions)
+│       ├── dashboards
+│       │   └── dashboards.yml
+│       └── datasources
+│           └── datasources.yml
+├── loki
+│   └── config.yaml           # runtime overrides (if applicable)
+├── prometheus
+│   ├── rules
+│   │   └── <custom>.rules.yml
+│   └── targets
+│       ├── blackbox-http.yml
+│       └── blackbox-icmp.yml
+├── promtail
+│   └── config.yaml           # runtime overrides (if applicable)
 └── secrets
-    └── kuma_password          # example secret (runtime-only)
+    ├── kuma_password         # uptime-kuma basic_auth password_file
+    └── telegram_bot_token    # Alertmanager Telegram bot token (if used)
 ```
 > **Note:** The runtime overlay may include a Prometheus rules override directory used only to add environment-specific annotations (e.g., `dashboard_url`). It is not required for a default deployment.
 
 ---
 
-## 3) Runtime assumptions: Docker & host
+## 5) Docker socket/logs (rootful vs rootless)
 
-This stack is designed to run on a Linux host with a **rootful Docker daemon**.
-The public `compose.yaml` intentionally omits sensitive host binds; add them in a
-runtime override when you want host-level metrics and Docker log scraping.
+Host mounts are **runtime-only**; the public `compose.yaml` intentionally omits them.
+`stacks/monitoring/.env.example` provides placeholders for both modes; choose **rootful** or
+**rootless** values for the variables below.
 
-The example override assumes a conventional layout:
+**Rootful vs rootless defaults (examples):**
 
-- The Docker API is exposed via the Unix socket at `/var/run/docker.sock`.
-- Docker data lives under `/var/lib/docker`.
-- The host root filesystem `/` can be mounted read-only inside monitoring containers.
+- `DOCKER_SOCK` → rootful: `/var/run/docker.sock`; rootless: `/run/user/<UID>/docker.sock`
+- `DOCKER_CONTAINERS_DIR` → rootful: `/var/lib/docker/containers`; rootless: `~/.local/share/docker/containers`
+- `DOCKER_HOST` → docker-socket-proxy endpoint, typically `tcp://docker-socket-proxy:2375`
+- `SELINUX_SUFFIX` → leave empty unless you need `,Z` or `,z` on SELinux hosts
 
-In particular, add these binds in your runtime override:
+**Host vs container paths (important):**
 
-- **cAdvisor**
-  - Runs with `privileged: true` and mounts:
-    - `/` -> `/rootfs:ro`
-    - `/var/run` -> `/var/run:ro`
-    - `/var/lib/docker` -> `/var/lib/docker:ro`
-    - `/sys` -> `/sys:ro`
-  - This is required for cgroups and per-container metrics (CPU, memory, network)
-    with Docker / Compose labels. Without these mounts, cAdvisor only sees a
-    single aggregate cgroup and the containers overview dashboard becomes useless.
+- Promtail reads logs at `/var/lib/docker/containers` **inside the container**; the host path is `${DOCKER_CONTAINERS_DIR}`.
+- `docker-socket-proxy` mounts `${DOCKER_SOCK}` to `/var/run/docker.sock` (container path).
+- Host metrics mounts (runtime override) use host paths like `<HOST_ROOT>`, `<HOST_SYS>`, `<HOST_VAR_RUN>`,
+  `<HOST_DOCKER_DIR>`; defaults are the conventional rootful paths and can be adjusted per host.
 
-- **node-exporter**
-  - Uses `--path.rootfs=/host` and expects the host root filesystem to be
-    bound as `/host:ro`. This makes filesystem and memory metrics reflect the
-    real host instead of the container.
-
-- **Promtail**
-  - Connects to the Docker API via `docker-socket-proxy` (`${DOCKER_HOST}`).
-  - The proxy mounts the host Docker socket (`${DOCKER_SOCK}`) read-only.
-  - Reads Docker JSON log files from `/var/lib/docker/containers`.
-  - Only containers explicitly labelled with `com.logging="true"` are scraped.
-
-If you run Docker in **rootless mode** or with a non-standard directory layout, you
-should adapt these mounts in your private runtime override (see
-`stacks/monitoring/compose.override.example.yaml`) or by using the demo stack and its
-`.env.demo` file as a template. The example override uses the rootful Docker defaults.
-
-
-## 4) Prerequisites
-
-- Docker Engine + **Docker Compose v2**
-- External docker networks created: `mon-net`, `proxy`
-- Runtime override for host mounts (copy `stacks/monitoring/compose.override.example.yaml`
-  to `${RUNTIME_DIR}/compose.override.yml` and edit; use the real override file in your
-  runtime—if it is `compose.override.yaml`, use that)
-- **Rootless-friendly binds** for Promtail + docker-socket-proxy in your runtime override:
-  - `${DOCKER_SOCK}` → usually `/run/user/<UID>/docker.sock` (rootless) or `/var/run/docker.sock` (rootful)
-  - `${DOCKER_CONTAINERS_DIR}` → usually `~/.local/share/docker/containers` (rootless) or `/var/lib/docker/containers` (rootful)
-  - `${DOCKER_HOST}` → docker-socket-proxy endpoint, typically `tcp://docker-socket-proxy:2375`
-  - `${SELINUX_SUFFIX}` → leave empty unless you need `,Z (or ,z)` on SELinux hosts
-
-The Promtail bind target stays `/var/lib/docker/containers`; only the host path
-(`DOCKER_CONTAINERS_DIR`) changes between rootful and rootless setups.
+**Rootless note:** cAdvisor container metrics require privileged rootful mounts; in rootless, container-level metrics are not available. Node Exporter can run but is **degraded** (it only sees container‑level FS/metrics). You can run node‑exporter directly on the host for full metrics, but that setup is outside the scope of this repo.
 
 ---
 
-## 5) Compose files
+## 6) Requirements
+
+### Software
+- Docker Engine + Docker Compose plugin (v2)
+- GNU Make
+- `curl` and `jq` for health/smoke checks and helper scripts
+
+### Network / Ports
+The base compose does **not** publish host ports (`ports:` is empty); it only exposes internal ports via `expose:`. Publish what you need via your reverse proxy or runtime override.
+
+| Service | Host published (`ports`) | Container (`expose`) | Notes |
+|---|---|---|---|
+| Grafana | No (publish via proxy/override) | `3000` | UI |
+| Prometheus | No (publish via proxy/override) | `9090` | UI + API |
+| Alertmanager | No (publish via proxy/override) | `9093` | UI + API |
+
+Required external networks (one-time setup):
+```bash
+docker network create mon-net || true
+docker network create proxy   || true
+```
+
+### Storage
+Host paths are defined in runtime; named volumes are managed by Docker.
+
+**A) Runtime State (Volumes & Mounts)**
+
+| Purpose | Host (runtime) | Container | RW | Notes |
+|---|---|---|---:|---|
+| Prometheus TSDB | Docker volume: `mon-prom-data` | `/prometheus` | ✅ | Metrics data |
+| Grafana data | Docker volume: `mon-grafana-data` | `/var/lib/grafana` | ✅ | Local users and dashboards |
+| Loki data | Docker volume: `mon-loki-data` | `/loki` | ✅ | Chunks + index |
+| Promtail positions | Docker volume: `mon-promtail-positions` | `/positions` | ✅ | Log offsets |
+| Alertmanager data | Docker volume: `mon-alertmanager-data` | `/alertmanager` | ✅ | Silences/state |
+
+**B) Observability Ingest (Host → Container)** *(Runtime override)*
+
+| Purpose | Host (runtime) | Container | RW | Notes |
+|---|---|---|---:|---|
+| Docker socket | `${DOCKER_SOCK}` | `/var/run/docker.sock` | ❌ | Rootful/rootless based on variable |
+| Docker logs | `${DOCKER_CONTAINERS_DIR}` | `/var/lib/docker/containers` | ❌ | Container path is fixed |
+| Host rootfs (node-exporter) | `<HOST_ROOT>` (default `/`) | `/host` | ❌ | Host metrics |
+| Textfile collector | `<NODE_EXPORTER_TEXTFILE_DIR>` (default rootful) | `/textfile-collector` | ❌ | Custom metrics |
+| Host rootfs (cAdvisor) | `<HOST_ROOT>` (default `/`) | `/rootfs` | ❌ | cgroups/FS |
+| Host `/sys` | `<HOST_SYS>` (default `/sys`) | `/sys` | ❌ | cgroups |
+| Host `/var/run` | `<HOST_VAR_RUN>` (default `/var/run`) | `/var/run` | ❌ | runtime sockets |
+| Host Docker dir | `<HOST_DOCKER_DIR>` (default rootful) | `/var/lib/docker` | ❌ | cgroups + metadata |
+
+---
+
+## 7) Compose files
 
 - **Base (public):** `${STACKS_DIR}/stacks/monitoring/compose.yaml`
   Pinned digests, healthchecks, no host ports, networks `mon-net` (+ `proxy` for Grafana).
   Sensitive host mounts live in the runtime override.
 
-  **Named volumes** (portable, human-friendly names):
+  **Named volumes** (portable-friendly names):
 
   ```yaml
   volumes:
@@ -261,9 +311,9 @@ The Promtail bind target stays `/var/lib/docker/containers`; only the host path
       name: mon-promtail-positions
   ```
 
-- **Runtime override (private):** `${RUNTIME_DIR}/compose.override.yml`
-  Copy `stacks/monitoring/compose.override.example.yaml` and edit. Use the real override
-  file present in your runtime (if it is `compose.override.yaml`, use that).
+- **Runtime override (private):** `${RUNTIME_DIR}/compose.override.yaml`
+  Copy `stacks/monitoring/compose.override.example.yaml` and edit.
+  Placeholders like `<HOST_ROOT>` map to host paths in your runtime; see the example override for rootful defaults.
 
   ```yaml
   services:
@@ -284,19 +334,19 @@ The Promtail bind target stays `/var/lib/docker/containers`; only the host path
 
     node-exporter:
       volumes:
-        - /:/host:ro,rslave${SELINUX_SUFFIX}
-        - /var/lib/node_exporter/textfile_collector:/textfile-collector:ro${SELINUX_SUFFIX}
+        - <HOST_ROOT>:/host:ro,rslave${SELINUX_SUFFIX}
+        - <NODE_EXPORTER_TEXTFILE_DIR>:/textfile-collector:ro${SELINUX_SUFFIX}
 
     cadvisor:
       volumes:
-        - /:/rootfs:ro${SELINUX_SUFFIX}
-        - /var/run:/var/run:ro${SELINUX_SUFFIX}
-        - /sys:/sys:ro${SELINUX_SUFFIX}
-        - /var/lib/docker:/var/lib/docker:ro${SELINUX_SUFFIX}
+        - <HOST_ROOT>:/rootfs:ro${SELINUX_SUFFIX}
+        - <HOST_VAR_RUN>:/var/run:ro${SELINUX_SUFFIX}
+        - <HOST_SYS>:/sys:ro${SELINUX_SUFFIX}
+        - <HOST_DOCKER_DIR>:/var/lib/docker:ro${SELINUX_SUFFIX}
 
     alertmanager:
       volumes:
-        - /srv/secrets/alertmanager/TG_BOT_TOKEN:/run/secrets/telegram_bot_token:ro
+        - <ALERTMANAGER_BOT_TOKEN_FILE>:/run/secrets/telegram_bot_token:ro
 
     prometheus:
       volumes:
@@ -313,39 +363,64 @@ The Promtail bind target stays `/var/lib/docker/containers`; only the host path
 
 ---
 
-## X) Alerting & runbooks
+## 8) Setup
 
-This stack implements an opinionated alerting model designed for a single-node homelab:
+Use the stack `.env` template and keep runtime files in `${RUNTIME_DIR}`.
 
-- **Critical** alerts are infrastructure failures and must notify 24/7.
-- **Warning** alerts are service/lab signals and are muted during quiet hours.
-- Alert rules are structured to favor a single primary symptom per service, with secondary diagnostics inhibited.
+```bash
+cp "${STACKS_DIR}/stacks/monitoring/.env.example" "${RUNTIME_DIR}/.env"
+# EDIT: "${RUNTIME_DIR}/.env"
+```
 
-For the full design, routing and operational details, see:
+Key variables (see `.env.example` for the full list):
 
-- `docs/alerting/overview.md`
-- `docs/alerting/prometheus-rules.md`
-- `docs/alerting/alertmanager-telegram.md`
-- `docs/alerting/runbooks.md`
+| Variable | Required | Description |
+|---|---:|---|
+| `COMPOSE_PROJECT_NAME` | ❌ | Resource namespace (optional) |
+| `TZ` | ❌ | Time zone (IANA Region/City) |
+| `GRAFANA_ADMIN_USER` | ✅ | Initial admin user |
+| `GRAFANA_ADMIN_PASSWORD` | ✅ | Initial admin password |
+| `DOCKER_SOCK` | ✅ | Docker daemon socket (rootful/rootless) |
+| `DOCKER_CONTAINERS_DIR` | ✅ | Container logs path (rootful/rootless) |
+| `DOCKER_HOST` | ✅ | Docker endpoint via docker-socket-proxy |
+| `SELINUX_SUFFIX` | ❌ | SELinux suffix for bind mounts |
 
+Unversioned runtime files (examples):
+
+- `${RUNTIME_DIR}/compose.override.yaml` (mounts/secrets override)
+- `${RUNTIME_DIR}/.env` (mode `600`, correct owner)
+- `${RUNTIME_DIR}/secrets/kuma_password` (mode `0440`)
+- `${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml` (if using `file_sd_configs`)
+- `${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml` (if using `file_sd_configs`)
+- `${RUNTIME_DIR}/alertmanager/alertmanager.yml` (if overriding routes/receivers)
 
 ---
 
-## 6) Uptime Kuma metrics (runtime password file)
+## 9) Alerting & runbooks
+
+- `stacks/monitoring/docs/alerting/overview.md` — alerting model, severities and routing design.
+- `stacks/monitoring/docs/alerting/prometheus-rules.md` — rule structure, labels and naming conventions.
+- `stacks/monitoring/docs/alerting/alertmanager-telegram.md` — Alertmanager → Telegram wiring and templates.
+- `stacks/monitoring/docs/alerting/runbooks.md` — runbook format and how alerts link to procedures.
+- `stacks/monitoring/runbooks/` — actionable runbooks per alert.
+
+---
+
+## 10) Uptime Kuma metrics (runtime password file)
 
 Prometheus scrapes Uptime Kuma’s `/metrics` endpoint using HTTP basic auth.
 The username is deliberately left empty; authentication is performed via the password file only.
 
-Create the password file in the runtime and make it world-readable (inside the container it is mounted read-only):
+Create the password file in the runtime; keep it readable by root on the host and mounted read-only in the container:
 
 ```bash
 mkdir -p ${RUNTIME_DIR}/secrets
 printf '%s
 ' 'your-kuma-password' > ${RUNTIME_DIR}/secrets/kuma_password
-chmod 0444 ${RUNTIME_DIR}/secrets/kuma_password
+chmod 0440 ${RUNTIME_DIR}/secrets/kuma_password
 ```
 
-Prometheus job (present in the public repo):
+Prometheus job:
 
 ```yaml
 - job_name: 'uptime-kuma'
@@ -367,35 +442,43 @@ Key metrics:
 
 - `monitor_status` — per-monitor UP/DOWN state.
 - `monitor_response_time` — HTTP response time per monitor.
-- Global count of UP/DOWN monitors for high-level status views.
+- Global count of UP/DOWN monitors for high-level status views (derived from `monitor_status`).
 
 ---
 
-## 7) Operations
+## 11) Operation (Makefile-first)
 
-**Using the runtime Makefile (recommended)**
+### Recommended route
+Use the repo Makefile with `stack=monitoring`.
 
 ```bash
 make up   stack=monitoring     # start
 make ps   stack=monitoring     # status
 make logs stack=monitoring     # logs (add: follow=true)
+make pull stack=monitoring     # update images
 make down stack=monitoring     # stop
 ```
 
-**Manual compose (portable)**
+Direct `docker compose` usage is an **escape hatch** (see Troubleshooting).
 
+### Validation (repo-wide)
 ```bash
-docker compose \
-  -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  up -d
+make lint
+make validate
 ```
-
-Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
 
 ---
 
-## 8) Reverse proxy / Tunnel (example: Cloudflare Tunnel)
+## 12) Security
+
+- **Docker socket** ⇒ high privilege; use `docker-socket-proxy`, read-only mounts, and the minimum required access.
+- **Docker logs** (`/var/lib/docker/containers` inside the container) ⇒ log access; read-only mounts and minimum required access.
+
+---
+
+## 13) Publishing (Cloudflare Tunnel)
+
+For the full tunnel setup and operational guidance, see `stacks/cloudflared/README.md`.
 
 Example `cloudflared` config:
 
@@ -410,11 +493,11 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 ---
 
-## 9) Grafana provisioning & dashboards
+## 14) Grafana provisioning & dashboards
 
 - **Datasources** are pre-provisioned (`grafana/provisioning.mon/datasources/datasources.yml`):
 
-  - `Prometheus` → `http://prometheus:9090` (uid: `prometheus`, **default**)
+  - `Prometheus` → `http://prometheus:9090` (uid: `prometheus`)
   - `Loki` → `http://loki:3100` (uid: `loki`)
 
 - **Dashboards** are provisioned from JSON files under the exported dashboards tree:
@@ -422,32 +505,23 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
   Host-side path:
 
   ```
-  stacks/monitoring/grafana/dashboards/exported/mon/30_status-incidences/uptime-kuma-service-backup-status.json
+  stacks/monitoring/grafana/dashboards/exported/mon/
   ```
 
   Demo-side path:
 
   ```
-  stacks/monitoring/grafana/dashboards/exported/demo/demo-blackbox-targets-probes.json
+  stacks/monitoring/grafana/dashboards/exported/demo/
   ```
 
-  The demo tree contains three minimal, portable dashboards designed for interviews:
+  The demo tree contains three minimal, portable dashboards:
 
   - **Demo – Blackbox Targets & Probes** (targets lifecycle + probe latency)
   - **Demo – Core Stack Health** (Prometheus/Loki/Promtail/Alertmanager health snapshot)
   - **Demo – Logs Quick View** (Loki/Promtail “is it alive?” + simple error-like triage)
 
 
-  This dashboard provides:
-
-  - Global UP/DOWN count for all Uptime Kuma monitors.
-  - HTTP response time per monitored HTTP endpoint.
-  - Status tables for public-facing services (Nextcloud, CouchDB, Dozzle, Uptime Kuma).
-  - Status of backup jobs (Nextcloud application backup + Restic repository backup).
-  - Infra checks for gateway and Internet reachability.
-
-  Detailed backup metrics (age, duration and data volume) are covered by the
-  separate **Backups – Overview** dashboard described in section 22.
+  For per‑dashboard details, see the dashboard description and the panel descriptions in the Grafana UI.
 
   Example file provider for Grafana:
 
@@ -464,7 +538,15 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 ---
 
-## 10) Health & smoke tests
+## 15) Troubleshooting
+
+### Quick checks
+Use the Makefile first, then internal tests on `mon-net` to isolate issues.
+
+```bash
+make ps stack=monitoring
+make logs stack=monitoring
+```
 
 **Loki**
 
@@ -503,9 +585,19 @@ docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://prometheus:
 docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://blackbox:9115/ | head
 ```
 
+### Escape hatch (debug)
+> Use only if you need to inspect the raw compose setup.
+
+```bash
+docker compose \
+  -f "${STACKS_DIR}/stacks/monitoring/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  up -d
+```
+
 ---
 
-## 11) LogQL quick cheatsheet (Loki)
+## 16) LogQL quick cheatsheet (Loki)
 
 Raw logs:
 
@@ -539,7 +631,7 @@ Find a marker inside promtail logs:
 
 ---
 
-## 12) Notes on Promtail config
+## 17) Notes on Promtail config
 
 The shipped config (`promtail/config.yaml`) uses **Docker service discovery** and ingests
 Docker container logs into Loki with a small, explicit label set that matches the dashboards.
@@ -571,8 +663,8 @@ and dashboards:
 - `service` — derived from the container label `service` (for example `service="dozzle"`);
   this is the canonical join key between logs and metrics in Grafana.
 - `host` — populated from the container hostname where available.
-- `__path__` — derived from the container ID and pointing at the underlying Docker log file:
-  `/var/lib/docker/containers/<id>/<id>-json.log`.
+- `__path__` — derived from the container ID and pointing at the underlying Docker log file
+  **inside the container**: `/var/lib/docker/containers/<id>/<id>-json.log`.
 
 Promtail also uses the `docker` pipeline stage (`pipeline_stages: docker: {}`) to parse
 Docker JSON log lines into structured fields. Combined with the explicit label mapping,
@@ -581,27 +673,23 @@ in Loki.
 
 ---
 
-## 13) Backups (what to keep)
+## 18) Persistence / Backups
 
+Persistence lives under:
 - **Prometheus TSDB:** `mon-prom-data`
 - **Grafana:** `mon-grafana-data`
 - **Loki:** `mon-loki-data`
 - **Promtail positions:** `mon-promtail-positions`
+- **Alertmanager:** `mon-alertmanager-data`
 
-Ad-hoc archive:
-
-```bash
-for v in mon-prom-data mon-grafana-data mon-loki-data mon-promtail-positions; do
-  docker run --rm -v ${v}:/vol -v "$PWD":/backup busybox tar czf /backup/${v}.tgz -C /vol .
-done
-```
+Backups: see `ops/backups/README.md`.
 
 ---
 
-## 14) Updates (safe flow)
+## 19) Updates (safe flow)
 
 1. Ensure a recent backup of the volumes above.
-2. When ready, bump image **digests** in `compose.yaml` (dedicated PR).
+2. When ready, bump image **digests** in `compose.yaml`.
 3. Redeploy:
 
    ```bash
@@ -616,32 +704,40 @@ done
 
 ---
 
-## 15) Quick start (TL;DR)
+## 20) Quick start (Makefile-first)
 
 ```bash
-# 0) Networks (once)
+# 1) Canonical variables (adjust to your host)
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/monitoring"
+
+# 2) Prepare runtime (overrides + environment variables)
+mkdir -p "${RUNTIME_DIR}"
+cp "${STACKS_DIR}/stacks/monitoring/compose.override.example.yaml" \
+  "${RUNTIME_DIR}/compose.override.yaml"
+cp "${STACKS_DIR}/stacks/monitoring/.env.example" "${RUNTIME_DIR}/.env"
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml and ${RUNTIME_DIR}/.env
+
+# 3) Create networks (once)
 docker network create mon-net || true
 docker network create proxy   || true
 
-# 1) Runtime password file for Uptime Kuma
-mkdir -p ${RUNTIME_DIR}/secrets
-printf '%s
-' 'your-kuma-password' > ${RUNTIME_DIR}/secrets/kuma_password
-chmod 0444 ${RUNTIME_DIR}/secrets/kuma_password
+# 4) (If used) Create secret for Uptime Kuma
+mkdir -p "${RUNTIME_DIR}/secrets"
+printf '%s\n' 'your-kuma-password' > "${RUNTIME_DIR}/secrets/kuma_password"
+chmod 0440 "${RUNTIME_DIR}/secrets/kuma_password"
 
-# 2) Up the monitoring stack
+# 5) Bring up the stack
 make up stack=monitoring
+
+# 6) Status
 make ps stack=monitoring
-
-# 3) Sanity checks
-docker run --rm --network mon-net curlimages/curl:8.10.1 -fsS http://loki:3100/ready
-
-docker run --rm --network mon-net curlimages/curl:8.10.1 -G -sS   --data-urlencode 'query=count_over_time({job="dockerlogs"}[5m])'   http://loki:3100/loki/api/v1/query | jq -r '.data.result[0].value[1]'
 ```
 
 ---
 
-## 16) Demo mode (isolated demo stack)
+## 21) Demo mode (isolated demo stack)
 
 **Note**: all demo operation is centralized in `stacks/monitoring/Makefile.demo`. Run commands from the repo root:
 
@@ -651,24 +747,23 @@ make -f stacks/monitoring/Makefile.demo <target>
 
 This demo is designed to be **self-contained** and **portable**: it provisions Prometheus + Blackbox + Loki/Promtail + Alertmanager + Grafana with pre-wired datasources (`uid: prometheus`, `uid: loki`) and a small set of demo dashboards.
 
-### Naming model (avoid collisions)
+### Naming model
 
-The demo does **not** hardcode `demo-*` names anymore.
-
-Instead, `DEMO_PROJECT` (defaults to `mon-demo`) is used as `COMPOSE_PROJECT_NAME`, and every resource is derived from it:
+`DEMO_PROJECT` defaults to `mon-demo` and is used as `COMPOSE_PROJECT_NAME`, and every resource is derived from it:
 
 - Containers: `${DEMO_PROJECT}-grafana`, `${DEMO_PROJECT}-prometheus`, ...
 - Network: `${DEMO_PROJECT}-net`
 - Volumes: `${DEMO_PROJECT}-grafana-data`, `${DEMO_PROJECT}-loki-data`, `${DEMO_PROJECT}-promtail-positions`
 
-This lets an interviewer run the demo even if they already have some random `demo-grafana` lying around (because of course they do).
+This lets anyone run the demo even if they already have containers named `demo-*` running.
 
 ### Quick start
 
-1) Create the demo env file (no secrets):
+1) Copy and edit the demo env file:
 
 ```bash
 cp stacks/monitoring/.env.demo.example stacks/monitoring/.env.demo
+# EDIT: stacks/monitoring/.env.demo
 ```
 
 2) Optional: pick a project name (recommended on shared machines):
@@ -683,7 +778,7 @@ export DEMO_PROJECT=demo
 make -f stacks/monitoring/Makefile.demo demo-config DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
 ```
 
-4) Bring the demo up:
+4) Bring up the demo:
 
 ```bash
 make -f stacks/monitoring/Makefile.demo demo-up DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
@@ -745,7 +840,7 @@ make -f stacks/monitoring/Makefile.demo rm-target-demo  JOB=blackbox-http TARGET
 
 ---
 
-## 17) Blackbox targets manager (script + Makefile)
+## 22) Blackbox targets manager (script + Makefile)
 
 Manage the HTTP/ICMP probe target lists that Prometheus scrapes via **Blackbox Exporter**.
 
@@ -761,7 +856,7 @@ Copy the example files in `stacks/monitoring/prometheus/targets/*.example.yml` t
 paths in your private runtime and replace the placeholders. These runtime files are
 intended to stay private (gitignored).
 
-### 17.1 Direct script usage
+### Direct script usage
 
 ```bash
 # Main stack (project: monitoring, runtime targets map required)
@@ -781,14 +876,6 @@ stacks/monitoring/scripts/blackbox-targets.sh \
   rm blackbox-http https://example.org
 ```
 
-**Demo stack** (isolated `demo-*` services, inline targets; no map required):
-
-```bash
-stacks/monitoring/scripts/blackbox-targets.sh --demo ls
-stacks/monitoring/scripts/blackbox-targets.sh --demo add blackbox-http https://example.net
-stacks/monitoring/scripts/blackbox-targets.sh --demo rm  blackbox-http https://example.net
-```
-
 **Explicit file selection** (advanced):
 
 ```bash
@@ -801,22 +888,17 @@ stacks/monitoring/scripts/blackbox-targets.sh \
 After a change the script runs `promtool check config`.
 To apply the new targets, reload Prometheus:
 
-> Demo targets still live inline in `stacks/monitoring/prometheus/prometheus.demo.yml`
-> and are managed the same way as before.
-
 ```bash
-make reload-prom         # main stack
-make -f stacks/monitoring/Makefile.demo demo-reload-prom    # demo stack
+make reload-prom
 ```
 
 > SELinux: if enforcing, the script automatically uses `:Z` on bind mounts.
 
-### 17.2 Makefile wrappers (easier)
+### Makefile wrappers (easier)
 
 These delegate to the script above and pick the right file automatically:
 
 ```bash
-# Main stack (project: monitoring)
 make bb-ls  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
                             --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
            [JOB=blackbox-http]
@@ -829,12 +911,6 @@ make bb-rm  TARGET=<url> \
                            --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
            [JOB=blackbox-http]
 make reload-prom
-
-# Demo stack (project-scoped)
-make -f stacks/monitoring/Makefile.demo bb-ls-demo            [JOB=blackbox-http]
-make -f stacks/monitoring/Makefile.demo bb-add-demo TARGET=<url>  [JOB=blackbox-http]
-make -f stacks/monitoring/Makefile.demo bb-rm-demo  TARGET=<url>  [JOB=blackbox-http]
-make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
 ```
 
 **Examples**
@@ -846,10 +922,6 @@ make bb-add TARGET=https://example.com \
   BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
                   --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml"
 make reload-prom
-
-make -f stacks/monitoring/Makefile.demo bb-ls-demo
-make -f stacks/monitoring/Makefile.demo bb-add-demo TARGET=https://example.com
-make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PROJECT:-mon-demo}
 ```
 
 **Notes**
@@ -863,11 +935,11 @@ make -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=${DEMO_PRO
 
 ---
 
-## 18) AdGuard DNS monitoring (exporter + blackbox)
+## 23) AdGuard DNS monitoring (exporter + blackbox)
 
 The monitoring stack integrates **AdGuard Home** as a first-class DNS service, using both **direct metrics** and **end-to-end probes**.
 
-### 17.1 Prometheus scrape jobs
+### Prometheus scrape jobs
 
 Two jobs are responsible for AdGuard visibility:
 
@@ -903,7 +975,7 @@ These jobs live in:
 and follow the same label conventions used elsewhere in the homelab:
 
 - `job="adguard-exporter"` and `job="blackbox-dns"`
-- `stack="dns"`, `service="adguard-home"`, `env="home"` (used consistently in alerting rules and dashboards)
+- `stack="dns"`, `service="adguard-home"`, `env="home"`
 
 A reusable template for the exporter scrape job is also provided as:
 
@@ -913,7 +985,7 @@ This file mirrors the `adguard-exporter` job in `prometheus.yml` and can be used
 
 ---
 
-### 17.2 Blackbox DNS module
+### Blackbox DNS module
 
 DNS probing uses the dedicated `dns_udp` module shipped with Blackbox:
 
@@ -944,7 +1016,7 @@ Key metrics:
 
 ---
 
-### 17.3 Alerting rules for AdGuard
+### Alerting rules for AdGuard
 
 Alert rules for AdGuard are stored under:
 
@@ -1013,7 +1085,7 @@ All three rules are labelled for consistent routing and dashboarding:
 
 ---
 
-### 17.4 Grafana – AdGuard – Service Overview
+### Grafana – AdGuard – Service Overview
 
 The monitoring stack ships a dedicated Grafana dashboard for AdGuard Home under the exported dashboards tree:
 
@@ -1023,7 +1095,7 @@ stacks/monitoring/grafana/dashboards/exported/mon/20_apps/adguard-service-overvi
 
 In Grafana it appears under **20_Apps / AdGuard – Service Overview**.
 
-This dashboard is exporter-centric by design: it focuses on AdGuard’s own service and filtering signals (`job="adguard-exporter"`). End-to-end DNS probing is still available via the `blackbox-dns` job (see sections 18.1–18.2), but it is not the primary signal in this overview.
+This dashboard is exporter-centric by design: it focuses on AdGuard’s own service and filtering signals (`job="adguard-exporter"`). End-to-end DNS probing is still available via the `blackbox-dns` job (see the Prometheus scrape jobs and Blackbox DNS module subsections below), but it is not the primary signal in this overview.
 
 **Top row – health & current state (panel override: *Last 5 minutes*)**
 
@@ -1062,14 +1134,14 @@ Security: top domains can reveal user/device behaviour and internal service name
 
 ---
 
-## 19) Cloudflared tunnel monitoring (metrics + alerts + logs)
+## 24) Cloudflared tunnel monitoring (metrics + alerts + logs)
 
 The monitoring stack treats the Cloudflare Tunnel (`cloudflared`) as a
 first-class infrastructure component. Although the tunnel lives in its own
 stack (`stacks/cloudflared`), it is wired into the monitoring network and
 labelled consistently so that you can observe it like any other service.
 
-### 18.1 Prometheus scrape job
+### Prometheus scrape job
 
 `cloudflared` exposes Prometheus metrics on an **internal** HTTP endpoint
 (`--metrics 0.0.0.0:8081`). The monitoring stack scrapes these metrics via a
@@ -1109,7 +1181,7 @@ Key metrics exported by the tunnel include, among others:
 These are used directly or via PromQL (e.g. request rate, error rate,
 24-hour success percentage) in the Grafana dashboard.
 
-### 18.2 Alert rules
+### Alert rules
 
 Cloudflared alerts are intentionally **warning-level** by policy. The tunnel is a user-facing entry point, but it is still treated as a service-layer signal (no 24/7 paging). During quiet hours, warning notifications may be muted by Alertmanager.
 
@@ -1128,10 +1200,9 @@ Current signal set:
 
 These alerts follow the global label standard (`severity`, `service`, `component`, `scope`) and are routed by Alertmanager based on `severity`.
 
-### 18.3 Grafana dashboard (Cloudflared – Tunnel Overview)
+### Grafana dashboard (Cloudflared – Tunnel Overview)
 
-A dedicated dashboard is expected under the exported dashboards tree, for
-example:
+The monitoring stack ships a dedicated Grafana dashboard for Cloudflared – tunnel under the exported dashboards tree:
 
 ```text
 stacks/monitoring/grafana/dashboards/exported/mon/20_apps/cloudflared-tunnel-overview.json
@@ -1148,8 +1219,6 @@ The **Cloudflared – Tunnel Overview** dashboard surfaces:
 - **WARP routing – Active TCP/UDP sessions** — session-level L4 view (may stay at 0 for pure HTTP(S) ingress).
 - **Cloudflared logs (errors only)** — Loki panel showing error-level lines from the `cloudflared` container (panel override: *Last 30 minutes*).
 
-Panel descriptions follow the standard `Context / Focus / Implementation / Security` format used across the monitoring dashboards.
-
 The log panel uses the same label model as the rest of the stack; Promtail
 ingests Docker logs for containers labelled with `com.logging="true"` and
 maps `service="cloudflared"`, so a typical LogQL filter is:
@@ -1158,14 +1227,23 @@ maps `service="cloudflared"`, so a typical LogQL filter is:
 {service="cloudflared"} |= " ERR "
 ```
 
+**Panel description standard**
+
+Panel descriptions follow the standard used across the monitoring dashboards:
+
+* `Context`
+* `Focus`
+* `Implementation`
+* `Security` (only where it applies)
+
 Security: This dashboard reflects Internet ingress; treat hostnames, tunnel identifiers and log content as operationally sensitive and redact before sharing.
 
 
 ---
 
-## 20) Host & containers monitoring (infra overview)
+## 25) Host & containers monitoring (infra overview)
 
-The monitoring stack also exposes two base Grafana dashboards for the Docker host and the
+The monitoring stack is bundled with two base Grafana dashboards for the Docker host and the
 containers it runs. They are intended to be the **landing pages** for infrastructure health:
 CPU, memory, filesystems and basic network saturation at node level, plus a cAdvisor-based
 view of stacks and containers on the same node.
@@ -1186,7 +1264,7 @@ The only assumptions are:
   `com.docker.compose.*` labels are present (used to derive `stack`, `service` and
   `container` in the dashboard).
 
-### 1) Grafana – Host – System overview
+### Grafana – Host – System overview
 
 The **Host – System overview** dashboard is meant to answer, on a single screen:
 
@@ -1212,7 +1290,7 @@ Layout summary (the dashboard lives in **10_Infra / Host – System overview**):
   pseudo-mounts and bind-mount noise.
 
 Note: the dashboard uses a textbox variable `backups_mountpoint` to include the backups
-filesystem in the panels. Set it to your backups mountpoint (e.g. `/mnt/backups`),
+filesystem in the panels. Set it to your backups mountpoint (e.g. `<BACKUPS_MOUNTPOINT>`),
 or leave it empty to disable path filtering.
 
 **Second row – memory & swap**
@@ -1231,7 +1309,7 @@ or leave it empty to disable path filtering.
   the primary network interface. This gives a quick sense of whether the host is idle,
   under normal load or saturated from a bandwidth perspective.
 
-### 2) Grafana – Containers – Docker overview
+### Grafana – Containers – Docker overview
 
 The **Containers – Docker overview** dashboard is the companion to the host view and
 answers the question “which stacks and containers are actually using the host?”.
@@ -1288,9 +1366,9 @@ dashboard.
 
 ---
 
-## 21) Nextcloud monitoring (service, DB/Redis and logs)
+## 26) Nextcloud monitoring (service, DB/Redis and logs)
 
-This stack also exposes a small observability bundle for the Nextcloud stack defined in this repository:
+This stack also ships a small observability bundle for the Nextcloud stack defined in this repository:
 
 - One Prometheus rule file:
 
@@ -1304,11 +1382,11 @@ This stack also exposes a small observability bundle for the Nextcloud stack def
 The only assumption is that the Nextcloud stack is running on the same Docker host and that:
 
 - The `nextcloud` stack is attached to the `mon-net` network.
-- The exporters `mysqld-exporter` and `redis-exporter` are running (see the Nextcloud README).
+- The exporters `mysqld-exporter` and `redis-exporter` are running (see `stacks/nextcloud/README.md`).
 - The public HTTPS endpoint you actually use in production is the one configured in the
   Blackbox HTTP probe to `status.php` in the monitoring stack.
 
-### 1) Alert rules and incident links
+### Alert rules and incident links
 
 Alert rules for Nextcloud are defined in:
 
@@ -1324,7 +1402,7 @@ Operationally, the key signals are:
 
 Runbook and dashboard links (if present) are exposed in Telegram notifications.
 
-### 2) Grafana – Nextcloud – Service overview
+### Grafana – Nextcloud – Service overview
 
 The dashboard is meant to answer three questions in one screen:
 
@@ -1359,9 +1437,9 @@ to enforce this inside the container.
 
 ---
 
-## 22) Backups monitoring (Restic + Nextcloud overview)
+## 27) Backups monitoring (Restic + Nextcloud overview)
 
-The monitoring stack also ships a small bundle for backup observability, focused on
+The monitoring stack also includes a small bundle for backup observability, focused on
 the Restic repository and the application-level Nextcloud backup:
 
 - One Prometheus rule file:
@@ -1378,7 +1456,7 @@ already exporting textfile metrics via node_exporter, as documented in their res
 READMEs. The dashboard is a pure consumer of those metrics; it does not introduce any
 new runtime requirements.
 
-### 1) Alert rules and incident links
+### Alert rules and incident links
 
 Backup alert rules are defined in:
 
@@ -1394,7 +1472,7 @@ The policy is:
 
 For the full catalog and thresholds, see `docs/alerting/prometheus-rules.md`.
 
-### 2) Grafana – Backups – Overview
+### Grafana – Backups – Overview
 
 The **Backups – Overview** dashboard is meant to answer, on a single screen:
 
@@ -1438,9 +1516,9 @@ from both a **status** and a **metrics** perspective.
 
 ---
 
-## 23) CouchDB monitoring (service overview)
+## 28) CouchDB monitoring (service overview)
 
-The monitoring stack also exposes a small observability bundle for the
+The monitoring stack also comes with a small observability bundle for the
 CouchDB instance used by the homelab. It covers both the internal exporter
 metrics and the public HTTPS health check used by Nextcloud and other
 clients.
@@ -1464,7 +1542,7 @@ The only assumptions are that:
 - The public HTTPS endpoint exposed through the reverse proxy / tunnel is
   the one configured in the Blackbox HTTP probe to `/_up`.
 
-### 1) Alert rules and incident links
+### Alert rules and incident links
 
 Alert rules for CouchDB are defined in:
 
@@ -1478,7 +1556,7 @@ The rule set focuses on:
 All alerts are warning-level by policy for this service tier.
 Refer to `docs/alerting/overview.md` for routing and quiet hours.
 
-### 2) Grafana – CouchDB – Service Overview
+### Grafana – CouchDB – Service Overview
 
 The **CouchDB – Service Overview** dashboard is meant to answer, on a
 single screen:
@@ -1513,16 +1591,15 @@ Taken together with the CouchDB alert rules, this dashboard provides a
 clear landing page for CouchDB-related incidents before you need to jump
 into logs or lower-level debugging.
 
----
-
 Notes:
 
-- Panel descriptions follow the CFIS convention: `Context / Focus / Implementation / Security`.
 - The top-row health panels use a *Last 5 minutes* relative time override to reflect current state.
 
-## 24) Loki logs quick search (logs overview)
+---
 
-The monitoring stack also exposes a dedicated Grafana dashboard for exploring
+## 29) Loki logs quick search (logs overview)
+
+The monitoring stack also features a dedicated Grafana dashboard for exploring
 Loki logs coming from Docker workloads. The goal is to provide a single,
 opinionated entry point for log-based troubleshooting that reuses the same
 `stack → service → container` model as the Docker infra dashboards, instead of
@@ -1547,7 +1624,7 @@ The only assumptions are that:
   Docker containers overview use labels compatible with those Loki log
   streams (`stack` and `compose_service` in particular).
 
-### 1) Loki label model and error definition
+### Loki label model and error definition
 
 All log exploration in this dashboard is built on top of the following label
 conventions:
@@ -1573,7 +1650,7 @@ Panels that show raw logs on purpose **do not** apply this filter; they are
 meant to display all log levels and rely on a free-text search field for
 ad-hoc investigations.
 
-### 2) Grafana – Loki – Logs quick search
+### Grafana – Loki – Logs quick search
 
 The **Loki – Logs quick search** dashboard is designed to answer, on a small
 number of screens:
