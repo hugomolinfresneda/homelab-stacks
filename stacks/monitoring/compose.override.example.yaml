@@ -43,12 +43,12 @@ services:
 
   node-exporter:
     volumes:
-      - /:/host:ro,rslave${SELINUX_SUFFIX}
-      - /var/lib/node_exporter/textfile_collector:/textfile-collector:ro${SELINUX_SUFFIX}
+      - ${HOST_ROOT:-/}:/host:ro,rslave${SELINUX_SUFFIX}
+      - ${BACKUP_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}:/textfile-collector:ro${SELINUX_SUFFIX}
 
   cadvisor:
     volumes:
-      - /:/rootfs:ro${SELINUX_SUFFIX}
-      - /var/run:/var/run:ro${SELINUX_SUFFIX}
-      - /sys:/sys:ro${SELINUX_SUFFIX}
-      - /var/lib/docker:/var/lib/docker:ro${SELINUX_SUFFIX}
+      - ${HOST_ROOT:-/}:/rootfs:ro${SELINUX_SUFFIX}
+      - ${HOST_VAR_RUN:-/var/run}:/var/run:ro${SELINUX_SUFFIX}
+      - ${HOST_SYS:-/sys}:/sys:ro${SELINUX_SUFFIX}
+      - ${HOST_DOCKER_DIR:-/var/lib/docker}:/var/lib/docker:ro${SELINUX_SUFFIX}
