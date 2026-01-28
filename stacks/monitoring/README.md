@@ -20,48 +20,48 @@ Images are pinned by **digest**, containers include **healthchecks**, and the ba
 ## 3) Architecture
 
 ```
-                        (HTTPS)                                                                                      
-Client  ─────►  Tunnel  ────────────────────────────────────────┐                                                    
-                                                                │                                                    
-                                                                │                                                    
-                                                                │ docker network: proxy                              
-                                                                ▼                                                    
-                                                          ┌───────────┐                                              
-                                                          │  Grafana  │                                              
-                                                          │   :3000   │                                              
-                                                          └─────┬─────┘                                              
-                                            ┌───────────────────┴──────────────────────┐                             
-                                            │              datasources                 │                             
-                                            │                                          │                             
-                                            │                                          │                             
-                                 ┌──────────┼──────────────────────────────────────────┼────────────────────────┐    
-                                 ▼          │          docker network: mon-net         │                        ▼    
-                                            ▼                                          ▼                             
-                                       ┌─────────┐                               ┌────────────┐                      
-                                       │  Loki   │                               │ Prometheus │                      
-                                       │  :3100  │        ┌──────────────────────┤   :9090    │                      
-                                       └─────────┘        │send alerts           └─────┬──────┘                      
-                                            ▲             │                            │                             
-                                            │             │                            │scrapes                      
-                                            │push logs    │                            │                             
-                                            │             │                            │                             
-                                       ┌────┴─────┐       │          ┌─────────────────┼────────────────────┐        
-                                       │ Promtail │       │          │                 │                    │        
-                                       │  :9080   │       │          │/metrics         │/probe?target=...   │/metrics
-                                       └──────────┘       │          │                 │                    │        
-                                                          │          ▼                 ▼                    ▼        
-                                              ┌───────────┘     ┌──────────┐     ┌──────────┐         ┌──────────┐   
-                                              ▼                 │ Node     │     │ Blackbox │         │ cAdvisor │   
-                                        ┌──────────────┐        │ Exporter │     │ Exporter │         │  :8080   │   
-                                        │ Alertmanager │        │  :9100   │     │  :9115   │         └──────────┘   
-                                        │  :9093       │        └──────────┘     └─────┬────┘                        
-                                        └─────┬────────┘                               │probes                       
-                                              │route + notify                          │(HTTP/ICMP)                  
-                                              ▼                                        ▼                             
-                                         ┌────────────┐                           ┌─────────┐                        
-                                         │ Receivers  │                           │ Targets │                        
-                                         │ (Telegram) │                           │ (URLs)  │                        
-                                         └────────────┘                           └─────────┘                        
+                        (HTTPS)                                                                                 
+Client  ─────►  Tunnel  ───────────────────────────────────┐                                                    
+                                                           │                                                    
+                                                           │                                                    
+                                                           │ docker network: proxy                              
+                                                           ▼                                                    
+                                                     ┌───────────┐                                              
+                                                     │  Grafana  │                                              
+                                                     │   :3000   │                                              
+                                                     └─────┬─────┘                                              
+                                       ┌───────────────────┴──────────────────────┐                             
+                                       │              datasources                 │                             
+                                       │                                          │                             
+                                       │                                          │                             
+                            ┌──────────┼──────────────────────────────────────────┼────────────────────────┐    
+                            ▼          │          docker network: mon-net         │                        ▼    
+                                       ▼                                          ▼                             
+                                  ┌─────────┐                               ┌────────────┐                      
+                                  │  Loki   │                               │ Prometheus │                      
+                                  │  :3100  │        ┌──────────────────────┤   :9090    │                      
+                                  └─────────┘        │send alerts           └─────┬──────┘                      
+                                       ▲             │                            │                             
+                                       │             │                            │scrapes                      
+                                       │push logs    │                            │                             
+                                       │             │                            │                             
+                                  ┌────┴─────┐       │          ┌─────────────────┼────────────────────┐        
+                                  │ Promtail │       │          │                 │                    │        
+                                  │  :9080   │       │          │/metrics         │/probe?target=...   │/metrics
+                                  └──────────┘       │          │                 │                    │        
+                                                     │          ▼                 ▼                    ▼        
+                                         ┌───────────┘     ┌──────────┐     ┌──────────┐         ┌──────────┐   
+                                         ▼                 │ Node     │     │ Blackbox │         │ cAdvisor │   
+                                   ┌──────────────┐        │ Exporter │     │ Exporter │         │  :8080   │   
+                                   │ Alertmanager │        │  :9100   │     │  :9115   │         └──────────┘   
+                                   │  :9093       │        └──────────┘     └─────┬────┘                        
+                                   └─────┬────────┘                               │probes                       
+                                         │route + notify                          │(HTTP/ICMP)                  
+                                         ▼                                        ▼                             
+                                    ┌────────────┐                           ┌─────────┐                        
+                                    │ Receivers  │                           │ Targets │                        
+                                    │ (Telegram) │                           │ (URLs)  │                        
+                                    └────────────┘                           └─────────┘                        
 ```
 
 > **Networks**: `mon-net` (internal monitoring network) and `proxy` (reverse proxy / tunnel network). Create them if missing:
