@@ -235,7 +235,7 @@ Host mounts are **runtime-only**; the public `compose.yaml` intentionally omits 
 - Promtail reads logs at `/var/lib/docker/containers` **inside the container**; the host path is `${DOCKER_CONTAINERS_DIR}`.
 - `docker-socket-proxy` mounts `${DOCKER_SOCK}` to `/var/run/docker.sock` (container path).
 - Host metrics mounts (runtime override) use host paths like `<HOST_ROOT>`, `<HOST_SYS>`, `<HOST_VAR_RUN>`,
-  `<HOST_DOCKER_DIR>`; defaults are the conventional rootful paths and can be adjusted per host.
+  `<HOST_DOCKER_DIR>`, `<BACKUP_TEXTFILE_DIR>`; defaults are the conventional rootful paths and can be adjusted per host.
 
 **Rootless note:** cAdvisor container metrics require privileged rootful mounts; in rootless, container-level metrics are not available. Node Exporter can run but is **degraded** (it only sees container‑level FS/metrics). You can run node‑exporter directly on the host for full metrics, but that setup is outside the scope of this repo.
 
@@ -283,7 +283,7 @@ Host paths are defined in runtime; named volumes are managed by Docker.
 | Docker socket | `${DOCKER_SOCK}` | `/var/run/docker.sock` | ❌ | Rootful/rootless based on variable |
 | Docker logs | `${DOCKER_CONTAINERS_DIR}` | `/var/lib/docker/containers` | ❌ | Container path is fixed |
 | Host rootfs (node-exporter) | `<HOST_ROOT>` (default `/`) | `/host` | ❌ | Host metrics |
-| Textfile collector | `<NODE_EXPORTER_TEXTFILE_DIR>` (default rootful) | `/textfile-collector` | ❌ | Custom metrics |
+| Textfile collector | `<BACKUP_TEXTFILE_DIR>` (default rootful) | `/textfile-collector` | ❌ | Custom metrics |
 | Host rootfs (cAdvisor) | `<HOST_ROOT>` (default `/`) | `/rootfs` | ❌ | cgroups/FS |
 | Host `/sys` | `<HOST_SYS>` (default `/sys`) | `/sys` | ❌ | cgroups |
 | Host `/var/run` | `<HOST_VAR_RUN>` (default `/var/run`) | `/var/run` | ❌ | runtime sockets |
@@ -335,7 +335,7 @@ Host paths are defined in runtime; named volumes are managed by Docker.
     node-exporter:
       volumes:
         - <HOST_ROOT>:/host:ro,rslave${SELINUX_SUFFIX}
-        - <NODE_EXPORTER_TEXTFILE_DIR>:/textfile-collector:ro${SELINUX_SUFFIX}
+        - <BACKUP_TEXTFILE_DIR>:/textfile-collector:ro${SELINUX_SUFFIX}
 
     cadvisor:
       volumes:
