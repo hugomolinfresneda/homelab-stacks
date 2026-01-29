@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Nextcloud Restore (volume + DB)
-# - Selects latest nc-*-db.sql[.gz] and nc-vol-*.tar.gz from BACKUP_DIR
-# - Verifies checksum if a matching .sha256 exists
-# - Stops writers, restores volume, imports DB, runs maintenance repairs
-# - Uses runtime override (.env + compose.override.yml) when present
+# Nextcloud Restore (staging by default; in-place opt-in)
+# - Selects backup by BACKUP_TS or deterministic latest
+# - Verifies checksum for selected artifacts
+# - Staging: materializes DB + volume into TARGET (no runtime changes)
+# - In-place: restores volume + DB via docker compose (requires ALLOW_INPLACE=1)
 # ==============================================================================
 
 set -Eeuo pipefail
+shopt -s nullglob
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -z "${STACKS_DIR:-}" ]]; then
@@ -16,6 +17,12 @@ fi
 
 # --- Inputs (overridable via env) ---------------------------------------------
 BACKUP_DIR="${BACKUP_DIR:-$HOME/Backups/nextcloud}"
+BACKUP_TS="${BACKUP_TS:-}"
+TARGET="${TARGET:-}"
+ALLOW_INPLACE="${ALLOW_INPLACE:-}"
+
+# Runtime dir holding compose.override.yml and .env (only for in-place)
+RUNTIME_DIR_INPUT="${RUNTIME_DIR:-}"
 
 normalize_service() {
   case "$1" in
@@ -35,14 +42,174 @@ NC_WEB="$(normalize_service "${NC_WEB:-web}")"
 NC_CRON="$(normalize_service "${NC_CRON:-cron}")"
 NC_VOL="${NC_VOL:-nextcloud}"
 
-# Runtime dir holding compose.override.yml and .env
-if [[ -z "${RUNTIME_DIR:-}" ]]; then
-  if [[ -z "${RUNTIME_ROOT:-}" ]]; then
-    echo "error: set RUNTIME_ROOT or RUNTIME_DIR (expected RUNTIME_ROOT/stacks/nextcloud)" >&2
+BACKUP_TS_REGEX='^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}$'
+
+err() { echo "error: $*" >&2; }
+info() { echo "info: $*"; }
+
+die() {
+  err "$@"
+  exit 1
+}
+
+validate_backup_dir() {
+  if [[ -z "$BACKUP_DIR" ]]; then
+    die "set BACKUP_DIR=/path/to/backups"
+  fi
+  if [[ ! -d "$BACKUP_DIR" ]]; then
+    die "BACKUP_DIR does not exist: $BACKUP_DIR"
+  fi
+}
+
+validate_backup_ts_format() {
+  if [[ -n "$BACKUP_TS" && ! "$BACKUP_TS" =~ $BACKUP_TS_REGEX ]]; then
+    die "invalid BACKUP_TS, expected YYYY-MM-DD_HHMMSS (e.g. 2025-12-08_023808)"
+  fi
+}
+
+list_ts_db() {
+  local f bn
+  for f in "$BACKUP_DIR"/nc-*-db.sql; do
+    bn="$(basename "$f")"
+    if [[ "$bn" =~ ^nc-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})-db\.sql$ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  done | sort -u
+}
+
+list_ts_vol() {
+  local f bn
+  for f in "$BACKUP_DIR"/nc-vol-*.tar.gz; do
+    bn="$(basename "$f")"
+    if [[ "$bn" =~ ^nc-vol-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.tar\.gz$ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  done | sort -u
+}
+
+list_ts_sha() {
+  local f bn
+  for f in "$BACKUP_DIR"/nc-*.sha256; do
+    bn="$(basename "$f")"
+    if [[ "$bn" =~ ^nc-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})\.sha256$ ]]; then
+      echo "${BASH_REMATCH[1]}"
+    fi
+  done | sort -u
+}
+
+resolve_latest_ts() {
+  local ts latest
+  declare -A vol_set sha_set
+
+  while read -r ts; do
+    [[ -n "$ts" ]] && vol_set["$ts"]=1
+  done < <(list_ts_vol)
+
+  while read -r ts; do
+    [[ -n "$ts" ]] && sha_set["$ts"]=1
+  done < <(list_ts_sha)
+
+  latest=""
+  while read -r ts; do
+    [[ -n "$ts" ]] || continue
+    if [[ -n "${vol_set[$ts]:-}" && -n "${sha_set[$ts]:-}" ]]; then
+      latest="$ts"
+    fi
+  done < <(list_ts_db)
+
+  if [[ -z "$latest" ]]; then
+    die "no valid backup timestamps found in $BACKUP_DIR"
+  fi
+
+  echo "$latest"
+}
+
+resolve_backup_ts() {
+  if [[ -z "$BACKUP_TS" ]]; then
+    BACKUP_TS="$(resolve_latest_ts)"
+    BACKUP_TS_SOURCE="latest"
+  else
+    BACKUP_TS_SOURCE="explicit"
+  fi
+}
+
+validate_artifacts() {
+  DB_FILE="$BACKUP_DIR/nc-${BACKUP_TS}-db.sql"
+  SHA_FILE="$BACKUP_DIR/nc-${BACKUP_TS}.sha256"
+  VOL_FILE="$BACKUP_DIR/nc-vol-${BACKUP_TS}.tar.gz"
+
+  missing=()
+  [[ -f "$DB_FILE" ]] || missing+=("nc-${BACKUP_TS}-db.sql")
+  [[ -f "$SHA_FILE" ]] || missing+=("nc-${BACKUP_TS}.sha256")
+  [[ -f "$VOL_FILE" ]] || missing+=("nc-vol-${BACKUP_TS}.tar.gz")
+
+  if (( ${#missing[@]} )); then
+    err "missing artifacts for BACKUP_TS=$BACKUP_TS"
+    err "expected:"
+    for f in "${missing[@]}"; do
+      err "  - $f"
+    done
     exit 1
   fi
-  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
-fi
+}
+
+sha_basenames() {
+  local sha_file="$1"
+  awk '
+    {
+      f=$2
+      sub(/^\*/, "", f)
+      sub(/^\.\//, "", f)
+      sub(/^.*\//, "", f)
+      if (f != "") print f
+    }
+  ' "$sha_file"
+}
+
+verify_checksum() {
+  local sha_file="$1" db_bn vol_bn listed
+  db_bn="$(basename "$DB_FILE")"
+  vol_bn="$(basename "$VOL_FILE")"
+
+  [[ -f "$sha_file" ]] || die "missing checksum file: $sha_file"
+
+  listed="$(sha_basenames "$sha_file" | sort -u)"
+
+  if ! printf '%s\n' "$listed" | grep -Fxq "$db_bn"; then
+    err "checksum file does not reference expected DB artifact: $db_bn"
+    err "found basenames: $(printf '%s' "$listed" | tr '\n' ' ')"
+    exit 1
+  fi
+  if ! printf '%s\n' "$listed" | grep -Fxq "$vol_bn"; then
+    err "checksum file does not reference expected volume artifact: $vol_bn"
+    err "found basenames: $(printf '%s' "$listed" | tr '\n' ' ')"
+    exit 1
+  fi
+
+  (cd "$BACKUP_DIR" && sha256sum -c "$(basename "$sha_file")") || die "checksum verification failed"
+}
+
+print_plan() {
+  echo "mode=$MODE"
+  echo "BACKUP_DIR=$BACKUP_DIR"
+  if [[ "${BACKUP_TS_SOURCE:-explicit}" == "latest" ]]; then
+    echo "BACKUP_TS=latest -> $BACKUP_TS"
+  else
+    echo "BACKUP_TS=$BACKUP_TS"
+  fi
+  echo "TARGET=$TARGET"
+  echo "ARTIFACTS:"
+  echo "  DB : $DB_FILE"
+  echo "  SHA: $SHA_FILE"
+  echo "  VOL: $VOL_FILE"
+}
+
+stage_restore() {
+  mkdir -p "$TARGET/vol"
+  cp "$DB_FILE" "$TARGET/db.sql"
+  tar -xzf "$VOL_FILE" -C "$TARGET/vol"
+  echo "Staged restore completed: $TARGET"
+}
 
 # --- Safe loader for runtime .env (no eval; tolerates spaces & CRLF) ----------
 load_runtime_env() {
@@ -92,33 +259,6 @@ build_compose_args() {
 dc() { docker compose "${COMPOSE_ARGS[@]}" "$@"; }
 dc_id() { dc ps -q "$1" | head -n1; }
 
-# --- Pick latest artifacts -----------------------------------------------------
-pick_artifacts() {
-  DB_FILE="$(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'nc-*-db.sql.gz' -o -name 'nc-*-db.sql' \) \
-             -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1{$1="";sub(/^ /,"");print}')"
-  VOL_FILE="$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'nc-vol-*.tar.gz' \
-             -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1{$1="";sub(/^ /,"");print}')"
-
-  [[ -n "${DB_FILE:-}"  ]] || { echo "ERROR: no DB backup in $BACKUP_DIR (nc-*-db.sql[.gz])." >&2; exit 1; }
-  [[ -n "${VOL_FILE:-}" ]] || { echo "ERROR: no volume archive in $BACKUP_DIR (nc-vol-*.tar.gz)." >&2; exit 1; }
-
-  # Verify checksum if matching .sha256 exists (based on DB file stem)
-  local sha_cand
-  sha_cand="$(basename "$DB_FILE" | sed -E 's/-db\.sql(\.gz)?$/.sha256/')"
-  if [[ -f "$BACKUP_DIR/$sha_cand" ]]; then
-    (cd "$BACKUP_DIR" && sha256sum -c "$sha_cand") || {
-      echo "WARNING: checksum mismatch. Continue anyway? (yes/NO)"
-      read -r ok; [[ "$ok" == "yes" ]] || exit 1
-    }
-  fi
-
-  echo "Will restore:"
-  echo "  DB : $DB_FILE"
-  echo "  VOL: $VOL_FILE"
-  read -rp "Confirm (yes/NO): " ok
-  [[ "$ok" == "yes" ]] || { echo "Cancelled."; exit 1; }
-}
-
 wait_healthy() {
   local svc="$1" st cid
   cid="$(dc_id "$svc")"
@@ -135,11 +275,13 @@ wait_healthy() {
   return 1
 }
 
-main() {
+inplace_restore() {
+  [[ -n "$RUNTIME_DIR" ]] || die "RUNTIME_DIR is required for in-place restore"
+  [[ -d "$RUNTIME_DIR" ]] || die "RUNTIME_DIR not found: $RUNTIME_DIR"
+
   load_runtime_env
   discover_compose_file
   build_compose_args
-  pick_artifacts
 
   # Stop writers & enter maintenance (best-effort)
   dc stop "$NC_APP" "$NC_WEB" "$NC_CRON" || true
@@ -164,22 +306,13 @@ main() {
   dc up -d "$NC_DB" redis
   wait_healthy "$NC_DB" || true
 
-  # Restore database (supports .sql and .sql.gz)
+  # Restore database
   echo "Restoring database..."
-  if [[ "$DB_FILE" == *.gz ]]; then
-    gzip -t "$DB_FILE"
-    gunzip -c "$DB_FILE" | dc exec -T \
-      -e MYSQL_PWD="${NC_DB_PASS:-}" \
-      -e DB_USER="${NC_DB_USER:-}" \
-      -e DB_NAME="${NC_DB_NAME:-}" \
-      "$NC_DB" sh -lc "exec mariadb -u\"\$DB_USER\" \"\$DB_NAME\""
-  else
-    dc exec -T \
-      -e MYSQL_PWD="${NC_DB_PASS:-}" \
-      -e DB_USER="${NC_DB_USER:-}" \
-      -e DB_NAME="${NC_DB_NAME:-}" \
-      "$NC_DB" sh -lc "exec mariadb -u\"\$DB_USER\" \"\$DB_NAME\"" < "$DB_FILE"
-  fi
+  dc exec -T \
+    -e MYSQL_PWD="${NC_DB_PASS:-}" \
+    -e DB_USER="${NC_DB_USER:-}" \
+    -e DB_NAME="${NC_DB_NAME:-}" \
+    "$NC_DB" sh -lc "exec mariadb -u\"\$DB_USER\" \"\$DB_NAME\"" < "$DB_FILE"
 
   # Bring up app → then web/cron
   dc up -d "$NC_APP"
@@ -190,7 +323,60 @@ main() {
   dc exec -T -u www-data "$NC_APP" php occ maintenance:repair || true
   dc exec -T -u www-data "$NC_APP" php occ maintenance:mode --off || true
 
-  echo "Restore complete."
+  echo "Restore complete (in-place)."
+}
+
+main() {
+  validate_backup_dir
+  validate_backup_ts_format
+  resolve_backup_ts
+  validate_artifacts
+
+  local runtime_dir target_runtime
+  runtime_dir="$RUNTIME_DIR_INPUT"
+  if [[ -z "$runtime_dir" && "$ALLOW_INPLACE" == "1" && -n "${RUNTIME_ROOT:-}" ]]; then
+    runtime_dir="${RUNTIME_ROOT}/stacks/nextcloud"
+  fi
+
+  target_runtime=0
+  if [[ -n "$runtime_dir" ]]; then
+    if [[ -z "$TARGET" || "$TARGET" == "$runtime_dir" ]]; then
+      target_runtime=1
+    fi
+  fi
+
+  if [[ "$target_runtime" -eq 1 ]]; then
+    if [[ "$ALLOW_INPLACE" == "1" ]]; then
+      MODE="in-place"
+      RUNTIME_DIR="$runtime_dir"
+      if [[ -z "$TARGET" ]]; then
+        TARGET="$runtime_dir"
+      fi
+    else
+      err "in-place restore requires ALLOW_INPLACE=1"
+      err "set ALLOW_INPLACE=1 and TARGET=\"${runtime_dir:-/abs/path/to/runtime}\""
+      err "or omit RUNTIME_DIR/TARGET to keep staging mode"
+      exit 1
+    fi
+  else
+    MODE="staging"
+    if [[ -z "$TARGET" ]]; then
+      TARGET="$(mktemp -d -t "nc-restore.${BACKUP_TS}.XXXXXX")"
+    fi
+    if [[ "$ALLOW_INPLACE" == "1" ]]; then
+      info "ALLOW_INPLACE=1 set but runtime not targeted; staying in staging mode"
+    fi
+  fi
+
+  print_plan
+  verify_checksum "$SHA_FILE"
+
+  if [[ "$MODE" == "staging" ]]; then
+    stage_restore
+    return 0
+  fi
+
+  inplace_restore
 }
 
 main "$@"

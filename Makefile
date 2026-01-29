@@ -66,7 +66,8 @@ help:
 	@echo "  make backup stack=restic          - Run Restic infra backup via systemd (root)"
 	@echo "  make backup stack=nextcloud BACKUP_DIR=...</path> [BACKUP_ENV=\${RUNTIME_ROOT}/ops/backups/nc-backup.env]"
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=...</path>"
-	@echo "  make restore stack=nextcloud BACKUP_DIR=...</path> [RUNTIME_DIR=\${RUNTIME_ROOT}/stacks/nextcloud]"
+	@echo "  make restore stack=nextcloud BACKUP_DIR=...</path> [BACKUP_TS=YYYY-MM-DD_HHMMSS] [TARGET=/path]"
+	@echo "       (in-place requires RUNTIME_DIR=... ALLOW_INPLACE=1)"
 	@echo ""
 	@echo "Shortcuts with monitoring profile:"
 	@echo "  make up-mon|down-mon|ps-mon stack=<name>  - Same as up/down/ps with PROFILES=monitoring"
@@ -281,19 +282,23 @@ restore: require-stack
 	fi; \
 	script="$(STACKS_REPO)/stacks/nextcloud/backup/nc-restore.sh"; \
 	compose="$(BASE_FILE)"; \
-	rt="$(RUNTIME_DIR)"; \
-	if [ -z "$$rt" ]; then \
-	  echo "error: set RUNTIME_ROOT=/abs/path/to/homelab-runtime (required for runtime ops)"; \
-	  exit 1; \
-	fi; \
 	[ -n "$(BACKUP_TRACE)" ] && { \
 	  printf '→ Using script: %s\n' "$$script"; \
 	  printf '→ Using compose: %s\n' "$$compose"; \
-	  printf '→ Using RUNTIME_DIR: %s\n' "$$rt"; \
 	  printf '→ Using BACKUP_DIR: %s\n' "$(BACKUP_DIR)"; \
+	  [ -n "$(BACKUP_TS)" ] && printf '→ Using BACKUP_TS: %s\n' "$(BACKUP_TS)"; \
+	  [ -n "$(TARGET)" ] && printf '→ Using TARGET: %s\n' "$(TARGET)"; \
+	  [ -n "$(RUNTIME_DIR)" ] && printf '→ Using RUNTIME_DIR: %s\n' "$(RUNTIME_DIR)"; \
+	  [ -n "$(ALLOW_INPLACE)" ] && printf '→ Using ALLOW_INPLACE: %s\n' "$(ALLOW_INPLACE)"; \
 	}; \
 	chmod +x "$$script" 2>/dev/null || true; \
-	COMPOSE_FILE="$$compose" RUNTIME_DIR="$$rt" BACKUP_DIR="$(BACKUP_DIR)" bash "$$script"
+	COMPOSE_FILE="$$compose" \
+	RUNTIME_DIR="$(RUNTIME_DIR)" \
+	BACKUP_DIR="$(BACKUP_DIR)" \
+	BACKUP_TS="$(BACKUP_TS)" \
+	TARGET="$(TARGET)" \
+	ALLOW_INPLACE="$(ALLOW_INPLACE)" \
+	bash "$$script"
 
 # ------------------------------------------------------------
 # Restic helpers (dual-repo infra backups via ops/backups/restic-backup.sh)
@@ -522,7 +527,8 @@ nc-help:
 	@echo "  make nc-reset-db        - Drop DB volume only (app data remains)"
 	@echo "  make backup stack=nextcloud BACKUP_DIR=/path [BACKUP_ENV=\${RUNTIME_ROOT}/ops/backups/nc-backup.env] - Backup (db + data) with checksum"
 	@echo "  make backup-verify stack=nextcloud BACKUP_DIR=/path - Verify last backup checksum"
-	@echo "  make restore stack=nextcloud BACKUP_DIR=/path [RUNTIME_DIR=\${RUNTIME_ROOT}/stacks/nextcloud] - Restore latest backup"
+	@echo "  make restore stack=nextcloud BACKUP_DIR=/path [BACKUP_TS=YYYY-MM-DD_HHMMSS] [TARGET=/path]"
+	@echo "       (in-place requires RUNTIME_DIR=\${RUNTIME_ROOT}/stacks/nextcloud ALLOW_INPLACE=1)"
 
 # Core lifecycle
 nc-up:          ; @$(MAKE) up          stack=nextcloud

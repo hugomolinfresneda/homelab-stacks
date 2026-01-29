@@ -76,8 +76,10 @@ make down stack=nextcloud
    ```bash
    cd "${STACKS_DIR}"
    make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
-     RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+     RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud" \
+     ALLOW_INPLACE=1
    ```
+   (Optionally set `BACKUP_TS=YYYY-MM-DD_HHMMSS` to restore a specific verified backup.)
 3) Start the stack:
    ```bash
    make up stack=nextcloud
@@ -123,7 +125,8 @@ mkdir -p "${RUNTIME_DIR}"
 ```bash
 cd "${STACKS_DIR}"
 make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
-  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud" \
+  ALLOW_INPLACE=1
 ```
 
 **Success criteria**
@@ -157,7 +160,8 @@ make down stack=nextcloud
 ```bash
 cd "${STACKS_DIR}"
 make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
-  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud" \
+  ALLOW_INPLACE=1
 ```
 
 ### 4) Start and validate
