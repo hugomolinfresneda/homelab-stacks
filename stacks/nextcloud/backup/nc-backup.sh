@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Nextcloud Backup (DB dump + volume archive + checksums)
-# - Reads lightweight env from ENV_FILE (defaults to ~/.config/nextcloud/nc-backup.env)
+# - Reads lightweight env from ENV_FILE (defaults to ${RUNTIME_ROOT}/ops/backups/nc-backup.env)
 # - Enters maintenance mode (or stops app/web/cron if config is read-only)
 # - Produces db.sql, vol.tar.gz and a combined .sha256 file
 # - Idempotent, with a simple lock to avoid concurrent runs
@@ -11,7 +11,7 @@
 set -Eeuo pipefail
 
 # --- Config loader (robust to spaces around '=' and CRLF) ---------------------
-ENV_FILE="${ENV_FILE:-$HOME/.config/nextcloud/nc-backup.env}"
+ENV_FILE="${ENV_FILE:-${RUNTIME_ROOT}/ops/backups/nc-backup.env}"
 case "$ENV_FILE" in "~"/*) ENV_FILE="$HOME${ENV_FILE#~}";; esac
 
 load_env_file() {
