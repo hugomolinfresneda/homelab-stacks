@@ -1,0 +1,21 @@
+# Replace the example paths with your absolute paths.
+[Unit]
+Description=Homelab Nextcloud application backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=STACKS_DIR=/abs/path/to/homelab-stacks
+Environment=RUNTIME_ROOT=/abs/path/to/homelab-runtime
+Environment=BACKUP_DIR=/abs/path/to/backups/nextcloud
+Environment=ENV_FILE=/abs/path/to/homelab-runtime/ops/backups/nc-backup.env
+ExecStart=/abs/path/to/homelab-stacks/stacks/nextcloud/backup/nc-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

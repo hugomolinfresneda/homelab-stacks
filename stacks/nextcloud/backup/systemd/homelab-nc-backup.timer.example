@@ -1,0 +1,11 @@
+# Example schedule; adjust to your environment.
+[Unit]
+Description=Daily homelab Nextcloud application backup
+
+[Timer]
+OnCalendar=*-*-* 03:30
+Persistent=true
+Unit=homelab-nc-backup.service
+
+[Install]
+WantedBy=timers.target
