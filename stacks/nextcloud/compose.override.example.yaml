@@ -20,3 +20,10 @@ services:
     # Optional local bind for the internal Nginx
     # ports:
     #   - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8082}:8080"
+
+  mysqld-exporter:
+    # Runtime-only credentials file for MariaDB exporter
+    # Copy to ${RUNTIME_ROOT}/stacks/nextcloud/exporters/mysqld-exporter.my.cnf and edit.
+    # (RUNTIME_ROOT is required when using this override)
+    volumes:
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/nextcloud/exporters/mysqld-exporter.my.cnf:/etc/mysqld-exporter/.my.cnf:ro
