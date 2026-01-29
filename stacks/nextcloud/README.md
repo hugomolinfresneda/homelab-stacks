@@ -81,6 +81,8 @@ stacks/nextcloud/
 ├── config/
 │   ├── 10-redis.config.php.example
 │   └── 20-proxy.config.php.example
+├── exporters/
+│   └── mysqld-exporter.my.cnf.example
 ├── nginx.conf
 ├── php.ini
 ├── secrets/
@@ -95,6 +97,8 @@ stacks/nextcloud/
 stacks/nextcloud/            # runtime overlay (environment-specific)
 ├── .env
 ├── db.env                   # DB secrets (real values)
+├── exporters/
+│   └── mysqld-exporter.my.cnf  # DB credentials for the exporter
 └── compose.override.yaml    # host binds, secrets mounts, environment wiring
 ```
 
@@ -188,13 +192,20 @@ make nc-ps
 make nc-logs follow=true
 ```
 
-### Optional profile(s) (e.g., monitoring exporters)
+### Optional monitoring exporters profile
 ```bash
+cp "${STACKS_DIR}/stacks/nextcloud/exporters/mysqld-exporter.my.cnf.example" "${RUNTIME_DIR}/exporters/mysqld-exporter.my.cnf"
+# EDIT: ${RUNTIME_DIR}/exporters/mysqld-exporter.my.cnf
+
+# Ensure the runtime override mounts the credentials file:
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml (uncomment the mysqld-exporter bind)
+
 make up stack=nextcloud PROFILES=monitoring
 # or the shortcut:
 make up-mon stack=nextcloud
 ```
 Enables `mysqld-exporter` (9104) and `redis-exporter` (9121) on `mon-net`.
+Create `${RUNTIME_ROOT}/stacks/nextcloud/exporters/mysqld-exporter.my.cnf` from the example and mount it in the runtime override.
 
 ---
 

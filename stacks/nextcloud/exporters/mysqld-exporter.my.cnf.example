@@ -1,0 +1,8 @@
+[client]
+user=<EXPORTER_USER>
+password=<EXPORTER_PASSWORD>
+
+# Defaults for this repo's compose (service name: db, default MariaDB port).
+# Change if your Nextcloud DB service name/port differ.
+host=db
+port=3306
