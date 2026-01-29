@@ -123,21 +123,52 @@ Use your preferred tooling (restic/rclone/ZFS/etc.) for rotation and offsite.
 
 ---
 
-## Scheduling (systemd). `TODO: provide .example unit and timer for systemd in repo`
+## Scheduling (systemd)
 
-### Systemd timer
-**What runs**: `nc-backup.sh` with `ENV_FILE` and `BACKUP_DIR`.
+**Stack delivery vs host install**
+- This stack ships **examples**: `${RUNTIME_DIR}/backup/systemd/homelab-nc-backup.service.example` and
+  `${RUNTIME_DIR}/backup/systemd/homelab-nc-backup.timer.example`.
+- Host installation is distro-dependent. `/etc/systemd/system` is a **typical default**.
 
-Files (example):
-- `/etc/systemd/system/nextcloud-backup.service`
-- `/etc/systemd/system/nextcloud-backup.timer`
+### Install (typical flow)
+Systemd unit files do **not** expand `${VARS}` at runtime. Replace example paths with absolute paths.
 
-**Status / verification**
 ```bash
-systemctl status nextcloud-backup.service
-systemctl list-timers | rg nextcloud-backup
-journalctl -u nextcloud-backup.service -n 200 --no-pager
+STACKS_DIR="/abs/path/to/homelab-stacks"
+RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+
+sudo cp "${RUNTIME_DIR}/backup/systemd/homelab-nc-backup.service.example" \
+  /etc/systemd/system/homelab-nc-backup.service
+sudo cp "${RUNTIME_DIR}/backup/systemd/homelab-nc-backup.timer.example" \
+  /etc/systemd/system/homelab-nc-backup.timer
+sudo $EDITOR /etc/systemd/system/homelab-nc-backup.service
+sudo $EDITOR /etc/systemd/system/homelab-nc-backup.timer
 ```
+
+Update the unit files so `/abs/path/to/homelab-stacks` and `/abs/path/to/homelab-runtime`
+match your host. The service uses `Environment=` entries (not `EnvironmentFile=`), sets
+`ENV_FILE=...`, and the backup script loads it if readable.
+The run fails if required variables are missing (notably `NC_DB_NAME`, `NC_DB_USER`,
+`NC_DB_PASS`, or `RUNTIME_ROOT`).
+
+If `ENV_FILE` is not set, the script defaults to `~/.config/nextcloud/nc-backup.env`.
+
+The backup script resolves `STACKS_DIR` from its own location, so `WorkingDirectory=`
+is not required unless you customize the script.
+
+### Enable and validate
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now homelab-nc-backup.timer
+systemctl status homelab-nc-backup.service
+systemctl list-timers | rg nc-backup
+journalctl -u homelab-nc-backup.service -n 200 --no-pager
+systemd-analyze verify /etc/systemd/system/homelab-nc-backup.service # if available
+```
+
+**Notes**
+- If your backups depend on remote mounts, consider systemd's `RequiresMountsFor=` (advanced).
 
 **Success criteria**
 - Timer is active.
