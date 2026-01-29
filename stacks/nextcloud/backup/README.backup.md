@@ -152,7 +152,7 @@ match your host. The service uses `Environment=` entries (not `EnvironmentFile=`
 The run fails if required variables are missing (notably `NC_DB_NAME`, `NC_DB_USER`,
 `NC_DB_PASS`, or `RUNTIME_ROOT`).
 
-If `ENV_FILE` is not set, the script defaults to `~/.config/nextcloud/nc-backup.env`.
+If `ENV_FILE` is not set, the script defaults to `${RUNTIME_ROOT}/ops/backups/nc-backup.env`.
 
 The backup script resolves `STACKS_DIR` from its own location, so `WorkingDirectory=`
 is not required unless you customize the script.
