@@ -103,17 +103,37 @@ sha256sum -c nc-<UTC_TS>.sha256
 
 ---
 
-## Minimal Restore. `TODO: implement restore guardrails`
+## Restore (staging by default)
 
+**Staging restore (default, latest backup, non-destructive)**
+```bash
+cd "${STACKS_DIR}"
+make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups"
+```
+
+**Staging restore of a determined backup**
 ```bash
 cd "${STACKS_DIR}"
 make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
-  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+  BACKUP_TS="2025-12-08_023808"
 ```
 
+**In-place restore (dangerous, explicit guardrail)**
+```bash
+cd "${STACKS_DIR}"
+make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
+  BACKUP_TS="2025-12-08_023808" \
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud" \
+  ALLOW_INPLACE=1
+```
+
+**Recommended workflow**
+- Run staging restore and inspect `TARGET` first.
+- Proceed to in-place only if the staged data is verified.
+
 **Success criteria**
-- The script completes without errors.
-- Volume and DB are restored for a subsequent `make up`.
+- Staging: `TARGET` exists with `db.sql` and extracted volume data (`vol/` or `data/`), and checksum verified.
+- In-place: the script completes without errors; volume and DB are restored for a subsequent `make up`.
 
 ---
 
@@ -188,7 +208,8 @@ systemd-analyze verify /etc/systemd/system/homelab-nc-backup.service # if availa
 - **Fix**: the script stops `app/web/cron` and continues; review permissions if it repeats.
 
 ### “Missing artifacts” on restore
-- **Confirmation**: patterns `nc-*-db.sql[.gz]` and `nc-vol-*.tar.gz` are missing.
+- **Confirmation**: expected artifacts for the selected TS are missing:
+  `nc-<TS>-db.sql`, `nc-<TS>.sha256`, `nc-vol-<TS>.tar.gz`.
 - **Fix**: verify `BACKUP_DIR` and the expected timestamp.
 
 ---
