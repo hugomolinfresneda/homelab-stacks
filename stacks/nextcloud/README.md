@@ -1,515 +1,356 @@
-# Nextcloud Stack (Docker)
+# Nextcloud Stack (App · Cron · MariaDB · Mysqld-exporter · Redis · Redis-exporter · Web)
 
-This stack deploys **Nextcloud** using Docker with a clean separation between the **public stacks repo** and your **private runtime**. It includes:
-
-- `app` (PHP-FPM) — core Nextcloud
-- `web` (Nginx internal) — serves static assets and proxies PHP to `app`
-- `db` (MariaDB) — database
-- `redis` — caching/locking
-- `cron` — runs `cron.php` every 5 min
-
-Designed for reproducibility (images pinned by **digest**), operational clarity, and minimal host binds (no bind-mount of `/var/www/html`).
+## Overview
+This stack provides a Nextcloud deployment with app/web/db/redis/cron services, split between the public stacks repo and your private runtime. Images are pinned by digest, containers include healthchecks, and the base compose stays portable (no host ports; you only publish what you need via your reverse proxy / tunnel).
 
 ---
 
-## 1) Architecture
-
-```
-Client ──(HTTPS)──▶ Reverse Proxy / Tunnel
-                        │
-                        └──▶ docker network 'proxy' ───→  web (Nginx :8080)
-                                                          ├─→ app   (php-fpm :9000)
-                                                          ├─→ db    (MariaDB)
-                                                          ├─→ redis
-                                                          └─→ cron
-```
-
-- The **reverse proxy / tunnel** (e.g., Nginx front, Cloudflare Tunnel) terminates TLS and proxies to `http://web:8080` on the `proxy` network.
-- `web` uses the included `nginx.conf` (from the **public** repo) and forwards PHP to `app:9000`.
-- **No host port** in the base compose. Host binding is defined in **runtime** via `compose.override.yml`.
-
-> **Note**: Create the external docker network used by your reverse proxy if it does not exist:
->
-> ```bash
-> docker network create proxy || true
-> ```
+## Components
+- `app` (PHP‑FPM): Nextcloud core.
+- `web` (Nginx internal): serves static assets and forwards PHP to `app`.
+- `db` (MariaDB): database.
+- `redis`: cache/locking.
+- `cron`: runs `cron.php`.
+- `mysqld-exporter` (Prometheus): MariaDB metrics exporter (optional, monitoring profile).
+- `redis-exporter` (Prometheus): Redis metrics exporter (optional, monitoring profile).
 
 ---
 
-## 2) Repos layout
+## Architecture
+
+```
+                        (HTTPS)                                                      
+Client  ─────►  Tunnel  ───────────────────────────────────┐                         
+                                                           │                         
+                                                           │                         
+                                                           │ docker network: proxy   
+                                                           ▼                         
+                                                    ┌─────────────┐                  
+                                                    │ web (Nginx) │                  
+                                                    │   :8080     │                  
+                                                    └──────┬──────┘                  
+                                                           │                         
+                                                           │                         
+                      ┌────────────────────────────────────┼────────────────────────┐
+                      ▼                     docker network:│nc-net                  ▼
+                                                           ▼                         
+                                                    ┌─────────────┐                  
+                                                    │ app         │                  
+                               ┌───────────────────►│ (Nextcloud) │                  
+                               │                    │    :9000    │                  
+                  runs cron.php│(PHP CLI)           └─────────┬───┘                  
+                               │                              │                      
+                               │                     ┌────────┴──────────┐           
+                        ┌──────┴──────┐              │                   │           
+                        │ cron        │       cache +│locks            DB│queries    
+                        │ (Nextcloud) │              │                   │           
+                        │    :9000    │              ▼                   ▼           
+                        └─────────────┘          ┌────────┐        ┌──────────────┐  
+                                                 │ redis  │        │ db (MariaDB) │  
+                                                 │  :6379 │        │   :3306      │  
+                                                 └────────┘        └──────────────┘  
+```
+
+---
+
+## Repo contract and file layout
+This stack follows the standard repo/runtime split. See:
+- `docs/contract.md`
+- `docs/runtime-overrides.md`
 
 Use the canonical variables for absolute paths:
 ```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
 ```
 
-**Public repo** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
-```
-stacks/nextcloud/
-├─ compose.yaml
-├─ nginx.conf
-├─ php.ini
-├─ .env.example
-├─ config/
-│  ├─ 10-redis.config.php.example
-│  └─ 20-proxy.config.php.example
-└─ tools/
-   ├─ nc     # helper wrapper (idempotent CLI flow)
-   └─ occ    # OCC convenience
-```
-
-**Private runtime** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`):
+**Public repo** (`${STACKS_DIR}`):
 ```
 stacks/nextcloud/
-├─ .env
-└─ compose.override.yml
+├── .env.example
+├── README.md
+├── backup/
+│   ├── README.backup.md
+│   ├── README.dr.md
+│   ├── nc-backup.env.example
+│   ├── nc-backup.sh
+│   └── nc-restore.sh
+├── compose.override.example.yaml
+├── compose.yaml
+├── config/
+│   ├── 10-redis.config.php.example
+│   └── 20-proxy.config.php.example
+├── nginx.conf
+├── php.ini
+├── secrets/
+│   └── db.env.example
+└── tools/
+    ├── nc
+    └── occ
 ```
 
-- The **runtime** keeps local, environment-specific settings out of git.
-- The **public** stack ships sane defaults and helper scripts.
+**Private runtime** (`${RUNTIME_ROOT}`):
+```
+stacks/nextcloud/            # runtime overlay (environment-specific)
+├── .env
+├── db.env                   # DB secrets (real values)
+└── compose.override.yaml    # host binds, secrets mounts, environment wiring
+```
 
 ---
 
-## 3) Prerequisites
+## Requirements
 
-- Docker Engine + **Docker Compose v2** (`docker compose ...` syntax)
-- An external docker network used by your reverse proxy: `proxy`
-- DNS for your public domain (e.g., `your-domain.tld`) pointing to your reverse proxy or tunnel endpoint
-- TLS termination at the edge (reverse proxy or Cloudflare Tunnel)
+### Software
+- Docker Engine + Docker Compose plugin (v2)
+- GNU Make
+- (Optional) `curl` for internal smoke tests.
+
+### Shared Docker network for UI publishing
+```bash
+docker network create proxy || true
+```
+
+### Network / Ports
+The base compose does **not** publish host ports (`ports:` is empty); it only exposes internal ports via `expose:`. Publish UI access (`web`) via your reverse proxy or runtime override.
+
+| Service | Host published (`ports`) | Container (`expose`) | Notes |
+|---|---|---|---|
+| `web` | No (publish via proxy/override) | `8080` | UI. Publish via runtime override only for local testing; production access should go through reverse proxy/tunnel to `web:8080` on the `proxy` network. |
+| `app` | N/A (internal only) | `9000` | PHP‑FPM internal. |
+| `db` | N/A (internal only) | `3306` | MariaDB internal. |
+| `redis` | N/A (internal only) | `6379` | Redis internal. |
+| `cron` | N/A (internal only) | — | No exposed port. |
+| `mysqld-exporter` | N/A (internal only) | `9104` | Prometheus scrape on `mon-net` (monitoring profile). |
+| `redis-exporter` | N/A (internal only) | `9121` | Prometheus scrape on `mon-net` (monitoring profile). |
+
+### Storage
+Host paths are defined in runtime; named volumes are managed by Docker.
+
+| Purpose | Host (runtime) | Container | RW | Notes |
+|---|---|---|---:|---|
+| Nextcloud data/code/config | Docker named volume `nextcloud_nextcloud` | `/var/www/html` | ✅ | Do not bind‑mount `/var/www/html`. |
+| MariaDB data | Docker named volume `nextcloud_db` | `/var/lib/mysql` | ✅ | DB persistence. |
+| Redis AOF | Docker named volume `nextcloud_redis` | `/data` | ✅ | Redis persistence. |
 
 ---
 
-## 4) Environment variables
+## Helper commands
+This repo ships with helper targets for the Nextcloud stack.
+> You can invoke them either as `make <target> stack=nextcloud` or via the `make nc-<target>` alias.
+> Discovery: run `make nc-help` to list all Nextcloud shortcuts.
 
-Copy the template from the **public** repo and adjust it in your **runtime**:
+| Target | Description | Invoke (full) | Invoke (alias) |
+|---|---|---|---|
+| Install | Bootstrap Nextcloud on first run (one‑time setup). | `make install stack=nextcloud` | `make nc-install` |
+| Post | Post configuration (cron, trusted_domains, basic repairs). | `make post stack=nextcloud` | `make nc-post` |
+| Status | Print Nextcloud status and HTTP checks. | `make status stack=nextcloud` | `make nc-status` |
+| Reset DB | Drop DB volume only (app data remains). | `make reset-db stack=nextcloud` | `make nc-reset-db` |
+| Logs (follow) | Tail app logs with follow. | `make logs stack=nextcloud follow=true` | `make nc-logs follow=true` |
+
+---
+
+## Quickstart (Makefile + helper)
 
 ```bash
-cp ${STACKS_DIR}/stacks/nextcloud/.env.example \
-   ${RUNTIME_DIR}/.env
+# 1) Canonical variables (adjust for your host)
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
 
-$EDITOR ${RUNTIME_DIR}/.env
+# 2) Prepare runtime override
+mkdir -p "${RUNTIME_DIR}"
+cp "${STACKS_DIR}/stacks/nextcloud/compose.override.example.yaml" \
+  "${RUNTIME_DIR}/compose.override.yaml"
+# EDIT: ${RUNTIME_DIR}/compose.override.yaml
+
+# 3) Prepare env/runtime config
+cp "${STACKS_DIR}/stacks/nextcloud/.env.example" "${RUNTIME_DIR}/.env"
+cp "${STACKS_DIR}/stacks/nextcloud/secrets/db.env.example" "${RUNTIME_DIR}/db.env"
+# EDIT: ${RUNTIME_DIR}/.env and ${RUNTIME_DIR}/db.env
+
+# 4) Bring up the stack
+cd "${STACKS_DIR}"
+make nc-up
+
+# 5) Install and post-config (helper flow)
+make nc-install
+make nc-post
+
+# 6) Verify Nextcloud status (should show installed:true)
+make nc-status
+
+# 7) Docker stack status
+make nc-ps
+
+# 8) Logs
+make nc-logs follow=true
 ```
 
-**Key variables** (excerpt):
-```dotenv
-COMPOSE_PROJECT_NAME=yourproject
-TZ=Region/City
-
-# UID/GID for Nextcloud containers (cron user)
-PUID=your-uid
-PGID=your-gid
-
-# Public fqdn and trusted domains (space-separated)
-NC_DOMAIN=your-domain.tld
-NEXTCLOUD_TRUSTED_DOMAINS=${NC_DOMAIN} 
-# For multiple trusted domains: configure them in Nextcloud after install, or update compose to pass them through (follow-up PR).
-
-# DB credentials (duplicated for Nextcloud's CLI)
-NC_DB_NAME=exampledb
-NC_DB_USER=exampleuser
-NC_DB_PASS=changeme
-NC_DB_ROOT=changeme
-
-# Nextcloud admin bootstrap
-NC_ADMIN_USER=your-admin-user
-NC_ADMIN_PASS=changeme
-# NEXTCLOUD_ADMIN_* is derived in compose.yaml from NC_ADMIN_*
-
-# PHP limits
-PHP_MEMORY_LIMIT=your-memory-limit
-PHP_UPLOAD_LIMIT=your-upload-limit
-
-# Local bind for the internal Nginx (runtime-only)
-BIND_LOCALHOST=your-bind-ip
-HTTP_PORT=your-port
-```
-
-> With `container_name` removed, Compose names containers as
-> `<project>-<service>-1`. Keep `COMPOSE_PROJECT_NAME=yourproject` (or use the
-> Makefile/helpers) so `docker compose ps` stays readable.
-
-> `compose.yaml` maps `NEXTCLOUD_ADMIN_*` and `MYSQL_*` from `NC_*` values, so you only need to set the `NC_*` variables in your runtime `.env`.
-
----
-
-## 4.5) Secrets & runtime
-
-- **Public repo**: `.env.example` and `*.env.example` include placeholders only.
-- **Runtime**: keep real DB credentials in `stacks/nextcloud/db.env` (not committed).
-- **Provisioning**: copy `stacks/nextcloud/secrets/db.env.example` to your runtime `stacks/nextcloud/db.env` and fill in values.
-- **Why**: isolating secrets reduces accidental leaks when sharing or reviewing `.env`.
-- **Policy**: never commit secrets into this repo.
-
----
-
-## 5) Compose files
-
-- **Base**: `${STACKS_DIR}/stacks/nextcloud/compose.yaml`
-  - Pinned image digests for `nextcloud`, `nginx`, `mariadb`, `redis`
-  - Mounts `nginx.conf` from the **public** repo into `web`
-  - Uses named volumes for data: `nextcloud_db`, `nextcloud_redis`, `nextcloud_nextcloud` (Docker auto-prefixes by project)
-  - `deploy.resources` is omitted because classic Compose ignores it; set limits in a Swarm stack
-    or enforce host-level constraints if you need hard caps.
-
-- **Runtime override**: `${RUNTIME_DIR}/compose.override.yml`
-  ```yaml
-  services:
-    app:
-      volumes:
-        - ./php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
-
-    web:
-      ports:
-        - "${BIND_LOCALHOST:-127.0.0.1}:${HTTP_PORT:-8082}:8080"
-  ```
-
-Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
-
-> The runtime does **not** override `nginx.conf` or the `config/` tree. This avoids “Cannot write into config directory” and other bind headaches.
-
----
-
-## 6) Operations (two options)
-
-### Option A — Using the **helper** (recommended first run)
-
-The helper lives in the **public** repo and orchestrates idempotent install + post-setup:
-
+### Optional profile(s) (e.g., monitoring exporters)
 ```bash
-# Up in two phases: (db,redis) → (app,web,cron)
-${STACKS_DIR}/stacks/nextcloud/tools/nc up
+make up stack=nextcloud PROFILES=monitoring
+# or the shortcut:
+make up-mon stack=nextcloud
+```
+Enables `mysqld-exporter` (9104) and `redis-exporter` (9121) on `mon-net`.
 
-# Install (waits for container-side bootstrap and seeds config snippets)
-${STACKS_DIR}/stacks/nextcloud/tools/nc install
+---
 
-# Post-setup (cron mode, trusted_domains, basic repairs)
-${STACKS_DIR}/stacks/nextcloud/tools/nc post
+## Configuration
 
-# Status (occ + HTTP check)
-${STACKS_DIR}/stacks/nextcloud/tools/nc status
+### Variables (.env)
+- Example: `stacks/nextcloud/.env.example`
+- Runtime: `${RUNTIME_DIR}/.env` (**not versioned**)
 
-# Logs (follow app logs)
-${STACKS_DIR}/stacks/nextcloud/tools/nc logs
+| Variable | Required | Example | Description |
+|---|---:|---|---|
+| `COMPOSE_PROJECT_NAME` | ✅ | `nextcloud` | Container/volume prefix. |
+| `TZ` | ✅ | `Region/City` | Timezone. |
+| `PUID` / `PGID` | ✅ | `1000` | UID/GID for processes (cron). |
+| `NC_DOMAIN` | ✅ | `cloud.example.com` | Public FQDN for trusted domains. |
+| `NC_DB_NAME` | ✅ | `nextcloud` | DB name. |
+| `NC_DB_USER` | ✅ | `ncuser` | DB user. |
+| `NC_DB_PASS` | ✅ | `<secret>` | DB password. |
+| `NC_DB_ROOT` | ✅ | `<secret>` | DB root password. |
+| `NC_ADMIN_USER` | ✅ | `admin` | Initial admin user. |
+| `NC_ADMIN_PASS` | ✅ | `<secret>` | Initial admin password. |
+| `PHP_MEMORY_LIMIT` | ❌ | `512M` | PHP memory limit. |
+| `PHP_UPLOAD_LIMIT` | ❌ | `2G` | PHP upload limit. |
+| `BIND_LOCALHOST` | ❌ | `127.0.0.1` | Optional host bind for `web:8080` (runtime override). |
+| `HTTP_PORT` | ❌ | `8082` | Optional host port for `web:8080` (runtime override). |
 
-# Down
-${STACKS_DIR}/stacks/nextcloud/tools/nc down
+
+> `compose.yaml` maps `NEXTCLOUD_ADMIN_*` and `MYSQL_*` from `NC_*`.
+
+---
+
+## Runtime overrides
+Files:
+- Example: `stacks/nextcloud/compose.override.example.yaml`
+- Runtime: `${RUNTIME_DIR}/compose.override.yaml`
+
+What goes into runtime overrides:
+- `ports:` (host bind) and host‑specific mounts.
+- secrets/sensitive config.
+- host‑specific tuning (UID/GID, SELinux, etc.).
+
+---
+
+## Operations (Makefile + helper)
+
+### Logs
+```bash
+make nc-logs follow=true
 ```
 
-What the helper does for you:
-
-- Ensures the Nextcloud code is present and OCC is callable
-- Waits for container-driven installation (avoids partial installs)
-- Seeds `config/10-redis.config.php` and `config/20-proxy.config.php` **inside** the container if missing
-- Sets `trusted_domains` (incl. `web` and `localhost`) and switches background jobs to `cron`
-- Runs basic DB repairs and shows a final status
-- Has a `QUIET=1` mode to reduce noise
-
-### Option B — Using **make** from the runtime
-
-The runtime Makefile special-cases Nextcloud so relative binds (e.g. `nginx.conf` from the **public** repo) resolve correctly.
-
+### Stop / start
 ```bash
-# Start containers (base + override)
-make up stack=nextcloud
-
-# Stop
 make down stack=nextcloud
 
-# Status (delegates to the helper)
-make status stack=nextcloud
-
-# First-time install and post-setup (delegates to the helper)
-make install stack=nextcloud
-make post    stack=nextcloud
-```
-
-> For Nextcloud, the runtime Makefile intentionally **does not** use `--project-directory`, preventing path resolution issues with binds from the public repo.
-
----
-
-## 7) Reverse proxy / Tunnel
-
-- **Nginx front**: proxy to `http://web:8080`. Ensure large body sizes (`client_max_body_size 2G`) and forward headers (`X-Forwarded-*`). The internal `nginx.conf` already has sane defaults for PHP, caching and well-known routes.
-- **Cloudflare Tunnel**: point your ingress to `http://web:8080` on the **`proxy`** network. A 502 typically means wrong service/port or the service is not on the same network.
-
----
-
-## 8) Health & smoke tests
-
-From the runtime host:
-```bash
-# Docker-level health
-docker compose \
-  -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  --env-file "${RUNTIME_DIR}/.env" \
-  ps
-
-# Intra-network HTTP check (200/302/403 are ok during bootstrap)
-docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://web:8080 | head -n1
-```
-
-Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
-
-If you see `HTTP/1.1 400 Bad Request` without a `Host`, try with your domain header:
-```bash
-docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
-  -sSI -H "Host: ${NC_DOMAIN}" http://web:8080/status.php | head -n1
-```
-
----
-
-## 9) Data & backups (quick notes)
-
-**Named volumes** (auto-prefixed by `COMPOSE_PROJECT_NAME=yourproject`):
-- `nextcloud_db` — MariaDB data
-- `nextcloud_redis` — Redis AOF
-- `nextcloud_nextcloud` — Nextcloud code tree, incl. `/var/www/html/config` and `/var/www/html/data`
-
-**Permissions note**: `cron` runs as `PUID/PGID` (default `33:33`, `www-data`).
-If you bind or migrate volumes to the host, align ownership to avoid write errors.
-
-**Ad-hoc DB dump** (example):
-```bash
-docker compose \
-  -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  --env-file "${RUNTIME_DIR}/.env" \
-  exec -T db sh -lc 'exec mysqldump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
-```
-
-**Full stop & copy** (cold backup; example outline):
-```bash
-${STACKS_DIR}/stacks/nextcloud/tools/nc down
-docker run --rm -v nextcloud_nextcloud:/vol -v "$PWD":/backup busybox tar czf /backup/nextcloud-data.tgz -C /vol .
-docker run --rm -v nextcloud_db:/vol -v "$PWD":/backup busybox tar czf /backup/mariadb.tgz -C /vol .
-```
-
-> For production-grade backups: schedule DB dumps + volume snapshots and test restores regularly.
-
-**Backups & DR docs**
-- **Backup Guide:** [backup/README.backup.md](./backup/README.backup.md)
-- **DR Runbook:** [backup/README.dr.md](./backup/README.dr.md)
-
----
-
-## 10) Updates (safe flow)
-
-1. Ensure a recent backup.
-2. Pull images:
-   ```bash
-   make pull stack=nextcloud
-   ```
-3. Recreate:
-   ```bash
-   make up stack=nextcloud
-   ```
-4. Inside `app`, run post-maintenance (idempotent):
-   ```bash
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ upgrade || true
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ db:add-missing-indices || true
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:repair || true
-   ```
-
-> Image **digests** are pinned in `compose.yaml`. Bump digests in a dedicated PR when you decide to upgrade.
-
----
-
-## 11) Troubleshooting
-
-- **“Cannot write into config directory!”**
-  - Do **not** bind-mount `/var/www/html` from the host.
-  - Let the helper create `config/` **inside** the container and seed snippets.
-- **HTTP 502 from `web`**
-- `app` not ready yet (check `docker compose -f ${STACKS_DIR}/stacks/nextcloud/compose.yaml -f ${RUNTIME_DIR}/compose.override.yml --env-file ${RUNTIME_DIR}/.env logs app web`).
-  - Wrong upstream — ensure `fastcgi_pass app:9000` is intact in `nginx.conf`.
-- **HTTP 400 on `/status.php`**
-  - Missing `Host` header. Test with your domain using `-H "Host: ${NC_DOMAIN}"`.
-- **DB errors on fresh installs**
-  - If you reinstalled many times: wipe controlled (only if safe to do):
-    ```bash
-    ${STACKS_DIR}/stacks/nextcloud/tools/nc down
-    docker volume rm nextcloud_db nextcloud_nextcloud nextcloud_redis || true
-    ${STACKS_DIR}/stacks/nextcloud/tools/nc up
-    ${STACKS_DIR}/stacks/nextcloud/tools/nc install
-    ${STACKS_DIR}/stacks/nextcloud/tools/nc post
-    ${STACKS_DIR}/stacks/nextcloud/tools/nc status
-    ```
-
----
-
-## 12) Makefile integration (what happens under the hood)
-
-- The **runtime Makefile** special-cases `stack=nextcloud` to **avoid** `--project-directory`. This ensures paths like `./nginx.conf` in the **public** compose resolve **relative to the public repo**, not the runtime (prevents the “mounting directory onto file” errors).
-- The **public Makefile** auto-detects `tools/nc` and **delegates** extra ops (`install`, `post`, `status`, `reset-db`) to the helper.
-
-This yields **parity** between `make` and `tools/nc` and keeps a single source of truth for operational quirks.
-
----
-
-## 13) File trees (reference)
-
-**Public**:
-```
-${STACKS_DIR}/stacks/nextcloud
-├─ compose.yaml
-├─ nginx.conf
-├─ php.ini
-├─ .env.example
-├─ config/
-│  ├─ 10-redis.config.php.example
-│  └─ 20-proxy.config.php.example
-└─ tools/
-   ├─ nc
-   └─ occ
-```
-
-**Runtime**:
-```
-${RUNTIME_DIR}
-├─ .env
-└─ compose.override.yml
-```
-
----
-
-## 14) Quick start (TL;DR)
-
-```bash
-# 0) One-time: ensure reverse-proxy docker network exists
-docker network create proxy || true
-
-# 1) Prepare env
-cp ${STACKS_DIR}/stacks/nextcloud/.env.example \
-   ${RUNTIME_DIR}/.env
-$EDITOR ${RUNTIME_DIR}/.env
-
-# 2) Bring up + install + post + verify (helper way)
-${STACKS_DIR}/stacks/nextcloud/tools/nc up
-${STACKS_DIR}/stacks/nextcloud/tools/nc install
-${STACKS_DIR}/stacks/nextcloud/tools/nc post
-${STACKS_DIR}/stacks/nextcloud/tools/nc status
-
-# (or) Runtime make
+# Standard start (no exporters)
 make up stack=nextcloud
-make install stack=nextcloud
-make post stack=nextcloud
-make status stack=nextcloud
+# OR start with monitoring exporters
+make up-mon stack=nextcloud
+```
+
+### Update images
+```bash
+make pull stack=nextcloud
+make up stack=nextcloud
+```
+
+### Validation (repo‑wide)
+```bash
+make lint
+make validate
 ```
 
 ---
 
-## 15) Exporters (Prometheus): MariaDB & Redis
+## Publishing (Cloudflare Tunnel)
 
-This stack ships two optional exporters:
-- `mysqld-exporter` (Prometheus): scrapes MariaDB.
-- `redis_exporter` (oliver006): scrapes Redis.
-
-### 1) Create the exporter DB user (from the host)
-```bash
-docker run --rm --network nextcloud_default \
-  -e MYSQL_PWD="$NC_DB_ROOT" mariadb:10.11 \
-  mariadb -h db -uroot -e "
-    CREATE USER IF NOT EXISTS 'exporter'@'%' IDENTIFIED BY '<<STRONG-PASSWORD>>';
-    GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO 'exporter'@'%';
-    FLUSH PRIVILEGES;"
-```
-
-### 2) Runtime-only credentials file
-
-Create `${RUNTIME_DIR}/exporters/mysqld-exporter.my.cnf`:
-
-```ini
-[client]
-user=exporter
-password=<<STRONG-PASSWORD>>
-host=db
-port=3306
-```
-
-### 3) Runtime override (mount the file and keep generic flags public)
-
-`${RUNTIME_DIR}/compose.override.yml`:
+1. Add the ingress rule to your tunnel config:
 
 ```yaml
-services:
-  mysqld-exporter:
-    command:
-      - --config.my-cnf=/run/secrets/mysql_exporter.cnf
-      - --collect.info_schema.processlist
-      - --collect.info_schema.tables
-      - --collect.engine_innodb_status
-      - --no-collect.slave_status
-    volumes:
-      - ${RUNTIME_DIR}/exporters/mysqld-exporter.my.cnf:/run/secrets/mysql_exporter.cnf:ro
-
-  # No healthcheck here; Prometheus is the source of truth
-  redis-exporter:
-    command:
-      - --redis.addr=redis://redis:6379
-      - --web.listen-address=:9121
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
+ingress:
+  - hostname: nextcloud.<your-domain>
+    service: http://web:8080
+  - service: http_status:404
 ```
 
-### 4) Bring exporters up
+2. Create the DNS record in Cloudflare (Dashboard → DNS → Records):
+
+- Type: **CNAME**
+- Name: `nextcloud`
+- Target: `<TUNNEL_UUID>.cfargotunnel.com`
+- Proxy: **Proxied**
+
+3. Restart the tunnel container:
 
 ```bash
-docker compose \
-  -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
-  -f "${RUNTIME_DIR}/compose.override.yml" \
-  --env-file "${RUNTIME_DIR}/.env" \
-  up -d mysqld-exporter redis-exporter
+make down stack=cloudflared
+make up   stack=cloudflared
 ```
 
-### 5) Prometheus scrape (example job)
+4. Verify externally:
 
-Add to your monitoring stack:
-
-```yaml
-- job_name: 'nextcloud-exporters'
-  scrape_interval: 15s
-  static_configs:
-    - targets:
-      - 'mysqld-exporter:9104'
-      - 'redis-exporter:9121'
+```bash
+curl -I https://nextcloud.<your-domain>/status.php
+# HTTP/2 200
 ```
 
-### 6) How this integrates with the monitoring stack
+---
 
-If you also deploy the `monitoring` stack from this repository, these exporters are consumed automatically:
+## Security notes
 
-- Prometheus loads `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`, which adds basic
-  alerts for the public `status.php` probe, the MariaDB exporter and the Redis exporter.
-- Grafana exposes the dashboard **20_Apps / Nextcloud – Service Overview** from
-  `stacks/monitoring/grafana/dashboards/exported/mon/20_apps/nextcloud-service-overview.json`.
+- Keep secrets in `${RUNTIME_DIR}` with restrictive permissions (`chmod 600`).
+- Avoid bind‑mounting `/var/www/html` (can break config writes).
+- Public exposure must be behind a reverse proxy/tunnel with TLS.
 
-The only expectations are:
+---
 
-- The Nextcloud stack is attached to the `mon-net` network (see this stack's `compose.yaml`).
-- The `mysqld-exporter` and `redis-exporter` containers are running.
-- The public Nextcloud URL you actually use is the one configured in the monitoring stack
-  for the Blackbox HTTP probe to `status.php`.
+## Backups and DR
+Nextcloud uses **dedicated backup/restore** (not Restic infra):
+- Backup/restore guide: `stacks/nextcloud/backup/README.backup.md`
+- DR guide: `stacks/nextcloud/backup/README.dr.md`
 
-With this in place you get:
+Makefile targets:
+- `make backup stack=nextcloud BACKUP_DIR=... [BACKUP_ENV=...]`
+- `make backup-verify stack=nextcloud BACKUP_DIR=...`
+- `make restore stack=nextcloud BACKUP_DIR=... [RUNTIME_DIR=...]`
 
-- SLO‑style HTTP availability metrics for `status.php`.
-- Basic health signals for MariaDB and Redis as used by this instance.
-- A log view in Grafana built on top of the `app` service logs.
+Infra backups (Restic): `ops/backups/README.md`.
 
-### 7) Optional: make Nextcloud logs visible in Loki
+---
 
-The dashboards assume that Nextcloud writes structured messages to the PHP error log.
-From the Docker host this can be enforced with the `occ` wrapper provided by the stack:
+## Troubleshooting
 
+### Quick checks
+```bash
+make nc-ps
+make logs stack=nextcloud follow=true
+```
+
+### Escape hatch (debug)
 ```bash
 cd "${STACKS_DIR}"
-
-./stacks/nextcloud/tools/occ config:system:set log_type --value=errorlog
-./stacks/nextcloud/tools/occ config:system:set loglevel --value=2
-./stacks/nextcloud/tools/occ config:system:set logdateformat --value=c
+docker compose \
+  --env-file "${RUNTIME_DIR}/.env" \
+  -f "stacks/nextcloud/compose.yaml" \
+  -f "${RUNTIME_DIR}/compose.override.yaml" \
+  ps
 ```
 
-With the default promtail configuration in the monitoring stack, anything written by the
-`app` service to `stderr` is picked up under `job="dockerlogs", stack="nextcloud", compose_service="app"`
-and used by the *Nextcloud – Application errors* panel.
+### Common issues
+- **“Cannot write into config directory!”**
+  - **Likely cause**: host bind‑mount of `/var/www/html`.
+  - **Fix**: use named volume and let the container manage `config/`.
+- **HTTP 502 from reverse proxy**
+  - **Likely cause**: `app` not ready or upstream mismatch.
+  - **Fix**: check `app`/`web` logs and confirm upstream to `web:8080` on `proxy` network.
+- **HTTP 400 on `/status.php`**
+  - **Likely cause**: missing `Host` header.
+  - **Fix**: send the request with `Host: ${NC_DOMAIN}`.

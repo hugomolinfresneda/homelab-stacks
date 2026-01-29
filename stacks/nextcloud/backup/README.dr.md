@@ -1,331 +1,253 @@
-# Nextcloud — Disaster Recovery (DR) Runbook
+# Nextcloud — Disaster Recovery (DR)
 
-> **Scope**: This runbook covers end‑to‑end recovery of the **Nextcloud** stack deployed with the split repos model
-> **public**: `STACKS_DIR` (e.g. `/opt/homelab-stacks`); **runtime**: `RUNTIME_ROOT` (e.g. `/opt/homelab-runtime`).
-> It assumes you are using the provided backup scripts: `stacks/nextcloud/backup/nc-backup.sh` and
-> `stacks/nextcloud/backup/nc-restore.sh`.
+## Purpose
+This runbook covers **disaster recovery** for Nextcloud: total or partial loss, severe corruption, or host rebuild. It restores service, data, and minimum configuration. It does **not** cover performance tuning or advanced observability reconstruction.
 
-Use the canonical variables for absolute paths in this runbook:
-```sh
-export STACKS_DIR="/abs/path/to/homelab-stacks"    # e.g. /opt/homelab-stacks
-export RUNTIME_ROOT="/abs/path/to/homelab-runtime" # e.g. /opt/homelab-runtime
-RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+## RTO / RPO (Indicative)
+- **RTO**: 30–60 minutes on the same host; 2–3 hours on a new host.
+- **RPO**: up to the last valid backup (typically daily).
+- Assumptions: backups are executed and verified regularly.
+
+---
+
+## Prerequisites
+
+### Canonical variables
+```bash
+export STACKS_DIR="/abs/path/to/homelab-stacks"
+export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
+export RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
 ```
 
----
+### What must be available
+- Stacks repo: `${STACKS_DIR}`.
+- Private runtime: `${RUNTIME_ROOT}` (or the ability to reconstruct it).
+- Access to `BACKUP_DIR` (backup storage).
+- Minimum credentials: DB and reverse proxy/tunnel access.
 
-## 0) Quick “Panic Card” (TL;DR)
+### External dependencies (minimal validation)
+- **DNS records**
+  - Validation: `dig +short <your-domain>` or `nslookup <your-domain>`.
+- **Reverse proxy / tunnel**
+  - Validation: service is up and endpoint responds (e.g., `curl -I https://<your-domain>/status.php`).
+- **Storage / mounts**
+  - Validation: `df -h <BACKUP_DIR>` and `test -w <BACKUP_DIR>`.
 
-1. **Declare incident** → pick the scenario (A/B/C) below.
-2. **Freeze changes** on Nextcloud (announce downtime).
-3. **Verify most recent backup**:
-   ```bash
-   # Public repo
-   make backup-verify stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
-   ```
-4. **Restore** (latest backup):
-   ```bash
-   # Public repo
-   make restore stack=nextcloud \
-     BACKUP_DIR="$HOME/Backups/nextcloud" \
-     RUNTIME_DIR="${RUNTIME_DIR}"
-   ```
-5. **Smoke tests** → status, HTTP checks (see §6).
-6. **Close incident** → write short post‑mortem (what failed, what we fixed, how to prevent).
-
----
-
-## 1) Assumptions & Objectives
-
-- **RTO target** (time to restore): ≤ 30–60 min on the same host; ≤ 2–3 h on a new host.
-- **RPO target** (data loss): up to the last successful dump (typically daily).
-- **Backups** contain:
-  - DB logical dump: `nc-YYYY-MM-DD_HHMMSS-db.sql`
-  - Nextcloud volume archive: `nc-vol-YYYY-MM-DD_HHMMSS.tar.gz`
-  - Combined checksum: `nc-YYYY-MM-DD_HHMMSS.sha256`
-- **Where**: default `~/Backups/nextcloud` (adjust per environment).
-
-> Future hardening (optional): encrypt & ship offsite (restic/rclone), retention policies, scheduled test restores.
+### Material to gather (if in incident mode)
+- Timestamp of the “last known good” state.
+- Most recent verified backup (id/date).
+- Failure logs (if the host is still alive).
+- Recent changes (upgrade/config).
 
 ---
 
-## 2) Roles & Contacts (fill in)
-
-- **Incident Lead**: _name / phone / IM_
-- **Runtime Owner**: _name / phone / IM_
-- **DNS/Proxy Owner**: _name / phone / IM_
-
----
-
-## 3) Triggers (When to run this)
-
-- Production outage (HTTP 5xx, login loop, stuck maintenance).
-- DB corruption / container won’t start / data loss detected.
-- Host failure / OS reinstallation / migration to new hardware.
-- Security incident requiring rollback to known‑good state.
+## Covered scenarios
+1) **S1 — Total host loss** (new host from scratch)
+2) **S2 — Data corruption/loss** (host alive, data damaged)
+3) **S3 — Credentials/secrets loss**
+4) **S4 — Rollback after failed upgrade**
 
 ---
 
-## 4) Pre‑flight Checklist (5 min)
+## Common Plan (Applies to all)
 
-- [ ] Confirm incident scope and expected user impact.
-- [ ] Announce downtime (status page / chat).
-- [ ] Ensure **backup location is reachable** and **has free space**.
-- [ ] Confirm **runtime .env** has correct DB creds (used during restore).
-- [ ] (Optional) Snapshot host volumes if using ZFS/btrfs/LVM.
-- [ ] Ensure Docker is up: `docker ps`.
+### 0) Freeze changes
+```bash
+cd "${STACKS_DIR}"
+make down stack=nextcloud
+```
+
+**Success criteria**
+- `make ps stack=nextcloud` shows no active services.
+
+### 1) Choose the restore point
+- Select a **verified** backup (not just “the latest that exists”).
+
+**Success criteria**
+- A verified backup timestamp is identified.
 
 ---
 
-## 5) Recovery Scenarios
+## Recommended Recovery Flow (Summary)
+> Use this when the environment is controlled and backups are valid.
 
-### A) App/config broken, data intact (soft failure)
-
-Symptoms: 502 from `web`, app container crash loop, wrong config, but DB and data likely OK.
-
-**Steps**
-
-1. **Recreate containers** (pull+up):
-   ```bash
-   # Runtime (preferred)
-   cd "${RUNTIME_ROOT}"
-   make pull stack=nextcloud
-   make up   stack=nextcloud
-   make status stack=nextcloud
-   ```
-2. If still failing, **restore only volume** from latest backup (keeps DB):
-   Use full restore and **skip DB import** by temporarily moving the `*-db.sql` aside or restoring a timestamp that only fixes app/config (see §7).
-
-3. Run **repairs**:
-   ```bash
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:repair || true
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ db:add-missing-indices || true
-   ```
-
-### B) Data corruption or bad upgrade (need to roll back)
-
-Symptoms: unknown errors after upgrade, missing files, broken indices, DB integrity issues.
-
-**Steps**
-
-1. **Verify the backup** you intend to use:
-   ```bash
-   make backup-verify stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
-   ```
-2. **Restore full** (volume + DB) from **latest known‑good timestamp**:
-   ```bash
-   make restore stack=nextcloud \
-     BACKUP_DIR="$HOME/Backups/nextcloud" \
-     RUNTIME_DIR="${RUNTIME_DIR}"
-   ```
-3. **Post‑restore repairs** will run automatically; if needed, run again:
-   ```bash
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:repair || true
-   ```
-4. Validate with the smoke tests in §6.
-
-### C) New host / total loss (bare‑metal/cloud re‑provision)
-
-1. **Reinstall prerequisites**:
-   ```bash
-   # Minimal essentials
-   sudo apt-get update && sudo apt-get install -y ca-certificates curl git
-   sudo install -m 0755 -d /etc/apt/keyrings
-   curl -fsSL https://download.docker.com/linux/$(. /etc/os-release; echo $ID)/gpg | \
-     sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-   echo \
-     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-     https://download.docker.com/linux/$(. /etc/os-release; echo $ID) \
-     $(. /etc/os-release; echo $VERSION_CODENAME) stable" | \
-     sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-   sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-   sudo usermod -aG docker "$USER"
-   newgrp docker
-   ```
-2. **Recover repos**:
-   ```bash
-   sudo mkdir -p "${STACKS_DIR}" "${RUNTIME_ROOT}"
-   sudo chown -R "$USER":"$USER" "${STACKS_DIR}" "${RUNTIME_ROOT}"
-
-   # Clone your repos (adjust remotes/branches)
-   git clone <PUBLIC_REPO_URL>  "${STACKS_DIR}"
-   git clone <RUNTIME_REPO_URL> "${RUNTIME_ROOT}"
-   ```
-3. **Prepare runtime**:
-   - Ensure `${RUNTIME_DIR}/.env` exists and is correct.
-   - Ensure `compose.override.yml` exposes `web` to your reverse proxy (port/bind).
-   - Create external proxy network if needed:
-     ```bash
-     docker network create proxy || true
-     ```
-4. **Start stack** (no data yet; we will restore next):
-   ```bash
-   cd "${RUNTIME_ROOT}"
-   make up stack=nextcloud
-   ```
-5. **Restore** from backups:
+1) Prepare minimum runtime (`${RUNTIME_DIR}` + envs).
+2) Restore backup:
    ```bash
    cd "${STACKS_DIR}"
-   make restore stack=nextcloud \
-     BACKUP_DIR="$HOME/Backups/nextcloud" \
-     RUNTIME_DIR="${RUNTIME_DIR}"
+   make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
+     RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
    ```
-6. **Re‑attach reverse proxy / tunnel** (if applicable):
-   - Nginx/Traefik: route `cloud.example.com` → `web:8080` (via `proxy` network).
-   - Cloudflare Tunnel: ingress → `http://web:8080` (container must be on `proxy` network).
-7. Run **smoke tests** (§6) and close incident.
+3) Start the stack:
+   ```bash
+   make up stack=nextcloud
+   ```
+4) Verify (see “Final validation”).
+
+**Success criteria**
+- UI responds via reverse proxy/tunnel and `make ps` shows OK services.
 
 ---
 
-## 6) Validation & Smoke Tests (post‑restore)
+## S1 — Total Host Loss (Rebuild from Scratch)
 
-1. **Runtime health**:
-   ```bash
-   docker compose \
-     -f "${STACKS_DIR}/stacks/nextcloud/compose.yaml" \
-     -f "${RUNTIME_DIR}/compose.override.yml" \
-     --env-file "${RUNTIME_DIR}/.env" ps
-   ```
+### 1) Prepare a new host
+- Install Docker + compose plugin.
+- Mount backup storage (`BACKUP_DIR`).
 
-   Nota: si en tu runtime el override es `compose.override.yaml`, usa ese fichero.
-
-2. **OCC / Nextcloud status**:
-   ```bash
-   ${STACKS_DIR}/stacks/nextcloud/tools/nc status
-   # or directly:
-   ${STACKS_DIR}/stacks/nextcloud/tools/occ status
-   ```
-
-3. **HTTP check inside the docker network** (200/302/403 acceptable during bootstrap):
-   ```bash
-   docker run --rm --network nextcloud_default curlimages/curl:8.10.1 -sSI http://web:8080 | head -n1
-   ```
-
-4. **Status endpoint with Host header**:
-   ```bash
-   docker run --rm --network nextcloud_default curlimages/curl:8.10.1 \
-     -sSI -H "Host: ${NC_DOMAIN}" http://web:8080/status.php | head -n1
-   ```
-
-5. **Basic UX**: login works, file list loads, uploads OK, previews generate, search indexes update.
-
----
-
-## 7) Picking a Specific Timestamp
-
-By default `nc-restore.sh` selects the **latest** pair. To restore a specific timestamp, temporarily move undesired artifacts
-out of the folder so the script picks the pair you want:
-
+**Verification**
 ```bash
-# Keep only the desired triplet in the backup folder:
-#   nc-<TS>-db.sql[.gz], nc-vol-<TS>.tar.gz, nc-<TS>.sha256
-mkdir -p "$HOME/Backups/nextcloud/_tmp"
-find "$HOME/Backups/nextcloud" -maxdepth 1 -type f -name 'nc-*' \
-  ! -name 'nc-2025-10-30_101346*' -exec mv {} "$HOME/Backups/nextcloud/_tmp/" \;
+docker --version
+docker compose version
+df -h
 ```
 
-Run restore as usual, then move files back.
+### 2) Recover public repo + private runtime
+- Clone/restore `${STACKS_DIR}`.
+- Restore/obtain `${RUNTIME_ROOT}`.
 
----
+**Success criteria**
+- `${STACKS_DIR}/stacks/nextcloud/compose.yaml` exists.
+- `${RUNTIME_DIR}` exists or can be created.
 
-## 8) Running from Public vs Runtime
-
-**Public repository** (`STACKS_DIR`; e.g. `/opt/homelab-stacks`):
+### 3) Recreate minimum runtime
 ```bash
-# Backup
-make backup stack=nextcloud \
-  BACKUP_DIR="$HOME/Backups/nextcloud" \
-  BACKUP_ENV="$HOME/.config/nextcloud/nc-backup.env"
-
-# Verify
-make backup-verify stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
-
-# Restore
-make restore stack=nextcloud \
-  BACKUP_DIR="$HOME/Backups/nextcloud" \
-  RUNTIME_DIR="${RUNTIME_DIR}"
+mkdir -p "${RUNTIME_DIR}"
+# Restore ${RUNTIME_DIR}/.env and ${RUNTIME_DIR}/db.env (secrets)
 ```
 
-**Runtime repository** (`RUNTIME_ROOT`; e.g. `/opt/homelab-runtime`):
+**Success criteria**
+- `.env` and `db.env` are present with restrictive permissions.
+
+### 4) Restore data from backups
 ```bash
-make backup         stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud" BACKUP_ENV="$HOME/.config/nextcloud/nc-backup.env"
-make backup-verify  stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
-make restore        stack=nextcloud BACKUP_DIR="$HOME/Backups/nextcloud"
+cd "${STACKS_DIR}"
+make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
 ```
 
-> Both paths are supported. Public `restore` needs `RUNTIME_DIR` to load the override and `.env` correctly.
+**Success criteria**
+- Restore completes without errors.
+
+### 5) Start the stack
+```bash
+cd "${STACKS_DIR}"
+make up stack=nextcloud
+make ps stack=nextcloud
+```
+
+**Success criteria**
+- Services are `running/healthy`.
+- Public endpoint responds.
 
 ---
 
-## 9) Known Pitfalls & Fixes
+## S2 — Data Corruption/Loss (Host Alive)
 
-- **Left in maintenance mode** after a failed run:
-  ```bash
-  ${STACKS_DIR}/stacks/nextcloud/tools/occ maintenance:mode --off || true
-  ```
+### 1) Stop the stack
+```bash
+cd "${STACKS_DIR}"
+make down stack=nextcloud
+```
 
-- **502 from reverse proxy** right after recovery:
-  - `app` not ready yet; wait 30–60 seconds and check logs.
-  - Tunnel/proxy not on the same network as `web`, or wrong upstream (`web:8080`).
+### 2) (Optional) Preserve evidence
+- Take a quick snapshot/copy of the current state if useful.
 
-- **“Cannot write into config directory!”**
-  - Do **not** bind‑mount `/var/www/html` from host. Use named volume (`nextcloud_nextcloud`).
+### 3) Restore from backup
+```bash
+cd "${STACKS_DIR}"
+make restore stack=nextcloud BACKUP_DIR="/abs/path/to/backups" \
+  RUNTIME_DIR="${RUNTIME_ROOT}/stacks/nextcloud"
+```
 
-- **DB import permission errors**
-  - Ensure runtime `.env` has the correct `NC_DB_USER`, `NC_DB_PASS`, `NC_DB_NAME` used by the restore script.
+### 4) Start and validate
+```bash
+make up stack=nextcloud
+make ps stack=nextcloud
+```
 
-- **Backups folder cluttered**
-  - Move old triplets to an archive folder. Keep 3–7 days locally, ship older offsite (policy dependent).
-
----
-
-## 10) Scheduled Tests & Retention (Policy Suggestion)
-
-- **Backup cadence**: daily DB dump + volume archive (nightly).
-- **Verification**: `make backup-verify …` after each run (cron).
-- **Test restore**: at least **monthly** on a scratch host/VM. Keep a log of test results.
-- **Retention**: 7 daily + 4 weekly locally; offsite 90+ days (encrypted).
-- **Offsite**: restic to S3-compatible (WORM), or rclone to a cloud bucket (budget‑dependent).
+**Success criteria**
+- The original symptom disappears and logs do not repeat corruption errors.
 
 ---
 
-## 11) Post‑Incident Checklist
+## S3 — Credentials/Secrets Loss
 
-- [ ] Service availability restored; users confirmed.
-- [ ] Document exact timestamp restored and reason for failure.
-- [ ] Capture diffs between pre/post config if relevant.
-- [ ] Create follow‑up issues (monitoring gaps, automation, retention).
-- [ ] Schedule a test restore if none in the last 30 days.
+### 1) Identify the missing secret
+- DB user/pass, admin bootstrap, certificates, tokens, etc.
 
----
+### 2) Recover from runtime/backup
+- Restore files in `${RUNTIME_DIR}` (e.g., `db.env`).
 
-## 12) Appendix: Manual One‑Liners
+### 3) Controlled rotation (if required)
+- Generate new secrets and apply them in runtime.
 
-- **Manual DB dump** (bypass script):
-  ```bash
-  docker compose -f ${STACKS_DIR}/stacks/nextcloud/compose.yaml \
-    -f ${RUNTIME_DIR}/compose.override.yml \
-    --env-file ${RUNTIME_DIR}/.env \
-    exec -T db sh -lc 'exec mariadb-dump -u"$$MARIADB_USER" -p"$$MARIADB_PASSWORD" "$$MARIADB_DATABASE"' > nextcloud.sql
-  ```
-
-- **Manual volume tar**:
-  ```bash
-  docker run --rm -v nextcloud_nextcloud:/vol -v "$PWD":/backup busybox sh -lc 'cd /vol && tar czf /backup/nextcloud-vol.tgz .'
-  ```
-
-- **Wipe & reinstall** (only for labs; **dangerous** on prod):
-  ```bash
-  ${STACKS_DIR}/stacks/nextcloud/tools/nc down
-  docker volume rm nextcloud_db nextcloud_nextcloud nextcloud_redis || true
-  ${STACKS_DIR}/stacks/nextcloud/tools/nc up
-  ${STACKS_DIR}/stacks/nextcloud/tools/nc install
-  ${STACKS_DIR}/stacks/nextcloud/tools/nc post
-  ${STACKS_DIR}/stacks/nextcloud/tools/nc status
-  ```
+**Success criteria**
+- Authentication works and logs show no credential errors.
 
 ---
 
-### Change Log
+## S4 — Rollback After Failed Upgrade
 
-- **2025‑10‑30** — Initial version aligned with backup/restore scripts and Makefile targets.
+### 1) Identify previous version + pre‑upgrade backup
+- Prior image/tag.
+- Valid backup before the change.
+
+### 2) Restore consistent data
+- Restore DB + volume from the correct timestamp.
+
+### 3) Start and validate
+```bash
+cd "${STACKS_DIR}"
+make up stack=nextcloud
+make ps stack=nextcloud
+```
+
+**Success criteria**
+- Service is stable and functional on the previous version.
+
+---
+
+## Final Validation (Checklist)
+- [ ] `make ps stack=nextcloud` shows services `running/healthy`.
+- [ ] Public endpoint responds (login/status).
+- [ ] A read/write test succeeds without errors.
+- [ ] Logs show no repeated errors in the last few minutes.
+- [ ] Timers/cron re‑enabled (if applicable).
+- [ ] `backup-verify` executed after recovery.
+
+Commands:
+```bash
+cd "${STACKS_DIR}"
+make ps stack=nextcloud
+make logs stack=nextcloud
+make backup-verify stack=nextcloud BACKUP_DIR="/abs/path/to/backups"
+```
+
+---
+
+## Rollback / Safety Notes
+- Do not restore onto a live production system without freezing changes.
+- Avoid overwriting a live environment without confirming the timestamp.
+- Document the point of no return (restore start = current data is lost).
+
+---
+
+## Post‑DR (Required Actions)
+- Document root cause and improvement actions.
+- Run a fresh backup and verify it.
+- Review retention/capacity and scheduling adjustments.
+
+---
+
+## Appendix
+
+### Runtime inventory
+- `${RUNTIME_DIR}/.env`
+- `${RUNTIME_DIR}/db.env`
+- `${RUNTIME_DIR}/compose.override.yaml`
+
+### Docker volumes (reference)
+- `nextcloud_nextcloud`
+- `nextcloud_db`
+- `nextcloud_redis`
