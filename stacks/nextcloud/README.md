@@ -51,6 +51,15 @@ Client  ─────►  Tunnel  ──────────────�
                                                  └────────┘        └──────────────┘  
 ```
 
+> **Networks**: `nc-net` (internal Nextcloud network), `proxy` (reverse proxy / tunnel),
+> and `mon-net` (monitoring exporters; only needed with `PROFILES=monitoring`). Create them if missing:
+>
+> ```bash
+> docker network create nc-net  || true
+> docker network create proxy   || true
+> docker network create mon-net || true
+> ```
+
 ---
 
 ## Repo contract and file layout
@@ -111,10 +120,8 @@ stacks/nextcloud/            # runtime overlay (environment-specific)
 - GNU Make
 - (Optional) `curl` for internal smoke tests.
 
-### Shared Docker network for UI publishing
-```bash
-docker network create proxy || true
-```
+### Shared Docker networks
+See the **Networks** note above for required external networks.
 
 ### Network / Ports
 The base compose does **not** publish host ports (`ports:` is empty); it only exposes internal ports via `expose:`. Publish UI access (`web`) via your reverse proxy or runtime override.
