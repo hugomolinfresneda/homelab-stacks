@@ -52,3 +52,8 @@ services:
       - ${HOST_VAR_RUN:-/var/run}:/var/run:ro${SELINUX_SUFFIX}
       - ${HOST_SYS:-/sys}:/sys:ro${SELINUX_SUFFIX}
       - ${HOST_DOCKER_DIR:-/var/lib/docker}:/var/lib/docker:ro${SELINUX_SUFFIX}
+
+  grafana:
+    # Optional local bind for Grafana
+    # ports:
+    #   - "${BIND_LOCALHOST:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
