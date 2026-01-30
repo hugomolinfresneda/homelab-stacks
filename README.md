@@ -1,68 +1,158 @@
 # homelab-stacks
 
-## Overview
-- Public repo with Docker Compose stacks and ops tooling for homelab/self-hosting.
-- Does not include secrets, persistent data, or private runtime; those live outside the repo.
-- Intended to be operated via the Makefile as the primary interface.
+[![CI](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yml)
 
-## Paths & runtime contract
-This repo relies on a dual layout:
-- **Repo (public/versioned)**: `${STACKS_DIR}` -> code, base compose, examples.
-- **Runtime (private/not versioned)**: `${RUNTIME_ROOT}` -> secrets, persistent data, overrides.
+**Reproducible Docker Compose stacks with production-minded ops tooling (Makefile-first).**
 
-Read first:
-- [docs/contract.md](docs/contract.md)
-- [docs/runtime-overrides.md](docs/runtime-overrides.md)
+Clean separation of **versioned config** and **private runtime** (secrets/data/overrides), with documented **backup/DR** and **monitoring runbooks**.
 
-## Quickstart
-> Goal: bring up a stack with the Makefile following the `STACKS_DIR` + `RUNTIME_ROOT` contract.
+- **Git stays clean:** no secrets / no persistent data committed; runtime lives outside the repo.
+- **Repeatable operations:** consistent `make` targets for deploy, status, logs, validation and backups.
+- **Ops included:** monitoring + alerting docs + runbooks; DR guidance where applicable.
 
-If a stack needs persistent data/secrets, create runtime overrides under ${RUNTIME_ROOT}/stacks/<stack> (see [docs/runtime-overrides.md](docs/runtime-overrides.md)).
+---
+
+## Demo
+
+[![asciicast](https://asciinema.org/a/JvTlV6qGNXLwTNmn.svg)](https://asciinema.org/a/JvTlV6qGNXLwTNmn)
+
+## Architecture (repo/runtime contract)
+
+```mermaid
+flowchart LR
+  A["Repo (public, versioned)<br/>${STACKS_DIR}<br/>compose + templates + docs"]
+  B["Runtime (private, host-specific)<br/>${RUNTIME_ROOT}<br/>.env + overrides + state"]
+  C["Docker Compose / Engine<br/>(base + overrides + env)<br/>running stacks"]
+
+  A --> C
+  B --> C
+```
+
+## Requirements
+
+- Linux host with Docker Engine + Docker Compose (plugin)
+- GNU Make
+- Optional (for `make lint`): `yamllint`, `shellcheck`
+> Running rootless Docker? Ensure your runtime paths/socket match the provided templates.
+
+## Quickstart (copy/paste)
 
 ```bash
+# 0) Set paths (repo + runtime)
 export STACKS_DIR="/abs/path/to/homelab-stacks"
 export RUNTIME_ROOT="/abs/path/to/homelab-runtime"
 
-cd "${STACKS_DIR}"
-# Run `make` to see available targets
-make validate
+cd "$STACKS_DIR"
+
+# 1) First-time setup (per stack): copy runtime templates OUTSIDE the repo,
+# then EDIT them to fill placeholders (paths, domains, passwords, etc.).
+# Template file names vary per stack — follow the stack README for exact steps.
+# See: docs/contract.md and docs/runtime-overrides.md
+
+# 2) Run a stack
 make up stack=<name>
+
+# Inspect / troubleshoot
 make ps stack=<name>
 make logs stack=<name> follow=true
+
+# Stop it
 make down stack=<name>
-make pull stack=<name>
+```
+> Tip: choose a stack from `stacks/` (e.g. `stack=monitoring`, `stack=nextcloud`).
+
+## Quality checks (optional)
+
+```bash
+# Validate compose configs for all stacks (equivalent to `docker compose config -q`)
+make validate
+
+# Lint YAML and shell scripts (requires `yamllint` + `shellcheck`)
+# Note: ShellCheck output is advisory; it will not fail the target.
+make lint
 ```
 
-## Repository structure
-- `stacks/` -> deployable stacks (each with its README)
-- `ops/` -> operational tooling (backups, etc.)
-- `docs/` -> contract and shared guides
+## Design: versioned repo, private runtime (clean Git, reproducible ops)
 
-## Available stacks
-> Concise list with links. Avoid duplicating instructions: each stack owns its README.
+This project follows a strict **repo/runtime contract**:
 
-| Stack | README | Notes |
-|---|---|---|
-| `adguard-home` | [stacks/adguard-home/README.md](stacks/adguard-home/README.md) | See stack README. |
-| `cloudflared` | [stacks/cloudflared/README.md](stacks/cloudflared/README.md) | See stack README. |
-| `couchdb` | [stacks/couchdb/README.md](stacks/couchdb/README.md) | See stack README. |
-| `dozzle` | [stacks/dozzle/README.md](stacks/dozzle/README.md) | See stack README. |
-| `monitoring` | [stacks/monitoring/README.md](stacks/monitoring/README.md) | See stack README. |
-| `nextcloud` | [stacks/nextcloud/README.md](stacks/nextcloud/README.md) | See stack README. |
-| `uptime-kuma` | [stacks/uptime-kuma/README.md](stacks/uptime-kuma/README.md) | See stack README. |
+- **Repo (public, versioned)**: `${STACKS_DIR}`
+  Compose bases, templates (`*.example`), documentation and ops tooling.
 
-## Operations and maintenance
-### Backups (infra and/or stack-specific)
-- Infra backups (Restic): [ops/backups/README.md](ops/backups/README.md)
-- Nextcloud backups/DR: [stacks/nextcloud/backup/README.backup.md](stacks/nextcloud/backup/README.backup.md) and [stacks/nextcloud/backup/README.dr.md](stacks/nextcloud/backup/README.dr.md)
+- **Runtime (private, not versioned)**: `${RUNTIME_ROOT}`
+  Host-specific configuration (**edited from templates**), secrets, persistent data and overrides.
 
-### Monitoring / Alerting
-- Stack monitoring: [stacks/monitoring/README.md](stacks/monitoring/README.md)
-- Alerting docs: [stacks/monitoring/docs/alerting/](stacks/monitoring/docs/alerting/)
-- Runbooks: [stacks/monitoring/runbooks/](stacks/monitoring/runbooks/)
+> (See the diagram above for the high-level flow.)
 
-## Changelog / Releases
-- Repo changelog: [CHANGELOG.md](CHANGELOG.md)
+### Why this layout
+- **Security hygiene:** keep secrets/state out of Git by design.
+- **Portability:** same repo works across hosts; only `${RUNTIME_ROOT}` changes.
+- **Operability:** per-host overrides without forking or “works on my NAS” drift.
+
+### Typical layout
+
+```text
+${STACKS_DIR}/                      # versioned (public)
+  stacks/                           # deployable stacks (each owns its README)
+    <stack>/...
+  ops/                              # operational tooling (backups)
+  docs/                             # contract and shared guides
+
+${RUNTIME_ROOT}/                    # private (NOT in Git)
+  stacks/<stack>/
+    .env                            # stack-specific config (edited from .env.example)
+    compose.override.yaml           # runtime override (edited from *.override.example)
+    data/                           # persistent state (when applicable)
+```
+
+If a stack needs persistence/secrets, create/edit its runtime files under:
+`${RUNTIME_ROOT}/stacks/<stack>`.
+
+Read first:
+
+- docs/contract.md
+- docs/runtime-overrides.md
+
+## Stacks (at a glance)
+
+| Stack | Purpose | Ops docs | README |
+|---|---|---|---|
+| `monitoring` | Metrics / logs / alerts | **alerting docs**, **runbooks** | `stacks/monitoring/README.md` |
+| `nextcloud` | File sync / collab | **backup**, **DR** | `stacks/nextcloud/README.md` |
+| `adguard-home` | DNS / ad-blocking | — | `stacks/adguard-home/README.md` |
+| `cloudflared` | Tunnel / ingress | — | `stacks/cloudflared/README.md` |
+| `couchdb` | Database | — | `stacks/couchdb/README.md` |
+| `dozzle` | Container logs UI | — | `stacks/dozzle/README.md` |
+| `uptime-kuma` | Uptime checks | — | `stacks/uptime-kuma/README.md` |
+
+## Operations
+
+Operations are documented alongside the stacks: **backup/restore**, **disaster recovery**, **alerting**, and **runbooks**.
+
+### Entry points
+- Need a full **Nextcloud restore**? Start at `stacks/nextcloud/backup/README.dr.md`.
+- Alert fired? Go to `stacks/monitoring/runbooks/`.
+
+### Backups & DR
+- **Infra backups (Restic-based):** `ops/backups/README.md`
+- **Nextcloud:**
+  - **Backup workflow:** `stacks/nextcloud/backup/README.backup.md`
+  - **Disaster recovery (restore end-to-end):** `stacks/nextcloud/backup/README.dr.md`
+
+### Monitoring & Alerting
+- **Monitoring stack:** `stacks/monitoring/README.md`
+- **Alerting docs (rules, routing, integrations):** `stacks/monitoring/docs/alerting/`
+- **Runbooks:** `stacks/monitoring/runbooks/`
+
+## Non-goals (set expectations)
+
+- Not a one-click installer for every environment (host-specific runtime is required).
+- No secrets or persistent data are committed to this repo (by design).
+- You own your runtime and threat model.
+- Not a managed product with SLAs.
+
+## Changelog
+See `CHANGELOG.md`.
 
 ## License
-- See [LICENSE](LICENSE) (Apache-2.0).
+Apache-2.0 — see `LICENSE`.
