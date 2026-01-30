@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
 # Nextcloud Backup (DB dump + volume archive + checksums)
 # - Reads lightweight env from ENV_FILE (defaults to ${RUNTIME_ROOT}/ops/backups/nc-backup.env)

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
 # backup-metrics.sh — helper to emit backup metrics in node_exporter textfile format
 # - Intended to be sourced by backup scripts (Restic, Nextcloud, etc.)

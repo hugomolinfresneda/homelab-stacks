@@ -65,4 +65,4 @@ make pull stack=<name>
 - Repo changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## License
-`TODO: add license`
+- See [LICENSE](LICENSE) (Apache-2.0).

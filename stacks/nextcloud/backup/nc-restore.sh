@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
 # Nextcloud Restore (staging by default; in-place opt-in)
 # - Selects backup by BACKUP_TS or deterministic latest
