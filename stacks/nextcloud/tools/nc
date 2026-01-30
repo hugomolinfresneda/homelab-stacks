@@ -17,9 +17,16 @@ PROFILES=${PROFILES:-}
 
 # Curl image for lightweight HTTP checks
 CURL_IMG=${CURL_IMG:-curlimages/curl:8.10.1}
+NC_OCC_TIMEOUT=${NC_OCC_TIMEOUT:-15s}
 
-BASE_FILE="$STACKS_REPO/stacks/nextcloud/compose.yaml"
-OVRD_FILE="$RUNTIME_DIR/compose.override.yml"
+PROJECT_DIR="$STACKS_REPO/stacks/nextcloud"
+BASE_FILE="$PROJECT_DIR/compose.yaml"
+OVRD_FILE=""
+if [[ -f "$RUNTIME_DIR/compose.override.yml" ]]; then
+  OVRD_FILE="$RUNTIME_DIR/compose.override.yml"
+elif [[ -f "$RUNTIME_DIR/compose.override.yaml" ]]; then
+  OVRD_FILE="$RUNTIME_DIR/compose.override.yaml"
+fi
 
 # ---------- Compose command builders ----------
 # Build "--profile ..." flags for the current PROFILES set
@@ -42,6 +49,7 @@ build_env_flags() {
   printf '%s' "$flags"
 }
 
+# Build compose args without eval (safe for status/down/reset-db)
 # For 'down': include current profiles and, if exporters are detected,
 # ensure "--profile monitoring" is present even if not specified.
 build_profile_flags_for_down() {
@@ -56,15 +64,98 @@ build_profile_flags_for_down() {
 PROF_STR="$(build_profile_flags)"
 ENV_STR="$(build_env_flags)"
 
-BASE="docker compose$ENV_STR$PROF_STR -f \"$BASE_FILE\""
-OVRD="docker compose$ENV_STR$PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
-OVRD_MON="docker compose$ENV_STR --profile monitoring -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+BASE="docker compose$ENV_STR$PROF_STR --project-directory \"$PROJECT_DIR\" -f \"$BASE_FILE\""
+if [[ -n "$OVRD_FILE" ]]; then
+  OVRD="docker compose$ENV_STR$PROF_STR --project-directory \"$PROJECT_DIR\" -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+  OVRD_MON="docker compose$ENV_STR --profile monitoring --project-directory \"$PROJECT_DIR\" -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+else
+  OVRD="$BASE"
+  OVRD_MON="docker compose$ENV_STR --profile monitoring --project-directory \"$PROJECT_DIR\" -f \"$BASE_FILE\""
+fi
 
 # ---------- Helpers ----------
 log()  { echo "▶ $*"; }
 run()  { if [ "$QUIET" = "1" ]; then eval "$*" >/dev/null 2>&1; else eval "$*"; fi; }
 dc_exec() { eval "$OVRD exec -T $*"; }
 occ()  { dc_exec -w /var/www/html -u www-data app php occ "$@"; }
+
+dc_base() {
+  local -a args=(docker compose --project-directory "$PROJECT_DIR")
+  local f p
+  for f in ${ENV_FILES}; do
+    [[ -n "$f" ]] && args+=(--env-file "$f")
+  done
+  if [[ -n "${PROFILES}" ]]; then
+    for p in ${PROFILES}; do
+      [[ -n "$p" ]] && args+=(--profile "$p")
+    done
+  fi
+  args+=(-f "$BASE_FILE")
+  "${args[@]}" "$@"
+}
+
+dc_ovrd() {
+  local -a args=(docker compose --project-directory "$PROJECT_DIR")
+  local f p
+  for f in ${ENV_FILES}; do
+    [[ -n "$f" ]] && args+=(--env-file "$f")
+  done
+  if [[ -n "${PROFILES}" ]]; then
+    for p in ${PROFILES}; do
+      [[ -n "$p" ]] && args+=(--profile "$p")
+    done
+  fi
+  args+=(-f "$BASE_FILE")
+  [[ -n "$OVRD_FILE" ]] && args+=(-f "$OVRD_FILE")
+  "${args[@]}" "$@"
+}
+
+dc_mon() {
+  local -a args=(docker compose --project-directory "$PROJECT_DIR")
+  local f
+  for f in ${ENV_FILES}; do
+    [[ -n "$f" ]] && args+=(--env-file "$f")
+  done
+  args+=(--profile monitoring)
+  args+=(-f "$BASE_FILE")
+  [[ -n "$OVRD_FILE" ]] && args+=(-f "$OVRD_FILE")
+  "${args[@]}" "$@"
+}
+
+dc_base_timeout() {
+  local duration="$1"
+  shift
+  local -a args=(docker compose --project-directory "$PROJECT_DIR")
+  local f p
+  for f in ${ENV_FILES}; do
+    [[ -n "$f" ]] && args+=(--env-file "$f")
+  done
+  if [[ -n "${PROFILES}" ]]; then
+    for p in ${PROFILES}; do
+      [[ -n "$p" ]] && args+=(--profile "$p")
+    done
+  fi
+  args+=(-f "$BASE_FILE")
+  timeout "$duration" "${args[@]}" "$@"
+}
+
+dc_ovrd_timeout() {
+  local duration="$1"
+  shift
+  local -a args=(docker compose --project-directory "$PROJECT_DIR")
+  local f p
+  for f in ${ENV_FILES}; do
+    [[ -n "$f" ]] && args+=(--env-file "$f")
+  done
+  if [[ -n "${PROFILES}" ]]; then
+    for p in ${PROFILES}; do
+      [[ -n "$p" ]] && args+=(--profile "$p")
+    done
+  fi
+  args+=(-f "$BASE_FILE")
+  [[ -n "$OVRD_FILE" ]] && args+=(-f "$OVRD_FILE")
+  timeout "$duration" "${args[@]}" "$@"
+}
 
 has_profile() {
   # usage: has_profile <name>
@@ -116,6 +207,7 @@ Environment:
   PROFILES="monitoring"   Enable profiled services (e.g., exporters)
   QUIET=1                 Reduce output noise
   CURL_IMG=...            Container image for HTTP checks (default: curlimages/curl:8.10.1)
+  NC_OCC_TIMEOUT=15s      Timeout for occ fallback in status (default: 15s)
 USAGE
 }
 
@@ -174,14 +266,121 @@ case "${1:-}" in
     ;;
 
   status)
-    if is_installed; then
-      occ status || true
-    else
-      echo "  - installed: false"
+    web_id="$(dc_ovrd ps -q web 2>/dev/null || true)"
+    app_id="$(dc_ovrd ps -q app 2>/dev/null || true)"
+    if [[ -z "$web_id" || -z "$app_id" ]]; then
+      echo "stack: down (web/app containers not found)"
+      exit 0
     fi
-    docker run --rm --network nextcloud_default "$CURL_IMG" -sSI http://web:8080/status.php | head -n1 || true
-    if [ -n "${NC_DOMAIN:-}" ]; then
-      docker run --rm --network nextcloud_default "$CURL_IMG" -sSI -H "Host: ${NC_DOMAIN}" http://web:8080/status.php | head -n1 || true
+
+    echo "stack: up"
+
+    installed="unknown"
+    reason=""
+    http_out=""
+    http_host_out=""
+
+    set +e
+    http_line="$(timeout 6s docker run --rm --network "container:${web_id}" "$CURL_IMG" -sSI --connect-timeout 2 --max-time 5 http://127.0.0.1:8080/status.php 2>/dev/null | head -n1)"
+    http_rc=$?
+    set -e
+    if [[ "$http_rc" -eq 0 && -n "$http_line" ]]; then
+      http_out="http: ${http_line}"
+    else
+      http_reason="failed"
+      [[ "$http_rc" -eq 124 ]] && http_reason="timeout"
+      http_out="http: fail (${http_reason})"
+    fi
+
+    http_code=""
+    if [[ "$http_rc" -eq 0 && -n "${http_line:-}" ]]; then
+      http_code="$(awk 'NR==1{print $2}' <<<"$http_line")"
+    fi
+    skip_occ=0
+    if [[ -n "$http_code" && "$http_code" =~ ^[0-9]{3}$ ]]; then
+      if (( http_code >= 400 )); then
+        skip_occ=1
+        reason="http-${http_code}"
+      fi
+    fi
+
+    set +e
+    http_body="$(timeout 6s docker run --rm --network "container:${web_id}" "$CURL_IMG" -fsS --connect-timeout 2 --max-time 5 http://127.0.0.1:8080/status.php 2>/dev/null)"
+    http_body_rc=$?
+    set -e
+    if [[ "$http_body_rc" -eq 0 && -n "$http_body" ]]; then
+      installed_val="$(printf '%s' "$http_body" | tr -d ' \n\r\t' | grep -oE '\"installed\":(true|false)' | head -n1 | cut -d: -f2)"
+      if [[ -n "$installed_val" ]]; then
+        installed="$installed_val"
+      else
+        reason="http-parse-failed"
+      fi
+    else
+      reason="http-failed"
+    fi
+
+    if [[ -n "${NC_DOMAIN:-}" ]]; then
+      set +e
+      http_host_line="$(timeout 6s docker run --rm --network "container:${web_id}" "$CURL_IMG" -sSI --connect-timeout 2 --max-time 5 -H "Host: ${NC_DOMAIN}" http://127.0.0.1:8080/status.php 2>/dev/null | head -n1)"
+      http_host_rc=$?
+      set -e
+      if [[ "$http_host_rc" -eq 0 && -n "$http_host_line" ]]; then
+        http_host_out="http(host): ${http_host_line}"
+      else
+        http_host_reason="failed"
+        [[ "$http_host_rc" -eq 124 ]] && http_host_reason="timeout"
+        http_host_out="http(host): fail (${http_host_reason})"
+      fi
+
+      if [[ "$installed" = "unknown" ]]; then
+        set +e
+        http_host_body="$(timeout 6s docker run --rm --network "container:${web_id}" "$CURL_IMG" -fsS --connect-timeout 2 --max-time 5 -H "Host: ${NC_DOMAIN}" http://127.0.0.1:8080/status.php 2>/dev/null)"
+        http_host_body_rc=$?
+        set -e
+        if [[ "$http_host_body_rc" -eq 0 && -n "$http_host_body" ]]; then
+          installed_val="$(printf '%s' "$http_host_body" | tr -d ' \n\r\t' | grep -oE '\"installed\":(true|false)' | head -n1 | cut -d: -f2)"
+          if [[ -n "$installed_val" ]]; then
+            installed="$installed_val"
+            reason=""
+          else
+            reason="http-host-parse-failed"
+          fi
+        else
+          reason="http-host-failed"
+        fi
+      fi
+    fi
+
+    if [[ "$installed" = "unknown" && "${skip_occ}" -eq 0 ]]; then
+      set +e
+      occ_out="$(dc_ovrd_timeout "$NC_OCC_TIMEOUT" exec -T -w /var/www/html -u www-data app php occ status 2>/dev/null)"
+      occ_rc=$?
+      set -e
+      if [[ "$occ_rc" -eq 0 ]]; then
+        if echo "$occ_out" | grep -q "installed: true"; then
+          installed="true"
+          reason=""
+        elif echo "$occ_out" | grep -q "installed: false"; then
+          installed="false"
+          reason=""
+        else
+          reason="occ-parse-failed"
+        fi
+      elif [[ "$occ_rc" -eq 124 ]]; then
+        reason="occ-timeout"
+      else
+        reason="occ-exec-failed"
+      fi
+    fi
+
+    if [[ "$installed" = "unknown" ]]; then
+      echo "installed: unknown (${reason})"
+    else
+      echo "installed: ${installed}"
+    fi
+    echo "${http_out:-http: fail (unknown)}"
+    if [[ -n "${http_host_out:-}" ]]; then
+      echo "${http_host_out}"
     fi
     ;;
 
@@ -191,29 +390,90 @@ case "${1:-}" in
 
   reset-db)
     log "Resetting ONLY the database volume (application data remains)"
-    run "$BASE stop db" >/dev/null 2>&1 || true
-    run "$BASE rm -f db" >/dev/null 2>&1 || true
-    docker volume rm nextcloud_db >/dev/null 2>&1 || true
-    run "$BASE up -d db redis"
+    db_id="$(dc_ovrd ps -q db 2>/dev/null || true)"
+    if [[ -z "$db_id" ]]; then
+      log "DB container not found; starting db service to detect volume"
+      set +e
+      dc_ovrd_timeout 20s up -d db >/dev/null 2>&1
+      start_rc=$?
+      set -e
+      if [[ "$start_rc" -ne 0 ]]; then
+        echo "error: failed to start db service for volume detection" >&2
+        exit 1
+      fi
+      db_id="$(dc_ovrd ps -q db 2>/dev/null || true)"
+    fi
+
+    if [[ -z "$db_id" ]]; then
+      echo "error: db container not found; cannot determine volume safely" >&2
+      exit 1
+    fi
+
+    set +e
+    db_mounts="$(timeout 5s docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Type}}:{{.Name}}{{"\n"}}{{end}}{{end}}' "$db_id" 2>/dev/null)"
+    inspect_rc=$?
+    set -e
+    if [[ "$inspect_rc" -eq 124 ]]; then
+      echo "error: timeout while inspecting db container mounts" >&2
+      exit 1
+    elif [[ "$inspect_rc" -ne 0 ]]; then
+      echo "error: failed to inspect db container mounts" >&2
+      exit 1
+    fi
+
+    db_vol_count="$(printf '%s' "$db_mounts" | grep -c '^volume:' || true)"
+    if [[ "$db_vol_count" -ne 1 ]]; then
+      echo "error: ambiguous db volume; expected 1 volume at /var/lib/mysql, got ${db_vol_count}" >&2
+      exit 1
+    fi
+
+    db_vol_name="$(printf '%s' "$db_mounts" | awk -F: '$1=="volume"{print $2}' | head -n1)"
+    if [[ -z "$db_vol_name" ]]; then
+      echo "error: db volume name not found; aborting for safety" >&2
+      exit 1
+    fi
+
+    echo "INFO: removing db volume: ${db_vol_name}"
+    set +e
+    dc_ovrd_timeout 10s stop db >/dev/null 2>&1
+    dc_ovrd_timeout 10s rm -f db >/dev/null 2>&1
+    timeout 10s docker volume rm "${db_vol_name}" >/dev/null 2>&1
+    rm_rc=$?
+    set -e
+    if [[ "$rm_rc" -ne 0 ]]; then
+      echo "error: failed to remove db volume ${db_vol_name}" >&2
+      exit 1
+    fi
+
+    dc_ovrd_timeout 20s up -d db redis
     ;;
 
   down)
-    # Build a compose command that includes profiles for exporters if needed.
-    DOWN_PROF_STR="$(build_profile_flags_for_down)"
-    CMD_DOWN="docker compose$ENV_STR$DOWN_PROF_STR -f \"$BASE_FILE\" -f \"$OVRD_FILE\""
+    down_profiles="${PROFILES:-}"
+    if exporters_present && ! has_profile "monitoring"; then
+      down_profiles="${down_profiles} monitoring"
+    fi
 
-    if [[ "$DOWN_PROF_STR" == *"--profile monitoring"* ]]; then
+    if [[ " ${down_profiles} " =~ [[:space:]]monitoring[[:space:]] ]]; then
       log "Stopping stack (including monitoring profile)"
     else
       log "Stopping stack"
     fi
 
-    # Primary attempt: stop everything and remove orphans.
-    run "$CMD_DOWN down --remove-orphans"
+    down_args=(docker compose --project-directory "$PROJECT_DIR")
+    for f in ${ENV_FILES}; do
+      [[ -n "$f" ]] && down_args+=(--env-file "$f")
+    done
+    for p in ${down_profiles}; do
+      [[ -n "$p" ]] && down_args+=(--profile "$p")
+    done
+    down_args+=(-f "$BASE_FILE")
+    [[ -n "$OVRD_FILE" ]] && down_args+=(-f "$OVRD_FILE")
 
-    # Safety net: ensure exporters and default network are fully removed.
-    run "$OVRD_MON rm -f mysqld-exporter redis-exporter" >/dev/null 2>&1 || true
-    docker network rm nextcloud_default >/dev/null 2>&1 || true
+    "${down_args[@]}" down --remove-orphans
+
+    # Safety net: ensure exporters are fully removed.
+    dc_mon rm -f mysqld-exporter redis-exporter >/dev/null 2>&1 || true
     ;;
 
   *)
