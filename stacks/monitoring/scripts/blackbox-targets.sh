@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # homelab-stacks/stacks/monitoring/scripts/blackbox-targets.sh
 # -------------------------------------------------------------------
 # Blackbox Target Manager for Prometheus scrape configs.

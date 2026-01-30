@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # homelab-stacks/stacks/monitoring/Makefile.demo
 # -------------------------------------------------------------------
 # Make targets for the Monitoring demo stack

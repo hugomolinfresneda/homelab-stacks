@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
 # restic-backup.sh — dual-repo infra backups (public stacks + private runtime)
 # - Reads ENV_FILE (Restic repo, policy, BACKUP_PATHS[], KUMA_PUSH_URL, etc.)
