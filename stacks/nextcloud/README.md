@@ -351,10 +351,14 @@ Nextcloud uses **dedicated backup/restore** (not Restic infra):
 - Backup/restore guide: `stacks/nextcloud/backup/README.backup.md`
 - DR guide: `stacks/nextcloud/backup/README.dr.md`
 
+Read the backup/DR docs before running any backups, restores, or DR steps. The
+Makefile targets below are **illustrative examples only**; follow the docs for
+the correct targets and flags for your environment.
+
 Makefile targets:
 - `make backup stack=nextcloud BACKUP_DIR=... [BACKUP_ENV=...]`
 - `make backup-verify stack=nextcloud BACKUP_DIR=...`
-- `make restore stack=nextcloud BACKUP_DIR=... [RUNTIME_DIR=...]`
+- `make restore stack=nextcloud BACKUP_DIR=... [TARGET=...]`
 
 Infra backups (Restic): `ops/backups/README.md`.
 
