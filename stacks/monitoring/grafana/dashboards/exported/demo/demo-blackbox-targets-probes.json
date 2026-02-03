@@ -567,7 +567,7 @@
         ]
       },
       "gridPos": {
-        "h": 9,
+        "h": 7,
         "w": 12,
         "x": 12,
         "y": 4
@@ -678,6 +678,33 @@
       "type": "table"
     },
     {
+      "description": "Context: A demo dashboard should be operable end-to-end, not just a passive display.\n\nFocus: Provide copy/paste commands to list, add, reload, and remove demo targets consistently.\n\nImplementation: Backed by the Makefile.demo helper targets to ensure the same workflow is used every time and changes are validated via Prometheus reload metrics.\n\nSecurity: Commands avoid handling secrets; target changes are configuration-only and verified through exported metrics rather than privileged access.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "id": 8,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "### Manage demo Blackbox targets\n\n> Tip: use a unique `DEMO_PROJECT` for interviews to avoid collisions (and use the same `DEMO_PROJECT` you started the demo with).  \n> Run these commands from the repo root (or use an absolute path to `Makefile.demo`).\n\n```bash\nexport DEMO_PROJECT=\"mon-demo\"\nexport JOB=\"blackbox-http\"\nexport TARGET=\"https://example.org\"\n\n# list current targets for the job\nmake -f stacks/monitoring/Makefile.demo ls-targets-demo \\\n  JOB=\"$JOB\" DEMO_PROJECT=\"$DEMO_PROJECT\"\n\n# add a target\nmake -f stacks/monitoring/Makefile.demo add-target-demo \\\n  JOB=\"$JOB\" TARGET=\"$TARGET\" DEMO_PROJECT=\"$DEMO_PROJECT\"\n\n# apply changes (reload Prometheus demo)\nmake -f stacks/monitoring/Makefile.demo demo-reload-prom \\\n  DEMO_PROJECT=\"$DEMO_PROJECT\" ENVFILE=\"stacks/monitoring/.env.demo\"\n\n# verify in Grafana: \"Last Reload - Prometheus\" updates and the target appears after the next scrape\n\n# remove the target\nmake -f stacks/monitoring/Makefile.demo rm-target-demo \\\n  JOB=\"$JOB\" TARGET=\"$TARGET\" DEMO_PROJECT=\"$DEMO_PROJECT\"\n\n# apply removal (reload again)\nmake -f stacks/monitoring/Makefile.demo demo-reload-prom \\\n  DEMO_PROJECT=\"$DEMO_PROJECT\" ENVFILE=\"stacks/monitoring/.env.demo\"\n\n# verify in Grafana: \"Last Reload - Prometheus\" updates and the target disappears after the next scrape\n```\n\n> Note: `ENVFILE` is only used by `demo-reload-prom` in this runbook.  \n> If your env file is not `stacks/monitoring/.env.demo`, replace the `ENVFILE=...` value accordingly.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "12.2.0",
+      "title": "Runbook - Manage demo Blackbox targets",
+      "transparent": true,
+      "type": "text"
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -740,7 +767,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
+        "h": 11,
         "w": 12,
         "x": 0,
         "y": 13
@@ -774,33 +801,6 @@
       "title": "Availability - By Target",
       "transparent": true,
       "type": "timeseries"
-    },
-    {
-      "description": "Context: A demo dashboard should be operable end-to-end, not just a passive display.\n\nFocus: Provide copy/paste commands to list, add, reload, and remove demo targets consistently.\n\nImplementation: Backed by the Makefile.demo helper targets to ensure the same workflow is used every time and changes are validated via Prometheus reload metrics.\n\nSecurity: Commands avoid handling secrets; target changes are configuration-only and verified through exported metrics rather than privileged access.",
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 13
-      },
-      "id": 8,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false,
-          "showMiniMap": false
-        },
-        "content": "### Demo operation (Blackbox targets)\n\n> Note: if you started the demo stack with a custom DEMO_PROJECT, replace `DEMO_PROJECT=mon-demo` accordingly in the commands below.\n\n````bash\n# list job targets\nmake -f stacks/monitoring/Makefile.demo ls-targets-demo JOB=blackbox-http DEMO_PROJECT=mon-demo\n\n# add target\nmake -f stacks/monitoring/Makefile.demo add-target-demo JOB=blackbox-http TARGET=https://example.org DEMO_PROJECT=mon-demo\n\n# apply changes (reload Prometheus demo)\nmake -f stacks/monitoring/Makefile.demo demo-reload-prom DEMO_PROJECT=mon-demo\n\n# remove target\nmake -f stacks/monitoring/Makefile.demo rm-target-demo JOB=blackbox-http TARGET=https://example.org DEMO_PROJECT=mon-demo",
-        "mode": "markdown"
-      },
-      "pluginVersion": "12.2.0",
-      "title": "Runbook - Manage Demo Targets",
-      "transparent": true,
-      "type": "text"
     }
   ],
   "preload": false,
@@ -867,5 +867,5 @@
   "timezone": "browser",
   "title": "Demo - Blackbox Targets & Probes",
   "uid": "demo-blackbox",
-  "version": 2
+  "version": 1
 }

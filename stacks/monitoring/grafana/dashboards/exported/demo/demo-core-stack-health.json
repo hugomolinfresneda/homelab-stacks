@@ -19,6 +19,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 1,
   "links": [],
   "panels": [
     {
@@ -485,7 +486,7 @@
         ]
       },
       "gridPos": {
-        "h": 7,
+        "h": 9,
         "w": 24,
         "x": 0,
         "y": 4
@@ -606,7 +607,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 13
       },
       "id": 7,
       "options": {
@@ -686,5 +687,6 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Demo - Core Stack Health",
-  "version": 0
+  "uid": "demo-core-stack-health",
+  "version": 1
 }
