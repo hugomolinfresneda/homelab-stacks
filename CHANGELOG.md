@@ -1,13 +1,37 @@
 # Changelog
 
 ## [Unreleased]
-- Nextcloud ops documented with guardrails: staged restore by default, explicit in-place opt-in; status/reset-db workflow.
-- Systemd examples added for running Nextcloud backups reliably.
-- Monitoring notes for Nextcloud: exporters + DB credential wiring examples.
-- README turned into a repo hub: quickstart, contract, stack index, and links to ops docs.
-- Licensed under Apache-2.0; SPDX headers applied to eligible scripts.
+### Added
+- _None yet._
 
-## Since v1.0.0 (high-level, non-exhaustive)
+### Changed
+- _None yet._
+
+### Fixed
+- _None yet._
+
+## [2.0.0] - 2026-02-04 (portfolio baseline)
+### Added
+- Expanded monitoring/alerting with domain Prometheus rules, Alertmanager Telegram templates, runbooks, and dashboards for infra/apps/logs/backups, including Nextcloud exporter and DB-credential wiring.
+- Added backup observability for Restic + Nextcloud health metrics and backup-status dashboards.
+- Added systemd scheduling examples for Restic and Nextcloud backup workflows.
+
+### Changed
+- Formalized the public/runtime contract and standardized runtime-only override templates/placeholders across stacks.
+- Standardized compose/runtime conventions (service naming/anchors/networks), including the monitoring network model and documented rootful runtime assumptions.
+- Updated Nextcloud restore defaults to staged recovery; in-place restore requires explicit opt-in guardrails.
+- Standardized YAML file extensions from `.yml` to `.yaml` across the repository; updated CI, Makefiles, docs, and helper scripts to match.
+- Reworked operator documentation across root README, monitoring, backups, and Nextcloud runbooks.
+- Added Apache-2.0 license and SPDX headers for eligible scripts and tools.
+
+### Fixed
+- Fixed Nextcloud helper commands (`make nc-status`, `make nc-reset-db`) to fail fast with timeouts and clearer output; `make nc-reset-db` now safely targets the actual DB volume.
+
+### Verification
+- `make lint`
+- `make validate`
+
+## Legacy (pre-portfolio) — high-level
 Non-exhaustive summary; see Git history/PRs for full detail.
 - Established a public/runtime contract with runtime-only overrides and canonical path placeholders.
 - Defined a Makefile-first ops workflow plus stricter lint/validate checks.
@@ -18,7 +42,7 @@ Non-exhaustive summary; see Git history/PRs for full detail.
 - Shipped CouchDB stack with observability plus CORS/auth templates.
 - Shipped AdGuard Home stack with DNS and exporter monitoring.
 
-## [1.0.0] - 2025-10-28 (baseline)
+## [legacy/v1.0.0] — 2025-10-28
 ### Initial release
 - **Dozzle stack** — lightweight Docker log viewer with base `compose.yaml`, `.env.example` and runtime override.
 - **Uptime Kuma stack** — uptime and certificate monitoring dashboard, integrated with proxy network.
