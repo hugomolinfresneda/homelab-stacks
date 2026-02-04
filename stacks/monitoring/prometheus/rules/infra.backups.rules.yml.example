@@ -1,4 +1,4 @@
-# Copy to infra.backups.rules.yml and replace <BACKUPS_MOUNTPOINT> with your backup mountpoint.
+# Copy to infra.backups.rules.yaml and replace <BACKUPS_MOUNTPOINT> with your backup mountpoint.
 groups:
   - name: infra.disk.backups
     rules:

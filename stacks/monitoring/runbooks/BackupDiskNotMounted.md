@@ -18,7 +18,7 @@ Backup mountpoint metrics are absent, so the backup disk is likely not mounted. 
 - `job`: `node`
 - `instance/target`: `<NODE_INSTANCE>` (from Alertmanager labels or Prometheus target label)
 - Links:
-  - Prometheus rule file: `stacks/monitoring/prometheus/rules/infra.backups.rules.yml.example`
+  - Prometheus rule file: `stacks/monitoring/prometheus/rules/infra.backups.rules.yaml.example`
   - Runbook source: `stacks/monitoring/runbooks/BackupDiskNotMounted.md`
 
 ## Placeholders / Endpoints
@@ -67,7 +67,7 @@ make logs stack=monitoring
 ---
 
 ## What metric triggers this alert
-From `stacks/monitoring/prometheus/rules/infra.backups.rules.yml.example`:
+From `stacks/monitoring/prometheus/rules/infra.backups.rules.yaml.example`:
 ```promql
 absent(node_filesystem_size_bytes{job="node",mountpoint="<BACKUPS_MOUNTPOINT>",fstype="ext4"})
 ```

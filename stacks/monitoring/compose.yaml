@@ -26,14 +26,14 @@ services:
   prometheus:
     image: prom/prometheus@sha256:ff7e389acbe064a4823212a500393d40a28a8f362e4b05cbf6742a9a3ef736b2
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
+      - --config.file=/etc/prometheus/prometheus.yaml
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
     expose:
       - "9090"
     volumes:
       - mon-prom-data:/prometheus
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
       - ./prometheus/rules/:/etc/prometheus/rules/:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
@@ -47,16 +47,16 @@ services:
   alertmanager:
     image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
     command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--config.file=/etc/alertmanager/alertmanager.yaml"
       # Public URL used by templates (.ExternalURL) to build Alert/Silence links.
-      # Runtime-only: set --web.external-url in runtime (compose.override.yml).
+      # Runtime-only: set --web.external-url in runtime (compose.override.yaml).
     expose:
       - "9093"
     volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/alertmanager.yaml:/etc/alertmanager/alertmanager.yaml:ro
       - ./alertmanager/templates:/etc/alertmanager/templates:ro
       - mon-alertmanager-data:/alertmanager
-      # Runtime-only: secret mounts live in compose.override.yml.
+      # Runtime-only: secret mounts live in compose.override.yaml.
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/ready"]
       interval: 15s
@@ -75,7 +75,7 @@ services:
     cap_add:
       - NET_RAW
     volumes:
-      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+      - ./blackbox/blackbox.yaml:/etc/blackbox_exporter/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9115/"]
       interval: 30s
@@ -104,13 +104,13 @@ services:
 
   promtail:
     image: grafana/promtail@sha256:086e4e85d2eb383fb04ea83c0f5074da81df56e415062ca888dba426abd8dfa5
-    command: ["-config.file=/etc/promtail/config.yml", "-config.expand-env=true"]
+    command: ["-config.file=/etc/promtail/config.yaml", "-config.expand-env=true"]
     expose:
       - "9080"
     volumes:
-      - ./promtail/config.yaml:/etc/promtail/config.yml:ro
+      - ./promtail/config.yaml:/etc/promtail/config.yaml:ro
       - mon-promtail-positions:/positions
-      # Runtime-only: docker socket + container log mounts live in compose.override.yml.
+      # Runtime-only: docker socket + container log mounts live in compose.override.yaml.
     networks: *net_mon_only
     restart: *restart_policy
     labels: *labels_stack
@@ -121,7 +121,7 @@ services:
       - '--path.rootfs=/host'
       - '--collector.textfile'
       - '--collector.textfile.directory=/textfile-collector'
-    # Runtime-only: host filesystem/textfile collector binds live in compose.override.yml.
+    # Runtime-only: host filesystem/textfile collector binds live in compose.override.yaml.
     expose:
       - "9100"
     networks: *net_mon_only
@@ -139,7 +139,7 @@ services:
     expose:
       - "8080"
     privileged: true
-    # Runtime-only: host binds live in compose.override.yml.
+    # Runtime-only: host binds live in compose.override.yaml.
     command:
       - --docker_only
       - --housekeeping_interval=30s

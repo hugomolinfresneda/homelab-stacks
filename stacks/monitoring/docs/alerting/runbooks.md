@@ -7,7 +7,7 @@ A runbook is the **operational response** for a specific alert: what it means, h
 
 ## Where runbooks live
 - Runbooks: `stacks/monitoring/runbooks/*.md`
-- Alert rules: `stacks/monitoring/prometheus/rules/*.yml`
+- Alert rules: `stacks/monitoring/prometheus/rules/*.yaml`
 - Alerting docs: `stacks/monitoring/docs/alerting/*.md`
 
 ---

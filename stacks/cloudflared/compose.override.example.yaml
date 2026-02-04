@@ -1,6 +1,6 @@
 # Runtime-only overrides for Cloudflared: config + credentials mounts.
 # Runtime paths (under RUNTIME_ROOT):
-# - ${RUNTIME_ROOT}/stacks/cloudflared/config.yml (tunnel config)
+# - ${RUNTIME_ROOT}/stacks/cloudflared/config.yaml (tunnel config)
 # - ${RUNTIME_ROOT}/stacks/cloudflared/credentials.json (tunnel credentials)
 # (RUNTIME_ROOT is required when using this override)
 # Variables (from .env.example):
@@ -10,5 +10,5 @@
 services:
   cloudflared:
     volumes:
-      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/cloudflared/config.yaml:/etc/cloudflared/config.yaml:ro
       - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/cloudflared/credentials.json:${CLOUDFLARED_CRED_FILE}:ro

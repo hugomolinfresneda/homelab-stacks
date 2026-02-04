@@ -128,7 +128,7 @@ trap _nc_err_trap ERR
 : "${NC_DB_HOST:=${DB_HOST:-db}}"
 
 # --- Explicit inputs ----------------------------------------------------------
-# Runtime dir holding compose.override.yml and .env
+# Runtime dir holding compose.override.yaml and .env
 if [[ -z "${RUNTIME_DIR:-}" ]]; then
   if [[ -z "${RUNTIME_ROOT:-}" ]]; then
     echo "error: set RUNTIME_ROOT=/abs/path/to/homelab-runtime (required)" >&2
@@ -171,8 +171,8 @@ discover_compose_file() {
     stack_dir="$(dirname "$script_dir")"
     if [[ -f "$stack_dir/compose.yaml" ]]; then
       CF="$stack_dir/compose.yaml"
-    elif [[ -f "$stack_dir/compose.yml" ]]; then
-      CF="$stack_dir/compose.yml"
+    elif [[ -f "$stack_dir/compose.yaml" ]]; then
+      CF="$stack_dir/compose.yaml"
     else
       echo "ERROR: cannot find compose.(yml|yaml) under $stack_dir. Set COMPOSE_FILE/STACK_DIR." >&2
       exit 1
@@ -182,7 +182,7 @@ discover_compose_file() {
 
 build_compose_args() {
   COMPOSE_ARGS=(-f "$CF")
-  [[ -f "$RUNTIME_DIR/compose.override.yml" ]] && COMPOSE_ARGS+=(-f "$RUNTIME_DIR/compose.override.yml")
+  [[ -f "$RUNTIME_DIR/compose.override.yaml" ]] && COMPOSE_ARGS+=(-f "$RUNTIME_DIR/compose.override.yaml")
   [[ -f "$RUNTIME_DIR/.env" ]] && COMPOSE_ARGS+=(--env-file "$RUNTIME_DIR/.env")
 }
 

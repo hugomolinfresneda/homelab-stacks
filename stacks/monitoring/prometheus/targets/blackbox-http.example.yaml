@@ -1,4 +1,4 @@
-# Example targets only. Copy to blackbox-http.yml for runtime use.
+# Example targets only. Copy to blackbox-http.yaml for runtime use.
 - targets:
     - https://example.com/status
     - https://example.org/_up

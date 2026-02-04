@@ -18,7 +18,7 @@ Prometheus cannot scrape the blackbox exporter (`job="blackbox"`), so probe-base
 - `job`: `blackbox` (exporter scrape job)
 - `instance/target`: `<BLACKBOX_INSTANCE>` (from Alertmanager labels or Prometheus target label)
 - Links:
-  - Prometheus rule file: `stacks/monitoring/prometheus/rules/infra.rules.yml`
+  - Prometheus rule file: `stacks/monitoring/prometheus/rules/infra.rules.yaml`
   - Runbook source: `stacks/monitoring/runbooks/BlackboxExporterDown.md`
 
 ## Placeholders / Endpoints
@@ -63,7 +63,7 @@ make logs stack=monitoring
 ---
 
 ## What metric triggers this alert
-From `stacks/monitoring/prometheus/rules/infra.rules.yml`:
+From `stacks/monitoring/prometheus/rules/infra.rules.yaml`:
 ```promql
 up{job="blackbox"} == 0
 ```

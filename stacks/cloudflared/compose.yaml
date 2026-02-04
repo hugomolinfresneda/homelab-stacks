@@ -12,9 +12,9 @@ services:
     user: "${CLOUDFLARED_UID:-65532}:${CLOUDFLARED_GID:-65532}"
     restart: unless-stopped
     command: >
-      tunnel --config /etc/cloudflared/config.yml --metrics 0.0.0.0:8081 run
+      tunnel --config /etc/cloudflared/config.yaml --metrics 0.0.0.0:8081 run
     volumes:
-      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/config.yaml:/etc/cloudflared/config.yaml:ro
       # Credential JSON is mounted via runtime override (CLOUDFLARED_CRED_FILE).
     networks:
       - proxy

@@ -13,7 +13,7 @@ This doc covers **configuration, testing, and cleanup** of the Telegram receiver
 
 ## Where things live (repo vs runtime)
 **Repo:**
-- Alertmanager config: `stacks/monitoring/alertmanager/alertmanager.yml`
+- Alertmanager config: `stacks/monitoring/alertmanager/alertmanager.yaml`
 - Telegram template: `stacks/monitoring/alertmanager/templates/telegram.tmpl`
 
 **Runtime:**
@@ -29,7 +29,7 @@ This doc covers **configuration, testing, and cleanup** of the Telegram receiver
 ---
 
 ## Runtime secrets and permissions
-Alertmanager expects the bot token at `/run/secrets/telegram_bot_token` (see `alertmanager.yml`).
+Alertmanager expects the bot token at `/run/secrets/telegram_bot_token` (see `alertmanager.yaml`).
 - Store the secret in runtime and mount it into the container.
 - Recommended permissions: mode `600`, owner `<user>:<group>`.
 
@@ -38,7 +38,7 @@ Chat IDs are **not secrets**, but should be kept environment-specific (do not co
 ---
 
 ## Configuration touchpoints (repo)
-- `stacks/monitoring/alertmanager/alertmanager.yml`
+- `stacks/monitoring/alertmanager/alertmanager.yaml`
   - Receivers: `notify` (warning) and `oncall` (critical)
   - Routing: `severity`-based
   - Templates: `stacks/monitoring/alertmanager/templates/telegram.tmpl`
@@ -52,11 +52,11 @@ If you need to override `chat_id` or other env-specific values, do it in runtime
 Alertmanager templates use `.ExternalURL` to build Alert/Silence links. Set the public URL in a runtime override (do not hardcode it in the repo):
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yml
+# ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yaml
 services:
   alertmanager:
     command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--config.file=/etc/alertmanager/alertmanager.yaml"
       - "--web.external-url=https://alertmanager.<your-domain>"
 ```
 ## Testing (end-to-end)

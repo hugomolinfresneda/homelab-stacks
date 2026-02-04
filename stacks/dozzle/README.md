@@ -137,7 +137,7 @@ make up stack=dozzle
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yaml
 ingress:
   - hostname: dozzle.<your-domain>
     service: http://dozzle:8080

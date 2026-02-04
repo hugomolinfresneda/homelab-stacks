@@ -165,7 +165,7 @@ Keep **DNS strictly in LAN/VPN**. Publish **UI only** through the tunnel:
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yaml
 ingress:
   - hostname: adguard.<your-domain>
     service: http://adguard-home:3000

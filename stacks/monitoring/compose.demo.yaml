@@ -23,12 +23,12 @@ services:
   prometheus:
     image: prom/prometheus@sha256:ff7e389acbe064a4823212a500393d40a28a8f362e4b05cbf6742a9a3ef736b2
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
+      - --config.file=/etc/prometheus/prometheus.yaml
       - --web.enable-lifecycle
     expose:
       - "9090"
     volumes:
-      - ./prometheus/prometheus.demo.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.demo.yaml:/etc/prometheus/prometheus.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
       interval: 10s
@@ -40,11 +40,11 @@ services:
 
   alertmanager:
     image: prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
-    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    command: ["--config.file=/etc/alertmanager/alertmanager.yaml"]
     expose:
       - "9093"
     volumes:
-      - ./alertmanager/alertmanager.demo.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/alertmanager.demo.yaml:/etc/alertmanager/alertmanager.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/ready"]
       interval: 15s
@@ -61,7 +61,7 @@ services:
     cap_add:
       - NET_RAW
     volumes:
-      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+      - ./blackbox/blackbox.yaml:/etc/blackbox_exporter/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9115/"]
       interval: 30s

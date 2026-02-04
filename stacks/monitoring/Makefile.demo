@@ -101,10 +101,10 @@ demo-reload-prom:
 demo-check:
 	@echo "→ promtool check config (demo)"
 	@docker run --rm -v "$(MON_DIR)/prometheus:/cfg:ro" \
-	  --entrypoint promtool prom/prometheus check config /cfg/prometheus.demo.yml
+	  --entrypoint promtool prom/prometheus check config /cfg/prometheus.demo.yaml
 	@echo "→ amtool check-config (demo)"
 	@docker run --rm -v "$(MON_DIR)/alertmanager:/cfg:ro" \
-	  --entrypoint amtool prom/alertmanager check-config /cfg/alertmanager.demo.yml
+	  --entrypoint amtool prom/alertmanager check-config /cfg/alertmanager.demo.yaml
 
 # Backwards-compatible alias
 check-demo: demo-check

@@ -6,7 +6,7 @@ alerting:
     - static_configs:
         - targets: ['alertmanager:9093']
 rule_files:
-  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/rules/*.yaml
 scrape_configs:
   # Self-scrape
   - job_name: 'prometheus'
@@ -28,7 +28,7 @@ scrape_configs:
     # runtime should supply real targets via file_sd_configs
     file_sd_configs:
       - files:
-          - targets/blackbox-http.yml
+          - targets/blackbox-http.yaml
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -46,7 +46,7 @@ scrape_configs:
     # runtime should supply real targets via file_sd_configs
     file_sd_configs:
       - files:
-          - targets/blackbox-icmp.yml
+          - targets/blackbox-icmp.yaml
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

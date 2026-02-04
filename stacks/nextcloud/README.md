@@ -308,7 +308,7 @@ make validate
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yaml
 ingress:
   - hostname: nextcloud.<your-domain>
     service: http://web:8080
