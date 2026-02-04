@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yml)
 
+**Portfolio (context, case studies, screenshots):** https://github.com/hugomolinfresneda/portfolio
+
 **Reproducible Docker Compose stacks with production-minded ops tooling (Makefile-first).**
 
 Clean separation of **versioned config** and **private runtime** (secrets/data/overrides), with documented **backup/DR** and **monitoring runbooks**.
@@ -12,7 +14,7 @@ Clean separation of **versioned config** and **private runtime** (secrets/data/o
 
 ---
 
-## Demo
+## Ops walkthrough (asciinema)
 
 [![asciicast](https://asciinema.org/a/JvTlV6qGNXLwTNmn.svg)](https://asciinema.org/a/JvTlV6qGNXLwTNmn)
 
