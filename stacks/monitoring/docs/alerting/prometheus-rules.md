@@ -15,8 +15,8 @@ Define the minimal, verifiable contract for alert rules in this repo: where rule
 ---
 
 ## Map of files
-- Rules: `stacks/monitoring/prometheus/rules/*.yml`
-- Prometheus config: `stacks/monitoring/prometheus/prometheus.yml` (demo: `stacks/monitoring/prometheus/prometheus.demo.yml`)
+- Rules: `stacks/monitoring/prometheus/rules/*.yaml`
+- Prometheus config: `stacks/monitoring/prometheus/prometheus.yaml` (demo: `stacks/monitoring/prometheus/prometheus.demo.yaml`)
 - Runbooks: `stacks/monitoring/runbooks/*.md`
 - Alerting docs: `stacks/monitoring/docs/alerting/*.md`
 
@@ -27,23 +27,23 @@ Runtime/private overrides and secrets (placeholders only): `${RUNTIME_ROOT}/stac
 ## Rule file layout (current)
 Rules are split by domain to keep ownership and reviews sane:
 
-- `prometheus/rules/infra.rules.yml`
+- `prometheus/rules/infra.rules.yaml`
   - Tier-0 exporter health and root filesystem capacity alerts.
-- `prometheus/rules/infra.backups.rules.yml.example`
-  - Backup disk mountpoint alerts; copy to `infra.backups.rules.yml` and replace `<BACKUPS_MOUNTPOINT>` for your host.
-- `prometheus/rules/containers.rules.yml`
+- `prometheus/rules/infra.backups.rules.yaml.example`
+  - Backup disk mountpoint alerts; copy to `infra.backups.rules.yaml` and replace `<BACKUPS_MOUNTPOINT>` for your host.
+- `prometheus/rules/containers.rules.yaml`
   - Container restart-loop detection (infra + service).
-- `prometheus/rules/endpoints.rules.yml`
+- `prometheus/rules/endpoints.rules.yaml`
   - Blackbox probes against public FQDN endpoints.
-- `prometheus/rules/backups.rules.yml`
+- `prometheus/rules/backups.rules.yaml`
   - Backup freshness and hard RPO breaches (Restic baseline).
-- `prometheus/rules/cloudflared.rules.yml`
+- `prometheus/rules/cloudflared.rules.yaml`
   - Cloudflared exporter health and tunnel connectivity.
-- `prometheus/rules/nextcloud.rules.yml`
+- `prometheus/rules/nextcloud.rules.yaml`
   - Nextcloud public endpoint health and dependency signals.
-- `prometheus/rules/couchdb.rules.yml`
+- `prometheus/rules/couchdb.rules.yaml`
   - CouchDB exporter + endpoint health and error-rate signals.
-- `prometheus/rules/adguard.rules.yml`
+- `prometheus/rules/adguard.rules.yaml`
   - AdGuard exporter + service-level performance/protection signals.
 
 ---

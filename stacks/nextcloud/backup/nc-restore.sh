@@ -22,7 +22,7 @@ BACKUP_TS="${BACKUP_TS:-}"
 TARGET="${TARGET:-}"
 ALLOW_INPLACE="${ALLOW_INPLACE:-}"
 
-# Runtime dir holding compose.override.yml and .env (only for in-place)
+# Runtime dir holding compose.override.yaml and .env (only for in-place)
 RUNTIME_DIR_INPUT="${RUNTIME_DIR:-}"
 
 normalize_service() {
@@ -241,8 +241,8 @@ discover_compose_file() {
     stack_dir="$(dirname "$script_dir")"
     if [[ -f "$stack_dir/compose.yaml" ]]; then
       CF="$stack_dir/compose.yaml"
-    elif [[ -f "$stack_dir/compose.yml" ]]; then
-      CF="$stack_dir/compose.yml"
+    elif [[ -f "$stack_dir/compose.yaml" ]]; then
+      CF="$stack_dir/compose.yaml"
     else
       echo "ERROR: cannot find compose.(yml|yaml) under $stack_dir. Set COMPOSE_FILE/STACK_DIR." >&2
       exit 1
@@ -253,7 +253,7 @@ discover_compose_file() {
 # Build docker compose args: base + override + env (if present)
 build_compose_args() {
   COMPOSE_ARGS=(-f "$CF")
-  [[ -f "$RUNTIME_DIR/compose.override.yml" ]] && COMPOSE_ARGS+=(-f "$RUNTIME_DIR/compose.override.yml")
+  [[ -f "$RUNTIME_DIR/compose.override.yaml" ]] && COMPOSE_ARGS+=(-f "$RUNTIME_DIR/compose.override.yaml")
   [[ -f "$RUNTIME_DIR/.env" ]] && COMPOSE_ARGS+=(--env-file "$RUNTIME_DIR/.env")
 }
 

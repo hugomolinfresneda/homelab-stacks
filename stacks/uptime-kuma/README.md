@@ -139,7 +139,7 @@ make up stack=uptime-kuma
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yaml
 ingress:
   - hostname: uptime-kuma.<your-domain>
     service: http://uptime-kuma:3001

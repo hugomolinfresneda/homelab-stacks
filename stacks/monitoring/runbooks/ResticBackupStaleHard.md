@@ -18,7 +18,7 @@ The last successful Restic backup is older than the RPO hard limit (48h). Data r
 - `job`: `node` (textfile collector metrics scraped by node-exporter)
 - `instance/target`: `<NODE_INSTANCE>` (from Alertmanager labels or Prometheus target label)
 - Links:
-  - Prometheus rule file: `stacks/monitoring/prometheus/rules/backups.rules.yml`
+  - Prometheus rule file: `stacks/monitoring/prometheus/rules/backups.rules.yaml`
   - Runbook source: `stacks/monitoring/runbooks/ResticBackupStaleHard.md`
 
 ## Placeholders / Endpoints
@@ -67,7 +67,7 @@ make logs stack=monitoring
 ---
 
 ## What metric triggers this alert
-From `stacks/monitoring/prometheus/rules/backups.rules.yml`:
+From `stacks/monitoring/prometheus/rules/backups.rules.yaml`:
 ```promql
 (time() - restic_last_success_timestamp) > 48 * 60 * 60
 ```

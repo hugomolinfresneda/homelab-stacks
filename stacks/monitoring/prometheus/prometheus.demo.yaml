@@ -1,13 +1,13 @@
-# homelab-stacks/stacks/monitoring/prometheus/prometheus.demo.yml
+# homelab-stacks/stacks/monitoring/prometheus/prometheus.demo.yaml
 # -------------------------------------------------------------------
 # Prometheus (demo) configuration
 # - Blackbox HTTP/ICMP against public targets
 # - Self-scrapes for core services + Loki/Promtail metrics
-# - Rules directory is optional; include any *.yml under prometheus/rules/
+# - Rules directory is optional; include any *.yaml under prometheus/rules/
 # -------------------------------------------------------------------
 
 rule_files:
-  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/rules/*.yaml
 alerting:
   alertmanagers:
     - static_configs:

@@ -92,12 +92,12 @@ stacks/monitoring/
 ├── .env.demo.example
 ├── .env.example
 ├── alertmanager
-│   ├── alertmanager.demo.yml
-│   ├── alertmanager.yml
+│   ├── alertmanager.demo.yaml
+│   ├── alertmanager.yaml
 │   └── templates
 │       └── telegram.tmpl
 ├── blackbox
-│   └── blackbox.yml
+│   └── blackbox.yaml
 ├── compose.demo.logs.yaml
 ├── compose.demo.names.yaml
 ├── compose.demo.yaml
@@ -133,38 +133,38 @@ stacks/monitoring/
 │   │               └── backups-overview.json
 │   ├── provisioning.demo
 │   │   ├── dashboards
-│   │   │   └── dashboards.yml
+│   │   │   └── dashboards.yaml
 │   │   └── datasources
-│   │       └── datasources.yml
+│   │       └── datasources.yaml
 │   └── provisioning.mon
 │       ├── dashboards
-│       │   ├── dashboards.yml
+│       │   ├── dashboards.yaml
 │       │   └── exported-mon
 │       │       └── .gitkeep
 │       └── datasources
-│           └── datasources.yml
+│           └── datasources.yaml
 ├── loki
 │   └── config.yaml
 ├── Makefile.demo
 ├── prometheus
-│   ├── adguard-exporter.yml.example
-│   ├── couchdb.yml.example
-│   ├── nextcloud-exporters.yml.example
-│   ├── prometheus.demo.yml
-│   ├── prometheus.yml
+│   ├── adguard-exporter.yaml.example
+│   ├── couchdb.yaml.example
+│   ├── nextcloud-exporters.yaml.example
+│   ├── prometheus.demo.yaml
+│   ├── prometheus.yaml
 │   ├── rules
-│   │   ├── adguard.rules.yml
-│   │   ├── backups.rules.yml
-│   │   ├── cloudflared.rules.yml
-│   │   ├── containers.rules.yml
-│   │   ├── couchdb.rules.yml
-│   │   ├── endpoints.rules.yml
-│   │   ├── infra.backups.rules.yml.example
-│   │   ├── infra.rules.yml
-│   │   └── nextcloud.rules.yml
+│   │   ├── adguard.rules.yaml
+│   │   ├── backups.rules.yaml
+│   │   ├── cloudflared.rules.yaml
+│   │   ├── containers.rules.yaml
+│   │   ├── couchdb.rules.yaml
+│   │   ├── endpoints.rules.yaml
+│   │   ├── infra.backups.rules.yaml.example
+│   │   ├── infra.rules.yaml
+│   │   └── nextcloud.rules.yaml
 │   └── targets
-│       ├── blackbox-http.example.yml
-│       └── blackbox-icmp.example.yml
+│       ├── blackbox-http.example.yaml
+│       └── blackbox-icmp.example.yaml
 ├── promtail
 │   ├── config.demo.yaml
 │   └── config.yaml
@@ -186,9 +186,9 @@ stacks/monitoring/            # runtime overlay (environment-specific)
 ├── .env
 ├── compose.override.yaml     # host mounts, secrets, external URLs, environment wiring
 ├── alertmanager
-│   └── alertmanager.yml      # runtime routing (e.g., real chat_id / receivers)
+│   └── alertmanager.yaml      # runtime routing (e.g., real chat_id / receivers)
 ├── blackbox
-│   └── blackbox.yml          # runtime probe target definitions
+│   └── blackbox.yaml          # runtime probe target definitions
 ├── grafana
 │   ├── dashboards
 │   │   └── exported
@@ -196,17 +196,17 @@ stacks/monitoring/            # runtime overlay (environment-specific)
 │   │           └── <custom-dashboard>.json
 │   └── provisioning.mon
 │       ├── dashboards
-│       │   └── dashboards.yml
+│       │   └── dashboards.yaml
 │       └── datasources
-│           └── datasources.yml
+│           └── datasources.yaml
 ├── loki
 │   └── config.yaml           # runtime overrides (if applicable)
 ├── prometheus
 │   ├── rules
-│   │   └── <custom>.rules.yml
+│   │   └── <custom>.rules.yaml
 │   └── targets
-│       ├── blackbox-http.yml
-│       └── blackbox-icmp.yml
+│       ├── blackbox-http.yaml
+│       └── blackbox-icmp.yaml
 ├── promtail
 │   └── config.yaml           # runtime overrides (if applicable)
 └── secrets
@@ -359,7 +359,7 @@ Host paths are defined in runtime; named volumes are managed by Docker.
   The Prometheus volume injects the Uptime Kuma metrics password as a plain read-only file, avoiding Docker Swarm secrets for maximum portability on single-node homelab deployments.
   If you need Alertmanager secrets, mount them here as well. The Telegram bot token is
   the credential Alertmanager uses to send alerts via your bot (configured as
-  `bot_token_file` in `alertmanager.yml`).
+  `bot_token_file` in `alertmanager.yaml`).
 
 ---
 
@@ -390,9 +390,9 @@ Unversioned runtime files (examples):
 - `${RUNTIME_DIR}/compose.override.yaml` (mounts/secrets override)
 - `${RUNTIME_DIR}/.env` (mode `600`, correct owner)
 - `${RUNTIME_DIR}/secrets/kuma_password` (mode `0440`)
-- `${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml` (if using `file_sd_configs`)
-- `${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml` (if using `file_sd_configs`)
-- `${RUNTIME_DIR}/alertmanager/alertmanager.yml` (if overriding routes/receivers)
+- `${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml` (if using `file_sd_configs`)
+- `${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml` (if using `file_sd_configs`)
+- `${RUNTIME_DIR}/alertmanager/alertmanager.yaml` (if overriding routes/receivers)
 
 ---
 
@@ -495,7 +495,7 @@ Create a CNAME `grafana` → `<TUNNEL_UUID>.cfargotunnel.com` (proxied). Protect
 
 ## 14) Grafana provisioning & dashboards
 
-- **Datasources** are pre-provisioned (`grafana/provisioning.mon/datasources/datasources.yml`):
+- **Datasources** are pre-provisioned (`grafana/provisioning.mon/datasources/datasources.yaml`):
 
   - `Prometheus` → `http://prometheus:9090` (uid: `prometheus`)
   - `Loki` → `http://loki:3100` (uid: `loki`)
@@ -849,10 +849,10 @@ Changes are **idempotent** (deduplicate + sort) and validated with `promtool`.
 
 For the **main stack**, blackbox targets are loaded via `file_sd_configs` from:
 
-- `stacks/monitoring/prometheus/targets/blackbox-http.yml`
-- `stacks/monitoring/prometheus/targets/blackbox-icmp.yml`
+- `stacks/monitoring/prometheus/targets/blackbox-http.yaml`
+- `stacks/monitoring/prometheus/targets/blackbox-icmp.yaml`
 
-Copy the example files in `stacks/monitoring/prometheus/targets/*.example.yml` to those
+Copy the example files in `stacks/monitoring/prometheus/targets/*.example.yaml` to those
 paths in your private runtime and replace the placeholders. These runtime files are
 intended to stay private (gitignored).
 
@@ -861,18 +861,18 @@ intended to stay private (gitignored).
 ```bash
 # Main stack (project: monitoring, runtime targets map required)
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml \
   ls blackbox-http
 
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml \
   add blackbox-http https://example.org
 
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml \
   rm blackbox-http https://example.org
 ```
 
@@ -880,8 +880,8 @@ stacks/monitoring/scripts/blackbox-targets.sh \
 
 ```bash
 stacks/monitoring/scripts/blackbox-targets.sh \
-  --file stacks/monitoring/prometheus/prometheus.yml \
-  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
+  --file stacks/monitoring/prometheus/prometheus.yaml \
+  --targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
   add blackbox-http https://example.com
 ```
 
@@ -899,16 +899,16 @@ make reload-prom
 These delegate to the script above and pick the right file automatically:
 
 ```bash
-make bb-ls  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-                            --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
+make bb-ls  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+                            --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml" \
            [JOB=blackbox-http]
 make bb-add TARGET=<url> \
-           BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
+           BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml" \
            [JOB=blackbox-http]
 make bb-rm  TARGET=<url> \
-           BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml" \
+           BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml" \
            [JOB=blackbox-http]
 make reload-prom
 ```
@@ -916,17 +916,17 @@ make reload-prom
 **Examples**
 
 ```bash
-make bb-ls BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml"
+make bb-ls BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+                           --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml"
 make bb-add TARGET=https://example.com \
-  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yml \
-                  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yml"
+  BB_TARGETS_MAP="--targets-file blackbox-http=${RUNTIME_DIR}/prometheus/targets/blackbox-http.yaml \
+                  --targets-file blackbox-icmp=${RUNTIME_DIR}/prometheus/targets/blackbox-icmp.yaml"
 make reload-prom
 ```
 
 **Notes**
 
-- Jobs must already exist in the Prometheus config (see `stacks/monitoring/prometheus/*.yml`).
+- Jobs must already exist in the Prometheus config (see `stacks/monitoring/prometheus/*.yaml`).
 - For `file_sd_configs` jobs, the helper ensures the target file has at least one group,
   appends the target, runs `unique | sort`, and writes back safely.
 - The main stack wrappers require `BB_TARGETS_MAP` and operate on runtime targets only.
@@ -970,7 +970,7 @@ Two jobs are responsible for AdGuard visibility:
 
 These jobs live in:
 
-- `stacks/monitoring/prometheus/prometheus.yml`
+- `stacks/monitoring/prometheus/prometheus.yaml`
 
 and follow the same label conventions used elsewhere in the homelab:
 
@@ -979,9 +979,9 @@ and follow the same label conventions used elsewhere in the homelab:
 
 A reusable template for the exporter scrape job is also provided as:
 
-- `stacks/monitoring/prometheus/adguard-exporter.yml.example`
+- `stacks/monitoring/prometheus/adguard-exporter.yaml.example`
 
-This file mirrors the `adguard-exporter` job in `prometheus.yml` and can be used as a starting point for other environments or as a snippet in more complex setups.
+This file mirrors the `adguard-exporter` job in `prometheus.yaml` and can be used as a starting point for other environments or as a snippet in more complex setups.
 
 ---
 
@@ -1020,13 +1020,13 @@ Key metrics:
 
 Alert rules for AdGuard are stored under:
 
-- `stacks/monitoring/prometheus/rules/adguard.rules.yml`
+- `stacks/monitoring/prometheus/rules/adguard.rules.yaml`
 
 and are loaded by Prometheus via:
 
 ```yaml
 rule_files:
-  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/rules/*.yaml
 ```
 
 Current rules:
@@ -1145,7 +1145,7 @@ labelled consistently so that you can observe it like any other service.
 
 `cloudflared` exposes Prometheus metrics on an **internal** HTTP endpoint
 (`--metrics 0.0.0.0:8081`). The monitoring stack scrapes these metrics via a
-dedicated job in `stacks/monitoring/prometheus/prometheus.yml`:
+dedicated job in `stacks/monitoring/prometheus/prometheus.yaml`:
 
 ```yaml
 - job_name: 'cloudflared'
@@ -1187,7 +1187,7 @@ Cloudflared alerts are intentionally **warning-level** by policy. The tunnel is 
 
 Alert rules live in:
 
-- `stacks/monitoring/prometheus/rules/cloudflared.rules.yml`
+- `stacks/monitoring/prometheus/rules/cloudflared.rules.yaml`
 
 Current signal set:
 
@@ -1372,7 +1372,7 @@ This stack also ships a small observability bundle for the Nextcloud stack defin
 
 - One Prometheus rule file:
 
-  - `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`
+  - `stacks/monitoring/prometheus/rules/nextcloud.rules.yaml`
 
 - One Grafana dashboard:
 
@@ -1390,7 +1390,7 @@ The only assumption is that the Nextcloud stack is running on the same Docker ho
 
 Alert rules for Nextcloud are defined in:
 
-- `stacks/monitoring/prometheus/rules/nextcloud.rules.yml`
+- `stacks/monitoring/prometheus/rules/nextcloud.rules.yaml`
 
 They follow the global label standard (`severity`, `service`, `component`, `scope`) and the Alertmanager routing/inhibition model documented under `docs/alerting/`.
 
@@ -1444,7 +1444,7 @@ the Restic repository and the application-level Nextcloud backup:
 
 - One Prometheus rule file:
 
-  - `stacks/monitoring/prometheus/rules/backups.rules.yml`
+  - `stacks/monitoring/prometheus/rules/backups.rules.yaml`
 
 - One Grafana dashboard:
 
@@ -1460,9 +1460,9 @@ new runtime requirements.
 
 Backup alert rules are defined in:
 
-- `stacks/monitoring/prometheus/rules/backups.rules.yml`
-- `stacks/monitoring/prometheus/rules/infra.backups.rules.yml.example` (copy to
-  `infra.backups.rules.yml` and replace `<BACKUPS_MOUNTPOINT>` for host-level
+- `stacks/monitoring/prometheus/rules/backups.rules.yaml`
+- `stacks/monitoring/prometheus/rules/infra.backups.rules.yaml.example` (copy to
+  `infra.backups.rules.yaml` and replace `<BACKUPS_MOUNTPOINT>` for host-level
   backup disk signals)
 
 The policy is:
@@ -1525,7 +1525,7 @@ clients.
 
 - One Prometheus rule file:
 
-  - `stacks/monitoring/prometheus/rules/couchdb.rules.yml`
+  - `stacks/monitoring/prometheus/rules/couchdb.rules.yaml`
 
 - One Grafana dashboard:
 
@@ -1546,7 +1546,7 @@ The only assumptions are that:
 
 Alert rules for CouchDB are defined in:
 
-- `stacks/monitoring/prometheus/rules/couchdb.rules.yml`
+- `stacks/monitoring/prometheus/rules/couchdb.rules.yaml`
 
 The rule set focuses on:
 - Public endpoint health (Blackbox probe)

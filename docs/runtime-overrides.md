@@ -31,10 +31,10 @@ using it), and a step-by-step flow with copiable examples.
 - **Makefile requirement**: if you use `make up` (or similar targets), the Makefile
   derives `RUNTIME_DIR` from `RUNTIME_ROOT` and `STACK` (or from an explicit
   `RUNTIME_DIR`) and auto-includes the first existing override at:
-  - `${RUNTIME_DIR}/compose.override.yml`
+  - `${RUNTIME_DIR}/compose.override.yaml`
   - `${RUNTIME_DIR}/compose.override.yaml`
 - **Recommendation**: standardize on `${RUNTIME_DIR}/compose.override.yaml` for
-  consistency; `.yml` remains supported by the Makefile.
+  consistency; `.yaml` remains supported by the Makefile.
 
 ### Canonical variables
 - `STACKS_DIR="/abs/path/to/homelab-stacks"`
@@ -141,7 +141,7 @@ ${RUNTIME_DIR}/secrets/<file>  # mode 600
 ### Case 1: override not applied with Makefile
 - **Situation**: containers start but changes in override do not apply.
 - **Solution**: ensure the override file exists at `${RUNTIME_DIR}/compose.override.yaml`
-  (or `.yml`) and that `RUNTIME_DIR` is set.
+  (or `.yaml`) and that `RUNTIME_DIR` is set.
 - **Verification**: `make -n up stack=<stack>` shows wether the override is present or not.
 
 ### Case 2: relative paths break after moving runtime
@@ -169,7 +169,7 @@ values local and out of version control.
 
 ### Error: override not detected
 - **Cause**: `RUNTIME_DIR` not set or override file name does not match Makefile
-  candidates (`compose.override.yml` / `compose.override.yaml`).
+  candidates (`compose.override.yaml` / `compose.override.yaml`).
 - **Check**: `make echo-vars stack=<stack>` and verify `RUNTIME_DIR`.
 - **Fix**: set `RUNTIME_ROOT` or `RUNTIME_DIR`, and ensure the override file exists.
 

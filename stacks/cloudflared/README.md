@@ -18,7 +18,7 @@ This stack follows the standard repo/runtime split. See:
 | Repository          | Purpose                                                                                   |
 | ------------------- | ----------------------------------------------------------------------------------------- |
 | **homelab-stacks**  | Public base definition (`compose.yaml`, `.env.example`, documentation).                   |
-| **homelab-runtime** | Private overrides (`compose.override.yaml`, `.env`, real `config.yml`, credentials JSON). |
+| **homelab-runtime** | Private overrides (`compose.override.yaml`, `.env`, real `config.yaml`, credentials JSON). |
 
 ---
 
@@ -54,7 +54,7 @@ docker network create mon-net || true
 
 | Purpose | Host (runtime) | Container | RW | Notes |
 |---|---|---|---:|---|
-| Tunnel config | `${RUNTIME_ROOT}/stacks/cloudflared/config.yml` | `/etc/cloudflared/config.yml` | No | Mounted from runtime. |
+| Tunnel config | `${RUNTIME_ROOT}/stacks/cloudflared/config.yaml` | `/etc/cloudflared/config.yaml` | No | Mounted from runtime. |
 | Credentials | `${RUNTIME_ROOT}/stacks/cloudflared/credentials.json` | `${CLOUDFLARED_CRED_FILE}` | No | Container path set in `.env`. |
 
 ---
@@ -75,7 +75,7 @@ cp "stacks/cloudflared/.env.example" "${RUNTIME_DIR}/.env"
 # EDIT: ${RUNTIME_DIR}/compose.override.yaml and ${RUNTIME_DIR}/.env
 
 # 3) Configure tunnel (runtime)
-# - ${RUNTIME_DIR}/config.yml
+# - ${RUNTIME_DIR}/config.yaml
 # - ${RUNTIME_DIR}/credentials.json
 
 # 4) Bring up the stack
@@ -90,8 +90,8 @@ make ps stack=cloudflared
 
 ## Configuration
 
-### Runtime `config.yml`
-Example `${RUNTIME_DIR}/config.yml` (see `stacks/cloudflared/cloudflared/config.yml.example`):
+### Runtime `config.yaml`
+Example `${RUNTIME_DIR}/config.yaml` (see `stacks/cloudflared/cloudflared/config.yaml.example`):
 
 ```yaml
 tunnel: <TUNNEL_UUID>
@@ -116,7 +116,7 @@ ingress:
 
 ### Runtime files (not versioned)
 Expected paths in `${RUNTIME_DIR}` (from override example):
-- `${RUNTIME_DIR}/config.yml`
+- `${RUNTIME_DIR}/config.yaml`
 - `${RUNTIME_DIR}/credentials.json`
 
 ---
@@ -127,7 +127,7 @@ Files:
 - Runtime: `${RUNTIME_DIR}/compose.override.yaml`
 
 What goes into runtime overrides:
-- Mounts for `config.yml` and credentials JSON
+- Mounts for `config.yaml` and credentials JSON
 
 ---
 
@@ -154,7 +154,7 @@ make up stack=cloudflared
 
 ## Creating the CNAMEs (via Cloudflare dashboard)
 
-Each `hostname:` in your `config.yml` must have a **DNS CNAME** record in Cloudflare pointing to the tunnel.
+Each `hostname:` in your `config.yaml` must have a **DNS CNAME** record in Cloudflare pointing to the tunnel.
 
 1. Open your domain in Cloudflare → **DNS → Records**
 2. Create one CNAME per service:
@@ -181,7 +181,7 @@ Should return:
 
 ## Add new services
 
-1. Add the rule in your `config.yml`:
+1. Add the rule in your `config.yaml`:
 
 ```yaml
 - hostname: <SERVICE_SUBDOMAIN>.<YOUR_DOMAIN>

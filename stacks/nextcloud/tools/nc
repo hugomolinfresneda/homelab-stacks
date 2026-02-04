@@ -23,8 +23,8 @@ NC_OCC_TIMEOUT=${NC_OCC_TIMEOUT:-15s}
 PROJECT_DIR="$STACKS_REPO/stacks/nextcloud"
 BASE_FILE="$PROJECT_DIR/compose.yaml"
 OVRD_FILE=""
-if [[ -f "$RUNTIME_DIR/compose.override.yml" ]]; then
-  OVRD_FILE="$RUNTIME_DIR/compose.override.yml"
+if [[ -f "$RUNTIME_DIR/compose.override.yaml" ]]; then
+  OVRD_FILE="$RUNTIME_DIR/compose.override.yaml"
 elif [[ -f "$RUNTIME_DIR/compose.override.yaml" ]]; then
   OVRD_FILE="$RUNTIME_DIR/compose.override.yaml"
 fi

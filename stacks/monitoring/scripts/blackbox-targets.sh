@@ -22,7 +22,7 @@ Examples:
   stacks/monitoring/scripts/blackbox-targets.sh --demo ls
   stacks/monitoring/scripts/blackbox-targets.sh add blackbox-http https://example.org
   stacks/monitoring/scripts/blackbox-targets.sh --demo rm blackbox-http http://example.com:65535
-  stacks/monitoring/scripts/blackbox-targets.sh --targets-file blackbox-http=${RUNTIME_ROOT}/stacks/monitoring/prometheus/targets/blackbox-http.yml ls blackbox-http
+  stacks/monitoring/scripts/blackbox-targets.sh --targets-file blackbox-http=${RUNTIME_ROOT}/stacks/monitoring/prometheus/targets/blackbox-http.yaml ls blackbox-http
 USAGE
   exit 1
 }
@@ -31,8 +31,8 @@ USAGE
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Default files
-PROM_FILE_MON="prometheus/prometheus.yml"
-PROM_FILE_DEMO="prometheus/prometheus.demo.yml"
+PROM_FILE_MON="prometheus/prometheus.yaml"
+PROM_FILE_DEMO="prometheus/prometheus.demo.yaml"
 
 # Reload hints (avoid container_name assumptions)
 RELOAD_HINT_MON="make reload-prom"

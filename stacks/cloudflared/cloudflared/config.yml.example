@@ -1,7 +1,7 @@
-# homelab-stacks/stacks/cloudflared/cloudflared/config.yml.example
+# homelab-stacks/stacks/cloudflared/cloudflared/config.yaml.example
 # -------------------------------------------------------------------
 # Cloudflared tunnel config template (no real values)
-# Copy to homelab-runtime/stacks/cloudflared/cloudflared/config.yml
+# Copy to homelab-runtime/stacks/cloudflared/cloudflared/config.yaml
 # -------------------------------------------------------------------
 
 tunnel: <TUNNEL_UUID>

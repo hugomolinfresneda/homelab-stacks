@@ -33,7 +33,7 @@ endif
 ENV_FILES_EXISTING := $(call existing_files,$(ENV_FILES))
 
 BASE_FILE := $(STACK_DIR)/compose.yaml
-OVERRIDE_CANDIDATES := $(RUNTIME_DIR)/compose.override.yml $(RUNTIME_DIR)/compose.override.yaml
+OVERRIDE_CANDIDATES := $(RUNTIME_DIR)/compose.override.yaml $(RUNTIME_DIR)/compose.override.yaml
 OVERRIDE_FILE := $(firstword $(call existing_files,$(OVERRIDE_CANDIDATES)))
 
 # Docker Compose invocations (base vs base+override)
@@ -111,13 +111,13 @@ check-abs-paths:
 	@pat="/opt/homelab"'-'; \
 	if command -v rg >/dev/null 2>&1; then \
 	  if rg -n --hidden --no-ignore-vcs "$$pat" Makefile ops stacks .github \
-	    -g "Makefile" -g "*.sh" -g "*.yml" -g "*.yaml"; then \
+	    -g "Makefile" -g "*.sh" -g "*.yaml" -g "*.yaml"; then \
 	    echo "error: hardcoded /opt homelab paths found (see matches above)"; \
 	    exit 1; \
 	  fi; \
 	else \
 	  if grep -R -n -E "$$pat" Makefile ops stacks .github \
-	    --include "Makefile" --include "*.sh" --include "*.yml" --include "*.yaml"; then \
+	    --include "Makefile" --include "*.sh" --include "*.yaml" --include "*.yaml"; then \
 	    echo "error: hardcoded /opt homelab paths found (see matches above)"; \
 	    exit 1; \
 	  fi; \
@@ -130,7 +130,7 @@ check-abs-paths:
 validate:
 	@echo "Validating compose files..."
 	@set -eu; \
-	for f in $$(find stacks -type f \( -name "compose.yml" -o -name "compose.yaml" \)); do \
+	for f in $$(find stacks -type f \( -name "compose.yaml" -o -name "compose.yaml" \)); do \
 		echo " - $$f"; \
 		docker compose -f "$$f" config -q; \
 	done; \
@@ -462,14 +462,14 @@ echo-vars: require-stack
 # - Use prom/prometheus and the stacks/monitoring/scripts helper
 # ------------------------------------------------------------
 MON_STACK_DIR := $(STACKS_REPO)/stacks/monitoring
-PROM_FILE_MON_REL  := prometheus/prometheus.yml
+PROM_FILE_MON_REL  := prometheus/prometheus.yaml
 promtool = docker run --rm -v "$(MON_STACK_DIR)":/workdir -w /workdir --entrypoint /bin/promtool prom/prometheus:latest
 
 # ---- promtool checks (mon) ----
 # ---- promtool checks (mon) ----
 check-prom:
 	@cd "$(MON_STACK_DIR)" && \
-	  f="prometheus/prometheus.yml"; [ -f "$$f" ] || f="prometheus/prometheus.yaml"; \
+	  f="prometheus/prometheus.yaml"; [ -f "$$f" ] || f="prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	  $(promtool) check config "$$f"
 
@@ -489,21 +489,21 @@ BB_TARGETS_MAP ?=
 
 bb-ls:
 	@if [ -z "$(BB_TARGETS_MAP)" ]; then echo "error: set BB_TARGETS_MAP with --targets-file job=path (runtime targets required)"; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" $(BB_TARGETS_MAP) ls "$(JOB)"
 
 bb-add:
 	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
 	@if [ -z "$(BB_TARGETS_MAP)" ]; then echo "error: set BB_TARGETS_MAP with --targets-file job=path (runtime targets required)"; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" $(BB_TARGETS_MAP) add "$(JOB)" "$(TARGET)"
 
 bb-rm:
 	@if [ -z "$(TARGET)" ]; then echo "error: set TARGET=..."; exit 1; fi
 	@if [ -z "$(BB_TARGETS_MAP)" ]; then echo "error: set BB_TARGETS_MAP with --targets-file job=path (runtime targets required)"; exit 1; fi
-	@f="$(MON_STACK_DIR)/prometheus/prometheus.yml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
+	@f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; [ -f "$$f" ] || f="$(MON_STACK_DIR)/prometheus/prometheus.yaml"; \
 	  [ -f "$$f" ] || { echo "error: no prometheus.(yml|yaml) in $(MON_STACK_DIR)/prometheus"; exit 1; }; \
 	  "$(MON_STACK_DIR)/scripts/blackbox-targets.sh" --file "$$f" $(BB_TARGETS_MAP) rm "$(JOB)" "$(TARGET)"
 

@@ -1,7 +1,7 @@
 # homelab-stacks/stacks/monitoring/compose.override.example.yaml
 # -------------------------------------------------------------------
 # Example runtime override for sensitive host mounts.
-# Copy to ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yml and edit.
+# Copy to ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yaml and edit.
 # -------------------------------------------------------------------
 
 services:
@@ -21,7 +21,7 @@ services:
   prometheus:
     volumes:
       # Runtime-only blackbox targets (file_sd_configs)
-      # Copy to ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yml and edit.
+      # Copy to ${RUNTIME_ROOT}/stacks/monitoring/compose.override.yaml and edit.
       # (RUNTIME_ROOT is required when using this override)
       - ${RUNTIME_ROOT:?set RUNTIME_ROOT=/abs/path/to/homelab-runtime}/stacks/monitoring/prometheus/targets:/etc/prometheus/targets:ro${SELINUX_SUFFIX}
 
@@ -33,12 +33,12 @@ services:
 
   alertmanager:
     volumes:
-      # Example secret mount (bot_token_file in alertmanager.yml)
+      # Example secret mount (bot_token_file in alertmanager.yaml)
       - /srv/secrets/alertmanager/TG_BOT_TOKEN:/run/secrets/telegram_bot_token:ro
     # Runtime-only external URL for Alert/Silence links in Telegram.
     # Note: overriding command replaces the full list, so keep --config.file.
     # command:
-    #   - "--config.file=/etc/alertmanager/alertmanager.yml"
+    #   - "--config.file=/etc/alertmanager/alertmanager.yaml"
     #   - "--web.external-url=https://alertmanager.<your-domain>"
 
   node-exporter:

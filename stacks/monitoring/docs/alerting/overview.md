@@ -5,16 +5,16 @@ Provide a predictable, low-noise alerting flow for the monitoring stack. This do
 
 ## End-to-end flow
 1) **Prometheus rules** evaluate signals and raise alerts. See `prometheus-rules.md`.
-2) **Alertmanager** routes and groups alerts based on labels. Config lives in `stacks/monitoring/alertmanager/alertmanager.yml`.
+2) **Alertmanager** routes and groups alerts based on labels. Config lives in `stacks/monitoring/alertmanager/alertmanager.yaml`.
 3) **Receiver integration** delivers notifications (Telegram). See `alertmanager-telegram.md`.
 4) **Runbooks** provide the operational response. See `runbooks.md`.
 
 Note: Alert/Silence links in Telegram require `--web.external-url` to be set in a runtime override; see `alertmanager-telegram.md`.
 
 ## Map of files
-- Prometheus rules: `stacks/monitoring/prometheus/rules/*.yml`
-- Prometheus config: `stacks/monitoring/prometheus/prometheus.yml` (demo: `stacks/monitoring/prometheus/prometheus.demo.yml`)
-- Alertmanager config: `stacks/monitoring/alertmanager/alertmanager.yml`
+- Prometheus rules: `stacks/monitoring/prometheus/rules/*.yaml`
+- Prometheus config: `stacks/monitoring/prometheus/prometheus.yaml` (demo: `stacks/monitoring/prometheus/prometheus.demo.yaml`)
+- Alertmanager config: `stacks/monitoring/alertmanager/alertmanager.yaml`
 - Alertmanager templates: `stacks/monitoring/alertmanager/templates/telegram.tmpl`
 - Runbooks: `stacks/monitoring/runbooks/*.md`
 - Alerting docs: `stacks/monitoring/docs/alerting/*.md`
@@ -41,7 +41,7 @@ Strongly recommended labels:
 These improve context and silence filters in Telegram, but are not strictly required by the contract. For the full contract and examples, see `prometheus-rules.md`.
 
 ## Routing & inhibition (summary)
-Alertmanager routes primarily by `severity`, and uses `service` (plus other labels) for grouping and inhibition. The source of truth is `stacks/monitoring/alertmanager/alertmanager.yml`.
+Alertmanager routes primarily by `severity`, and uses `service` (plus other labels) for grouping and inhibition. The source of truth is `stacks/monitoring/alertmanager/alertmanager.yaml`.
 
 ## Runbooks and `runbook_url`
 Runbooks live under `stacks/monitoring/runbooks/`. When available, rules include a `runbook_url` annotation that should point to the runbook for that alert. Conventions and the index live in `runbooks.md`.

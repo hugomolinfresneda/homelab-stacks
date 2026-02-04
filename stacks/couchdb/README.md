@@ -147,7 +147,7 @@ make up stack=couchdb
 1. Add the ingress rule to your tunnel config:
 
 ```yaml
-# ${RUNTIME_ROOT}/stacks/cloudflared/config.yml
+# ${RUNTIME_ROOT}/stacks/cloudflared/config.yaml
 ingress:
   - hostname: couchdb.<your-domain>
     service: http://couchdb:5984

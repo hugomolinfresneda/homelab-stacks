@@ -1,6 +1,6 @@
 # homelab-stacks
 
-[![CI](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yml)
+[![CI](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/hugomolinfresneda/homelab-stacks/actions/workflows/ci.yaml)
 
 **Portfolio (context, case studies, screenshots):** https://github.com/hugomolinfresneda/portfolio
 
