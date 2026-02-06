@@ -146,12 +146,12 @@ Operations are documented alongside the stacks: **backup/restore**, **disaster r
 - **Alerting docs (rules, routing, integrations):** `stacks/monitoring/docs/alerting/`
 - **Runbooks:** `stacks/monitoring/runbooks/`
 
-## Non-goals (set expectations)
+## Non-goals
 
-- Not a one-click installer for every environment (host-specific runtime is required).
-- No secrets or persistent data are committed to this repo (by design).
-- You own your runtime and threat model.
-- Not a managed product with SLAs.
+- Not a one-click installer or environment-agnostic abstraction: the runtime is explicit and host-aware by design.
+- Not a managed product or platform with SLAs, upgrades, or support guarantees.
+- Not a security hardening or compliance reference: security posture and threat model are owned by the operator.
+- Not a batteries-included framework meant to fit every use case or scale indefinitely.
 
 ## Changelog
 See `CHANGELOG.md`.
