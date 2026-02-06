@@ -26,14 +26,14 @@ services:
   prometheus:
     image: prom/prometheus@sha256:ff7e389acbe064a4823212a500393d40a28a8f362e4b05cbf6742a9a3ef736b2
     command:
-      - --config.file=/etc/prometheus/prometheus.yaml
+      - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
     expose:
       - "9090"
     volumes:
       - mon-prom-data:/prometheus
-      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules/:/etc/prometheus/rules/:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
@@ -75,7 +75,7 @@ services:
     cap_add:
       - NET_RAW
     volumes:
-      - ./blackbox/blackbox.yaml:/etc/blackbox_exporter/config.yaml:ro
+      - ./blackbox/blackbox.yaml:/etc/blackbox_exporter/config.yml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9115/"]
       interval: 30s
